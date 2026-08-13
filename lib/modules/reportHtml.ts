@@ -14,6 +14,7 @@
  * AI-free: every figure comes from the composed module data and carries its Truth Layer.
  */
 import type { ComposedReport, ComposedSection, ReportMetric } from './reportComposer';
+import { manilaLongStamp } from '@/lib/util/manilaTime';
 import type { Scorecard } from './scorecard';
 import type { Confidence } from '@/lib/truth/truthLayer';
 
@@ -216,9 +217,7 @@ export function renderReportHtml(
   const total = Math.max(1, mix.verified + mix.assumed + mix.projected);
   const seg = (n: number) => `${(n / total) * 100}%`;
   const conf = report.confidence;
-  const generated = new Date(opts.generatedAtISO).toLocaleString('en-PH', {
-    timeZone: 'Asia/Manila', dateStyle: 'long', timeStyle: 'short',
-  });
+  const generated = manilaLongStamp(new Date(opts.generatedAtISO));
 
   // Cover meta rows — only render the ones the user filled.
   const coverRows = [
