@@ -128,10 +128,14 @@ export async function POST(req: NextRequest) {
     },
   });
 
-  // 2) outlet rows (bulk) — geom via trigger
-  if (input.outlets.length) {
-    await prisma.outlet.createMany({
-      data: input.outlets.map((o) => ({
+  // 2) outlet rows — geom via trigger. NOTE: sequential single creates, NOT createMany.
+  // Under the Neon HTTP adapter (PrismaNeonHTTP), Prisma runs createMany inside a
+  // transaction, and the Neon HTTP driver throws "Transactions are not supported in
+  // HTTP mode". Single create() calls are one-shot statements and work fine, so we
+  // insert outlets one at a time (small N — a franchisor's existing branch list).
+  for (const o of input.outlets) {
+    await prisma.outlet.create({
+      data: {
         franchisorId,
         outletName: o.outletName,
         format: o.format,
@@ -140,7 +144,7 @@ export async function POST(req: NextRequest) {
         monthlySalesPhp: o.monthlySalesPhp != null ? new Prisma.Decimal(o.monthlySalesPhp) : null,
         performanceTag: o.performanceTag,
         truthLayer: 'assumed' as const,
-      })),
+      },
     });
   }
 

@@ -133,12 +133,16 @@ async function main() {
     { email: 'broker@grid.test', role: 'broker', franchisorId: FRANCHISOR_ID },
     { email: 'owner@macaoimperial.test', role: 'franchisor', franchisorId: FRANCHISOR_ID },
   ];
+  let ownerUserId: string | null = null;
   for (const u of users) {
-    await prisma.appUser.upsert({
+    const saved = await prisma.appUser.upsert({
       where: { email: u.email },
       update: { role: u.role, franchisorId: u.franchisorId },
       create: { email: u.email, passwordHash: pw, role: u.role, franchisorId: u.franchisorId },
     });
+    // Remember the demo franchisor OWNER so the seeded intake + run are attributed to
+    // them — otherwise My Runs (scoped to createdByUserId) hides the demo run.
+    if (u.email === 'owner@macaoimperial.test') ownerUserId = saved.id;
   }
 
   // --- outlet network (existing branches) ----------------------------------
@@ -186,6 +190,7 @@ async function main() {
       completenessPct: new Prisma.Decimal(100),
       status: 'submitted',
       submittedAt: new Date('2026-08-01T00:00:00Z'),
+      createdByUserId: ownerUserId,
       sectionA: { brand: 'Macao Imperial Tea', concept: 'milk tea' },
       sectionG: { outletCount: outlets.length, source: 'seed' },
       sectionK: { auditConsent: true },
@@ -199,6 +204,7 @@ async function main() {
       vertical: 'fnb_cafe',
       status: 'ready',
       exclusivityRadiusM: 1500,
+      createdByUserId: ownerUserId,
     },
   });
 
