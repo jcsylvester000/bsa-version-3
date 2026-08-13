@@ -51,6 +51,22 @@ function makeClient(): PrismaClient {
     };
     for (const oid of [1082, 1083, 1114, 1184, 1266]) types.setTypeParser(oid, toIso);
 
+    // JSON / JSONB columns (OIDs 114 / 3802) — the SAME class of bug as timestamps.
+    // @prisma/adapter-neon@5.22's HTTP path (PrismaNeonHTTP.performIO) does NOT apply the
+    // adapter's own `customParsers` (its WebSocket path does, via a custom getTypeParser),
+    // so JSON columns come back through neon()'s GLOBAL parser. Neon's default parses JSON
+    // text into a JS OBJECT, but Prisma's driver-adapter engine expects the RAW JSON STRING
+    // and parses it itself — otherwise: P2023 "Failed to parse incoming json from a driver
+    // adapter" on any create/read of a row with a JSON column (every intake: section_a…k).
+    // This surfaces only on the serverless runtime, not local dev, because the two runtimes'
+    // default parser state differs. Mirror the adapter's `toJson` (identity → raw string);
+    // if neon ever hands us an already-parsed object, re-stringify so Prisma always gets text.
+    const toRawJson = (v: unknown): string | null => {
+      if (v == null) return v as null;
+      return typeof v === 'string' ? v : JSON.stringify(v);
+    };
+    for (const oid of [114, 3802]) types.setTypeParser(oid, toRawJson);
+
     const sql = neon(process.env.DATABASE_URL as string);
     const adapter = new PrismaNeonHTTP(sql);
     return new PrismaClient({ adapter, log: ['warn', 'error'] });
