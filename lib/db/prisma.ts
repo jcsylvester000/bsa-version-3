@@ -23,9 +23,34 @@ function makeClient(): PrismaClient {
     // (the old code) left `this.client` undefined, so every query threw
     // "TypeError: this.client is not a function" at runtime on Netlify/Neon.
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { neon } = require('@neondatabase/serverless');
+    const { neon, types } = require('@neondatabase/serverless');
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { PrismaNeonHTTP } = require('@prisma/adapter-neon');
+
+    // Normalize date/time columns to ISO-8601 so Prisma's own layer parses them.
+    // @prisma/adapter-neon@5.22's HTTP path (PrismaNeonHTTP) — unlike its WebSocket
+    // path — installs no type parser, so Neon's default parsing hands Prisma an
+    // object ("… found {}"). Overriding the parser to pass raw text got us the real
+    // value, but Postgres emits it as "2026-08-13 14:27:54.72+00" while Prisma's
+    // adapter expects strict ISO ("2026-08-13T14:27:54.72Z") — otherwise:
+    //   "Conversion failed: expected a datetime string in column 'created_at'".
+    // So convert the space to 'T' and the "+00" zone suffix to 'Z'. This breaks
+    // EVERY read of a row with a timestamptz/date default (login, screening, seeds…)
+    // if not handled. OIDs: 1082 date · 1083 time · 1114 timestamp ·
+    // 1184 timestamptz · 1266 timetz.
+    const toIso = (v: string | null): string | null => {
+      if (v == null) return v;
+      // A bare DATE ("2026-08-13") has no time part — leave it untouched so the
+      // zone-suffix rules below can't mangle the "-13".
+      if (!v.includes(' ') && !v.includes('T')) return v;
+      // "YYYY-MM-DD HH:MM:SS.sss+00" → "YYYY-MM-DDTHH:MM:SS.sssZ"
+      let s = v.replace(' ', 'T');
+      s = s.replace(/([+-])00(:00)?$/, 'Z');       // "+00" / "+00:00" → "Z"
+      s = s.replace(/T.*[+-]\d{2}$/, (m) => `${m}:00`); // "+08" → "+08:00" (only in a time)
+      return s;
+    };
+    for (const oid of [1082, 1083, 1114, 1184, 1266]) types.setTypeParser(oid, toIso);
+
     const sql = neon(process.env.DATABASE_URL as string);
     const adapter = new PrismaNeonHTTP(sql);
     return new PrismaClient({ adapter, log: ['warn', 'error'] });
