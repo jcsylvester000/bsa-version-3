@@ -7,6 +7,7 @@ import { isMockUser } from '@/lib/auth/mockUsers';
 import { intakeSubmitSchema } from '@/lib/validation/schemas';
 import { computeCompleteness, REQUIRED_SECTIONS } from '@/lib/modules/completeness';
 import { ok, fail, failValidation, errors } from '@/lib/api/respond';
+import { manilaShortStamp } from '@/lib/util/manilaTime';
 import { audit } from '@/lib/audit/audit';
 
 /**
@@ -114,85 +115,92 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const intake = await prisma.intakeSubmission.create({
-    data: {
-      franchisorId,
-      vertical: input.vertical,
-      completenessPct: new Prisma.Decimal(completeness.pct),
-      status: 'submitted',
-      submittedAt: new Date(),
-      createdByUserId: session.id,
-      parentIntakeId,
-      version,
-      ...sectionData,
-    },
-  });
-
-  // 2) outlet rows — geom via trigger. NOTE: sequential single creates, NOT createMany.
-  // Under the Neon HTTP adapter (PrismaNeonHTTP), Prisma runs createMany inside a
-  // transaction, and the Neon HTTP driver throws "Transactions are not supported in
-  // HTTP mode". Single create() calls are one-shot statements and work fine, so we
-  // insert outlets one at a time (small N — a franchisor's existing branch list).
-  for (const o of input.outlets) {
-    await prisma.outlet.create({
+  try {
+    const intake = await prisma.intakeSubmission.create({
       data: {
         franchisorId,
-        outletName: o.outletName,
-        format: o.format,
-        lat: o.lat,
-        lon: o.lon,
-        monthlySalesPhp: o.monthlySalesPhp != null ? new Prisma.Decimal(o.monthlySalesPhp) : null,
-        performanceTag: o.performanceTag,
-        truthLayer: 'assumed' as const,
+        vertical: input.vertical,
+        completenessPct: new Prisma.Decimal(completeness.pct),
+        status: 'submitted',
+        submittedAt: new Date(),
+        createdByUserId: session.id,
+        parentIntakeId,
+        version,
+        ...sectionData,
       },
     });
-  }
 
-  // Auto-generate a human-friendly run name so the owner can tell reports apart, e.g.
-  // "BrewLab Tea — 2 sites — Aug 3, 3:24 PM". Renameable later from the dashboard.
-  const siteN = input.candidateSites.length;
-  const stamp = new Intl.DateTimeFormat('en-PH', {
-    timeZone: 'Asia/Manila', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
-  }).format(new Date());
-  const runName = `${brandLabel} — ${siteN} site${siteN === 1 ? '' : 's'} — ${stamp}${version > 1 ? ` (v${version})` : ''}`;
+    // 2) outlet rows — geom via trigger. NOTE: sequential single creates, NOT createMany.
+    // Under the Neon HTTP adapter (PrismaNeonHTTP), Prisma runs createMany inside a
+    // transaction, and the Neon HTTP driver throws "Transactions are not supported in
+    // HTTP mode". Single create() calls are one-shot statements and work fine, so we
+    // insert outlets one at a time (small N — a franchisor's existing branch list).
+    for (const o of input.outlets) {
+      await prisma.outlet.create({
+        data: {
+          franchisorId,
+          outletName: o.outletName,
+          format: o.format,
+          lat: o.lat,
+          lon: o.lon,
+          monthlySalesPhp: o.monthlySalesPhp != null ? new Prisma.Decimal(o.monthlySalesPhp) : null,
+          performanceTag: o.performanceTag,
+          truthLayer: 'assumed' as const,
+        },
+      });
+    }
 
-  // 3) pipeline_run
-  const run = await prisma.pipelineRun.create({
-    data: {
-      intakeSubmissionId: intake.id,
-      franchisorId,
-      vertical: input.vertical,
-      status: 'queued',
-      name: runName,
-      createdByUserId: session.id,
-    },
-  });
+    // Auto-generate a human-friendly run name so the owner can tell reports apart, e.g.
+    // "BrewLab Tea — 2 sites — Aug 3, 3:24 PM". Renameable later from the dashboard.
+    const siteN = input.candidateSites.length;
+    const stamp = manilaShortStamp(new Date());
+    const runName = `${brandLabel} — ${siteN} site${siteN === 1 ? '' : 's'} — ${stamp}${version > 1 ? ` (v${version})` : ''}`;
 
-  // 4) candidate sites — geom via trigger
-  for (const c of input.candidateSites) {
-    await prisma.candidateSite.create({
+    // 3) pipeline_run
+    const run = await prisma.pipelineRun.create({
       data: {
-        pipelineRunId: run.id,
-        label: c.label,
-        address: c.address,
-        barangay: c.barangay,
-        city: c.city,
-        lat: c.lat,
-        lon: c.lon,
-        siteType: c.siteType,
+        intakeSubmissionId: intake.id,
+        franchisorId,
+        vertical: input.vertical,
+        status: 'queued',
+        name: runName,
+        createdByUserId: session.id,
       },
     });
+
+    // 4) candidate sites — geom via trigger
+    for (const c of input.candidateSites) {
+      await prisma.candidateSite.create({
+        data: {
+          pipelineRunId: run.id,
+          label: c.label,
+          address: c.address,
+          barangay: c.barangay,
+          city: c.city,
+          lat: c.lat,
+          lon: c.lon,
+          siteType: c.siteType,
+        },
+      });
+    }
+
+    await audit({
+      actorId: session.id,
+      action: 'submit_intake',
+      entity: 'intake_submission',
+      entityId: intake.id,
+      meta: { runId: run.id, outlets: input.outlets.length, sites: input.candidateSites.length },
+    });
+
+    return ok({ intakeId: intake.id, runId: run.id, completenessPct: completeness.pct }, { status: 201 });
+  } catch (err) {
+    // Surface the real failure. Empty-body 500s (unhandled throws) are impossible
+    // to debug from the client. The Neon HTTP adapter, in particular, throws on any
+    // operation Prisma runs in a transaction — return that message, don't swallow it.
+    console.error('[POST /api/intake] write failed', err);
+    const message = err instanceof Error ? err.message : 'Failed to save intake.';
+    return errors.server(message);
   }
-
-  await audit({
-    actorId: session.id,
-    action: 'submit_intake',
-    entity: 'intake_submission',
-    entityId: intake.id,
-    meta: { runId: run.id, outlets: input.outlets.length, sites: input.candidateSites.length },
-  });
-
-  return ok({ intakeId: intake.id, runId: run.id, completenessPct: completeness.pct }, { status: 201 });
 }
 
 /** Map a flat sections record onto the section_a…k columns. */
