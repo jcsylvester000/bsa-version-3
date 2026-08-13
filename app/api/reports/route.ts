@@ -30,37 +30,43 @@ export async function POST(req: NextRequest) {
   if (!run) return errors.notFound('Run');
   if (!canAccessRun(session, run)) return errors.forbidden();
 
-  const composed = await composeReport(run.id);
-  // generatedAt stamped here at runtime (not inside any workflow script).
-  const generatedAtISO = new Date().toISOString();
-  const persisted = await renderAndPersistReport(composed, generatedAtISO);
+  try {
+    const composed = await composeReport(run.id);
+    // generatedAt stamped here at runtime (not inside any workflow script).
+    const generatedAtISO = new Date().toISOString();
+    const persisted = await renderAndPersistReport(composed, generatedAtISO);
 
-  const downloadUrl = await getStorage().signedUrl(persisted.storageKey, { expiresInSeconds: 300, download: true });
+    const downloadUrl = await getStorage().signedUrl(persisted.storageKey, { expiresInSeconds: 300, download: true });
 
-  await audit({
-    actorId: session.id,
-    action: 'generate_report',
-    entity: 'report',
-    entityId: persisted.reportId,
-    meta: { runId: run.id, confidence: persisted.confidence },
-  });
+    await audit({
+      actorId: session.id,
+      action: 'generate_report',
+      entity: 'report',
+      entityId: persisted.reportId,
+      meta: { runId: run.id, confidence: persisted.confidence },
+    });
 
-  return ok({
-    reportId: persisted.reportId,
-    runId: run.id,
-    confidence: composed.confidence,
-    truthLayerMix: composed.truthLayerMix,
-    sections: composed.sections.map((s) => ({
-      number: s.number,
-      title: s.title,
-      text: s.text,
-      truthLayers: Array.from(new Set(s.truthLayers)),
-      assessed: s.assessed,
-      metrics: s.metrics, // structured, AI-free data the UI renders as visuals
-    })),
-    onGroundCheckFlagged: composed.onGroundCheckFlagged,
-    downloadUrl,
-  });
+    return ok({
+      reportId: persisted.reportId,
+      runId: run.id,
+      confidence: composed.confidence,
+      truthLayerMix: composed.truthLayerMix,
+      sections: composed.sections.map((s) => ({
+        number: s.number,
+        title: s.title,
+        text: s.text,
+        truthLayers: Array.from(new Set(s.truthLayers)),
+        assessed: s.assessed,
+        metrics: s.metrics, // structured, AI-free data the UI renders as visuals
+      })),
+      onGroundCheckFlagged: composed.onGroundCheckFlagged,
+      downloadUrl,
+    });
+  } catch (err) {
+    console.error('[POST /api/reports] generate failed', err);
+    const message = err instanceof Error ? err.message : 'Failed to generate report.';
+    return errors.server(message);
+  }
 }
 
 /**
