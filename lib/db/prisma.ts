@@ -18,9 +18,16 @@ const isNeon = (process.env.DATABASE_URL ?? '').includes('neon.tech');
 function makeClient(): PrismaClient {
   if (isNeon) {
     // Lazy-require so local dev never needs the Neon packages resolved at runtime.
+    // @prisma/adapter-neon@5.22's PrismaNeonHTTP takes a Neon QUERY FUNCTION — the
+    // result of neon(connectionString) — NOT the raw URL string. Passing the string
+    // (the old code) left `this.client` undefined, so every query threw
+    // "TypeError: this.client is not a function" at runtime on Netlify/Neon.
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { neon } = require('@neondatabase/serverless');
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { PrismaNeonHTTP } = require('@prisma/adapter-neon');
-    const adapter = new PrismaNeonHTTP(process.env.DATABASE_URL as string, {});
+    const sql = neon(process.env.DATABASE_URL as string);
+    const adapter = new PrismaNeonHTTP(sql);
     return new PrismaClient({ adapter, log: ['warn', 'error'] });
   }
   return new PrismaClient({ log: ['warn', 'error'] });
