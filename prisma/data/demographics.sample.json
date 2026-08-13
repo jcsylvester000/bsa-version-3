@@ -1,0 +1,6 @@
+[
+  { "psgc_code": "137607001", "barangay": "Fort Bonifacio", "city": "Taguig", "population": 38000, "income_band": "AB", "renter_share_pct": 62, "daytime_pop": 120000, "lat": 14.5545, "lon": 121.0500 },
+  { "psgc_code": "137607002", "barangay": "Pinagsama", "city": "Taguig", "population": 42000, "income_band": "C", "renter_share_pct": 48, "daytime_pop": 55000, "lat": 14.5410, "lon": 121.0620 },
+  { "psgc_code": "137602001", "barangay": "Bel-Air", "city": "Makati", "population": 15000, "income_band": "AB", "renter_share_pct": 55, "daytime_pop": 90000, "lat": 14.5590, "lon": 121.0270 },
+  { "psgc_code": "137404001", "barangay": "Alabang", "city": "Muntinlupa", "population": 28000, "income_band": "B", "renter_share_pct": 40, "daytime_pop": 65000, "lat": 14.4239, "lon": 121.0300 }
+]

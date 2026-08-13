@@ -1,0 +1,23 @@
+# Netlify build configuration for the BSA Next.js app.
+#
+# @netlify/plugin-nextjs turns Next.js server components and /api routes into
+# Netlify serverless functions, so this is NOT a static export — the full app
+# (auth, Prisma → Neon, the deterministic pipeline) runs server-side on Netlify.
+#
+# Prisma note: `prisma generate` must run at build time so the client matches the
+# schema. The build command below runs it before `next build`. DATABASE_URL and the
+# other secrets are set in the Netlify UI (Site settings → Environment variables),
+# never committed here.
+
+[build]
+  command = "npx prisma generate && npm run build"
+  publish = ".next"
+
+[build.environment]
+  # Prisma downloads engines at build time; keep this off so it doesn't skip them.
+  PRISMA_SKIP_POSTINSTALL_GENERATE = "false"
+  # Use a modern Node for Next 14 + Prisma 5.
+  NODE_VERSION = "20"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"

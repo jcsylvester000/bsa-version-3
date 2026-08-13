@@ -1,0 +1,190 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================================
+   Dark "Site Intelligence" theme — matches the Visual Prototype mockups.
+   ============================================================================ */
+body {
+  @apply bg-ink-bg text-ink-text font-body antialiased;
+}
+
+h1, h2, h3, h4 {
+  @apply font-heading text-ink-text;
+}
+
+@layer components {
+  /* Surfaces */
+  .card {
+    @apply rounded-xl border border-ink-border bg-ink-panel;
+  }
+  .card-inset {
+    @apply rounded-lg border border-ink-border bg-ink-panel-2;
+  }
+
+  /* KPI stat tile */
+  .stat-tile {
+    @apply rounded-xl border border-ink-border bg-ink-panel-2 p-4;
+  }
+  .stat-label {
+    @apply text-[11px] font-medium uppercase tracking-wider text-ink-muted;
+  }
+  .stat-value {
+    @apply mt-1 text-3xl font-bold text-ink-text;
+  }
+
+  /* Truth Layer chip */
+  .tl-chip {
+    @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium;
+  }
+  .tl-verified { @apply bg-verified/15 text-verified; }
+  .tl-assumed { @apply bg-assumed/15 text-assumed; }
+  .tl-projected { @apply bg-projected/20 text-projected; }
+
+  /* Verdict / status pill */
+  .pill { @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold; }
+  .pill-go { @apply bg-go/15 text-go; }
+  .pill-caution { @apply bg-caution/15 text-caution; }
+  .pill-nogo { @apply bg-nogo/15 text-nogo; }
+  .pill-new { @apply bg-accent/15 text-accent; }
+
+  /* Buttons */
+  .btn-accent {
+    @apply rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-ink-bg transition hover:brightness-110 disabled:opacity-50;
+  }
+  .btn-ghost {
+    @apply rounded-lg border border-ink-border px-4 py-2 text-sm font-medium text-ink-text transition hover:bg-ink-hover;
+  }
+
+  /* Inputs */
+  .field {
+    @apply w-full rounded-lg border border-ink-border bg-ink-panel-2 px-3 py-2 text-sm text-ink-text placeholder:text-ink-muted focus:border-accent focus:outline-none;
+  }
+
+  /* Sidebar nav item */
+  .nav-item {
+    @apply flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-ink-muted transition hover:bg-ink-hover hover:text-ink-text;
+  }
+  .nav-item-active {
+    @apply bg-ink-hover text-ink-text;
+  }
+}
+
+/* ============================================================================
+   Input readability guard. The theme is dark (inputs = dark panel + light text),
+   but browser AUTOFILL forces a white/yellow background with the browser's own
+   dark text — which on a dark form can render light-on-white (invisible). Pin the
+   autofill fill + text so values are always readable, and guarantee native form
+   controls inherit the dark-theme colors even before Tailwind classes apply.
+   ============================================================================ */
+input, select, textarea {
+  color: #0b1426;            /* dark text — visible if any light background wins */
+  background-color: #0e192f; /* dark panel by default */
+}
+input.field, select.field, textarea.field {
+  /* !important so a .field input is ALWAYS light-on-dark and can never fall back to the
+     near-black base color above (which rendered typed values invisible on the dark form). */
+  color: #e8ecf5 !important;
+  background-color: #0e192f;
+}
+input.field::placeholder, textarea.field::placeholder { color: #8c96a8; }
+/* Chrome/Safari autofill: keep the dark field bg + light text instead of white. */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+textarea:-webkit-autofill,
+select:-webkit-autofill {
+  -webkit-text-fill-color: #e8ecf5 !important;
+  -webkit-box-shadow: 0 0 0 1000px #0e192f inset !important;
+  box-shadow: 0 0 0 1000px #0e192f inset !important;
+  caret-color: #e8ecf5;
+  transition: background-color 9999s ease-in-out 0s;
+}
+/* Native option list stays readable on the OS dropdown surface. */
+select.field option { color: #0b1426; background-color: #ffffff; }
+
+/* ============================================================================
+   Analysis Sequence — the 8-second futuristic "system is computing" overlay
+   that plays on every data load. Pure CSS motion; respects reduced-motion.
+   ============================================================================ */
+@keyframes as-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes as-fade-out { from { opacity: 1; } to { opacity: 0; visibility: hidden; } }
+@keyframes as-rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+/* Radar sweep (Territory Guard motif) */
+@keyframes as-radar-sweep { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+@keyframes as-radar-ping { 0% { transform: scale(0.2); opacity: 0.9; } 100% { transform: scale(1); opacity: 0; } }
+
+/* Scanning bar that travels across a panel */
+@keyframes as-scan-x { 0% { left: -20%; } 100% { left: 120%; } }
+@keyframes as-scan-y { 0% { top: -20%; } 100% { top: 120%; } }
+
+/* Grid cells lighting up (White-Space / Dashboard motif) */
+@keyframes as-cell-pulse { 0%,100% { opacity: 0.12; } 50% { opacity: 0.85; } }
+
+/* Bars / curve growing (Lease / Daypart motif) */
+@keyframes as-bar-grow { from { transform: scaleY(0.05); } to { transform: scaleY(1); } }
+
+/* Glowing progress ring stroke */
+@keyframes as-ring-dash { from { stroke-dashoffset: 283; } to { stroke-dashoffset: 0; } }
+@keyframes as-spin { to { transform: rotate(360deg); } }
+
+/* Streaming characters / blinking cursor */
+@keyframes as-blink { 0%,49% { opacity: 1; } 50%,100% { opacity: 0; } }
+
+/* Overall container timing (8s then fade) */
+.as-overlay { animation: as-fade-in 0.35s ease-out both; }
+.as-overlay-out { animation: as-fade-out 0.5s ease-in both; }
+.as-reveal { animation: as-rise 0.55s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+
+.as-radar-line { transform-origin: center; animation: as-radar-sweep 2.2s linear infinite; }
+.as-radar-ping { transform-origin: center; animation: as-radar-ping 2.2s ease-out infinite; }
+.as-scan { animation: as-scan-x 1.8s ease-in-out infinite; }
+.as-cell { animation: as-cell-pulse 1.6s ease-in-out infinite; }
+.as-bar { transform-origin: bottom; animation: as-bar-grow 1.1s cubic-bezier(0.2,0.8,0.2,1) both; }
+.as-ring-stroke { animation: as-ring-dash 8s linear both; }
+.as-spin { animation: as-spin 1.4s linear infinite; }
+.as-cursor { animation: as-blink 1s step-end infinite; }
+
+/* Subtle moving grid backdrop */
+.as-gridbg {
+  background-image:
+    linear-gradient(rgba(224,165,104,0.09) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(224,165,104,0.09) 1px, transparent 1px);
+  background-size: 26px 26px;
+  animation: as-fade-in 0.6s ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .as-radar-line, .as-radar-ping, .as-scan, .as-cell, .as-bar, .as-ring-stroke, .as-spin, .as-cursor {
+    animation: none !important;
+  }
+}
+
+/* MapLibre popups inherit the dark theme.
+   !important throughout so our dark styling always beats MapLibre's own stylesheet
+   (loaded via the JS import), which otherwise renders a white popup with pale,
+   near-invisible text on the dark map. */
+.maplibregl-popup-content {
+  background: #132241 !important;
+  color: #e8ecf5 !important;
+  border: 1px solid #1d2c4d !important;
+  border-radius: 8px !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45) !important;
+  font-size: 12px;
+  padding: 8px 12px !important;
+}
+.maplibregl-popup-tip {
+  border-top-color: #132241 !important;
+  border-bottom-color: #132241 !important;
+}
+/* Close button visible on the dark surface. */
+.maplibregl-popup-close-button {
+  color: #8c96a8 !important;
+  font-size: 16px;
+  padding: 0 5px !important;
+}
+.maplibregl-popup-close-button:hover {
+  background: transparent !important;
+  color: #e8ecf5 !important;
+}

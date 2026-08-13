@@ -1,0 +1,262 @@
+[
+  {
+    "region": "NCR",
+    "province": "Metro Manila",
+    "city_municipality": "Taguig",
+    "rdo": "RDO 044",
+    "classification_code": "CC",
+    "low_php_sqm": 130000,
+    "high_php_sqm": 2160000,
+    "notes": "Fort Bonifacio / BGC commercial (CC). Range per BIR RDO 044 Fort Bonifacio schedule; top = All Other Streets FAR 18. Verified from published schedule."
+  },
+  {
+    "region": "NCR",
+    "province": "Metro Manila",
+    "city_municipality": "Taguig",
+    "rdo": "RDO 044",
+    "classification_code": "RC",
+    "low_php_sqm": 78000,
+    "high_php_sqm": 523000,
+    "notes": "Fort Bonifacio / BGC residential-commercial (RC). Per BIR RDO 044; top = Aurelia Residences. Verified from published schedule."
+  },
+  {
+    "region": "NCR",
+    "province": "Metro Manila",
+    "city_municipality": "Makati",
+    "rdo": "RDO 047",
+    "classification_code": "CR",
+    "low_php_sqm": 60000,
+    "high_php_sqm": 940000,
+    "notes": "Makati commercial (CR). Makati zonal spread ₱110–₱940,000/sqm; commercial band shown. Verified range from published schedule."
+  },
+  {
+    "region": "NCR",
+    "province": "Metro Manila",
+    "city_municipality": "Makati",
+    "rdo": "RDO 047",
+    "classification_code": "RR",
+    "low_php_sqm": 30000,
+    "high_php_sqm": 120000,
+    "notes": "Makati residential (RR) — most common Makati classification. Range Assumed within the city-wide published spread."
+  },
+  {
+    "region": "NCR",
+    "province": "Metro Manila",
+    "city_municipality": "Pasig",
+    "rdo": "RDO 043",
+    "classification_code": "CR",
+    "low_php_sqm": 35000,
+    "high_php_sqm": 90000,
+    "notes": "Ortigas Center commercial (Pasig side). Assumed within published Ortigas corridor band."
+  },
+  {
+    "region": "NCR",
+    "province": "Metro Manila",
+    "city_municipality": "Quezon City",
+    "rdo": "RDO 039",
+    "classification_code": "CR",
+    "low_php_sqm": 25000,
+    "high_php_sqm": 85000,
+    "notes": "QC commercial corridors (Cubao / Katipunan / North EDSA). Assumed within published QC commercial band."
+  },
+  {
+    "region": "NCR",
+    "province": "Metro Manila",
+    "city_municipality": "Quezon City",
+    "rdo": "RDO 039",
+    "classification_code": "RR",
+    "low_php_sqm": 12000,
+    "high_php_sqm": 45000,
+    "notes": "QC residential. Assumed within published QC residential band."
+  },
+  {
+    "region": "NCR",
+    "province": "Metro Manila",
+    "city_municipality": "Manila",
+    "rdo": "RDO 034",
+    "classification_code": "CR",
+    "low_php_sqm": 30000,
+    "high_php_sqm": 100000,
+    "notes": "Manila commercial (Binondo / Ermita / España corridors). Assumed within published Manila commercial band."
+  },
+  {
+    "region": "NCR",
+    "province": "Metro Manila",
+    "city_municipality": "Pasay",
+    "rdo": "RDO 051",
+    "classification_code": "CR",
+    "low_php_sqm": 30000,
+    "high_php_sqm": 120000,
+    "notes": "Pasay Bay Area / MOA commercial. Assumed within published Pasay commercial band."
+  },
+  {
+    "region": "NCR",
+    "province": "Metro Manila",
+    "city_municipality": "Muntinlupa",
+    "rdo": "RDO 053",
+    "classification_code": "CR",
+    "low_php_sqm": 25000,
+    "high_php_sqm": 80000,
+    "notes": "Alabang / Filinvest commercial. Assumed within published Muntinlupa commercial band."
+  },
+  {
+    "region": "NCR",
+    "province": "Metro Manila",
+    "city_municipality": "Mandaluyong",
+    "rdo": "RDO 041",
+    "classification_code": "CR",
+    "low_php_sqm": 28000,
+    "high_php_sqm": 85000,
+    "notes": "Mandaluyong (Ortigas fringe / Boni). Assumed within published Mandaluyong commercial band."
+  },
+  {
+    "region": "NCR",
+    "province": "Metro Manila",
+    "city_municipality": "Parañaque",
+    "rdo": "RDO 052",
+    "classification_code": "CR",
+    "low_php_sqm": 20000,
+    "high_php_sqm": 70000,
+    "notes": "Parañaque (BF Homes / Bay City fringe). Assumed within published Parañaque commercial band."
+  },
+  {
+    "region": "NCR",
+    "province": "Metro Manila",
+    "city_municipality": "Caloocan",
+    "rdo": "RDO 027",
+    "classification_code": "CC",
+    "low_php_sqm": 13200,
+    "high_php_sqm": 61000,
+    "notes": "Caloocan commercial. High end Gen. San Miguel St / A. Mabini corridor (₱42.3k–₱61k); secondary streets ₱13.2k. From BIR Dept. Order per-street schedule (verified via zonal dataset)."
+  },
+  {
+    "region": "NCR",
+    "province": "Metro Manila",
+    "city_municipality": "San Juan",
+    "rdo": "RDO 042",
+    "classification_code": "CC",
+    "low_php_sqm": 30000,
+    "high_php_sqm": 110000,
+    "notes": "San Juan commercial. Prime North/Northeast Greenhills streets surpassed ₱100k/sqm in the revised schedule (~May 2023, published). Other commercial ₱30k–₱80k. Greenhills anchor verified; interior range approximate."
+  },
+  {
+    "region": "NCR",
+    "province": "Metro Manila",
+    "city_municipality": "Valenzuela",
+    "rdo": "RDO 024",
+    "classification_code": "CC",
+    "low_php_sqm": 12000,
+    "high_php_sqm": 35000,
+    "notes": "Valenzuela commercial, prime McArthur Highway / Marulas / Karuhatan frontage. Approximate — official BIR RDO 024 schedule exists; verify per-street before formal use."
+  },
+  {
+    "region": "NCR",
+    "province": "Metro Manila",
+    "city_municipality": "Las Piñas",
+    "rdo": "RDO 053A",
+    "classification_code": "CC",
+    "low_php_sqm": 8000,
+    "high_php_sqm": 45000,
+    "notes": "Las Piñas commercial, prime Alabang–Zapote Rd / SM Southmall frontage (high); interior secondary lower. Approximate estimate — verify against BIR DO."
+  },
+  {
+    "region": "NCR",
+    "province": "Metro Manila",
+    "city_municipality": "Malabon",
+    "rdo": "RDO 026",
+    "classification_code": "CC",
+    "low_php_sqm": 8000,
+    "high_php_sqm": 25000,
+    "notes": "Malabon commercial, prime C-4 / Gov. Pascual frontage. Approximate estimate — verify against BIR DO (RDO 026 Malabon/Navotas)."
+  },
+  {
+    "region": "NCR",
+    "province": "Metro Manila",
+    "city_municipality": "Navotas",
+    "rdo": "RDO 026",
+    "classification_code": "CC",
+    "low_php_sqm": 6000,
+    "high_php_sqm": 18000,
+    "notes": "Navotas commercial, prime M. Naval St. Approximate estimate — fishing-port economy, thin formal retail. Verify against BIR DO."
+  },
+  {
+    "region": "NCR",
+    "province": "Metro Manila",
+    "city_municipality": "Pateros",
+    "rdo": "RDO 044",
+    "classification_code": "CC",
+    "low_php_sqm": 10000,
+    "high_php_sqm": 30000,
+    "notes": "Pateros commercial (small core; BGC-adjacent edges higher). Approximate estimate — RDO 044 Taguig/Pateros; verify per-street."
+  },
+  {
+    "region": "NCR",
+    "province": "Metro Manila",
+    "city_municipality": "Marikina",
+    "rdo": "RDO 045",
+    "classification_code": "CC",
+    "low_php_sqm": 15000,
+    "high_php_sqm": 45000,
+    "notes": "Marikina commercial, prime Marcos Hwy / Gil Fernando Ave / Sumulong Hwy frontage. Approximate estimate — verify against BIR DO (RDO 045)."
+  },
+  {
+    "region": "XI",
+    "province": "Davao del Sur",
+    "city_municipality": "Davao City",
+    "rdo": "RDO 113A/113B",
+    "classification_code": "CC",
+    "low_php_sqm": 15700,
+    "high_php_sqm": 65700,
+    "notes": "Davao City commercial. Prime: Ramon Magsaysay Ave ₱63.3k–65.7k, JP Laurel/Bajada ₱56.2k–57.5k, San Pedro downtown ₱49k–56.9k. Interior ₱15.7k. From BIR per-street schedule (verified via zonal dataset). RDO 113A West / 113B East."
+  },
+  {
+    "region": "XI",
+    "province": "Davao del Sur",
+    "city_municipality": "Digos",
+    "rdo": "RDO 115",
+    "classification_code": "CC",
+    "low_php_sqm": 5000,
+    "high_php_sqm": 15000,
+    "notes": "Digos City commercial (Poblacion / national highway). Approximate estimate — verify against BIR RR-19 schedule RDO 115."
+  },
+  {
+    "region": "XI",
+    "province": "Davao del Norte",
+    "city_municipality": "Tagum",
+    "rdo": "RDO 112",
+    "classification_code": "CC",
+    "low_php_sqm": 8000,
+    "high_php_sqm": 20000,
+    "notes": "Tagum City commercial (Poblacion; Gaisano/Robinsons belt). Approximate — provincial retail hub. Verify against BIR RDO 112."
+  },
+  {
+    "region": "XI",
+    "province": "Davao del Norte",
+    "city_municipality": "Panabo",
+    "rdo": "RDO 112",
+    "classification_code": "CC",
+    "low_php_sqm": 5000,
+    "high_php_sqm": 13000,
+    "notes": "Panabo City commercial (Poblacion). Approximate estimate — verify against BIR RDO 112."
+  },
+  {
+    "region": "XI",
+    "province": "Davao del Norte",
+    "city_municipality": "Samal",
+    "rdo": "RDO 112",
+    "classification_code": "CC",
+    "low_php_sqm": 4000,
+    "high_php_sqm": 12000,
+    "notes": "IGACOS commercial (Peñaplata / Babak). Approximate — tourism/resort economy, low resident density. Verify against BIR RDO 112."
+  },
+  {
+    "region": "XI",
+    "province": "Davao Oriental",
+    "city_municipality": "Mati",
+    "rdo": "RDO 114",
+    "classification_code": "CC",
+    "low_php_sqm": 5000,
+    "high_php_sqm": 14000,
+    "notes": "Mati City commercial (Central / Poblacion). Approximate estimate — verify against BIR RDO 114."
+  }
+]

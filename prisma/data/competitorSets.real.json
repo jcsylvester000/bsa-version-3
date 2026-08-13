@@ -1,0 +1,1313 @@
+[
+  {
+    "category": "C01 Food Cart - Kiosk",
+    "anchorBrand": "Potato Corner",
+    "parentOperator": "Potato Corner (The Big Chill grp)",
+    "subSegment": "Flavored fries kiosk",
+    "formatTier": "Mall/inline cart",
+    "competitors": [
+      "Ministop fries counters",
+      "James & Daughters",
+      "Fries Factory",
+      "Chowking/QSR fry sides",
+      "indie flavored-fry carts"
+    ],
+    "conceptKey": "qsr",
+    "truthLayer": "verified",
+    "notes": "Category leader in flavored-fries kiosks; competes with any mall snack cart on impulse footfall."
+  },
+  {
+    "category": "C01 Food Cart - Kiosk",
+    "anchorBrand": "Siomai King",
+    "parentOperator": "Siomai King",
+    "subSegment": "Steamed dimsum cart",
+    "formatTier": "Kiosk/food court",
+    "competitors": [
+      "Master Siomai",
+      "Siomai House",
+      "Sh! Siomai",
+      "Hen Lin",
+      "indie siomai stalls"
+    ],
+    "conceptKey": "chinese_qsr",
+    "truthLayer": "verified",
+    "notes": "Dominant siomai cart brand; cannibalized by every dimsum kiosk in the same food court."
+  },
+  {
+    "category": "C01 Food Cart - Kiosk",
+    "anchorBrand": "Master Siomai",
+    "parentOperator": "Master Siomai",
+    "subSegment": "Steamed dimsum cart",
+    "formatTier": "Kiosk",
+    "competitors": [
+      "Siomai King",
+      "Siomai House",
+      "Hen Lin",
+      "indie carts"
+    ],
+    "conceptKey": "chinese_qsr",
+    "truthLayer": "verified",
+    "notes": "Direct rival to Siomai King in the same mall/transit locations."
+  },
+  {
+    "category": "C01 Food Cart - Kiosk",
+    "anchorBrand": "Waffle Time",
+    "parentOperator": "Waffle Time Inc.",
+    "subSegment": "Waffle snack cart",
+    "formatTier": "Kiosk",
+    "competitors": [
+      "Waffle Corner",
+      "Belgian-waffle carts",
+      "Mister Donut counters",
+      "bakery snack stalls"
+    ],
+    "conceptKey": "bakery",
+    "truthLayer": "assumed",
+    "notes": "Snack-cart competition is location-driven; any sweet-snack kiosk cannibalizes footfall."
+  },
+  {
+    "category": "C01 Food Cart - Kiosk",
+    "anchorBrand": "Fruitas",
+    "parentOperator": "Fruitas Holdings",
+    "subSegment": "Fresh fruit/juice kiosk",
+    "formatTier": "Kiosk/inline",
+    "competitors": [
+      "Buko Loco",
+      "Mr. Shake",
+      "Refreshing Buko",
+      "Hydro coolers",
+      "mall juice bars"
+    ],
+    "conceptKey": "water",
+    "truthLayer": "verified",
+    "notes": "Fruitas Holdings itself runs many banners; external rivals are indie juice/buko carts."
+  },
+  {
+    "category": "C01 Food Cart - Kiosk",
+    "anchorBrand": "Turks",
+    "parentOperator": "Turks Shawarma",
+    "subSegment": "Shawarma/kebab cart",
+    "formatTier": "Kiosk/inline",
+    "competitors": [
+      "Doner Kebab",
+      "Wrap & Roll",
+      "indie shawarma stalls",
+      "QSR wraps"
+    ],
+    "conceptKey": "qsr",
+    "truthLayer": "assumed",
+    "notes": "Middle-Eastern wrap niche; competes with any grab-and-go wrap counter."
+  },
+  {
+    "category": "C02 QSR - Fast Food",
+    "anchorBrand": "Jollibee",
+    "parentOperator": "Jollibee Foods Corp (JFC)",
+    "subSegment": "Filipino QSR (chicken/burger)",
+    "formatTier": "Free-standing/Mall/Drive-thru",
+    "competitors": [
+      "McDonald's",
+      "KFC",
+      "Mang Inasal",
+      "Chowking",
+      "Chooks-to-Go",
+      "Andok's",
+      "Burger King"
+    ],
+    "conceptKey": "qsr",
+    "truthLayer": "verified",
+    "notes": "Market leader ~3,400 PH stores. Cross-format cannibalization with all national QSR."
+  },
+  {
+    "category": "C02 QSR - Fast Food",
+    "anchorBrand": "McDonald's",
+    "parentOperator": "Golden Arches Dev. Corp.",
+    "subSegment": "Burger QSR",
+    "formatTier": "Free-standing/Mall/Drive-thru",
+    "competitors": [
+      "Jollibee",
+      "Burger King",
+      "KFC",
+      "Wendy's",
+      "Army Navy",
+      "Angel's Burger",
+      "L.C. Big Mak"
+    ],
+    "conceptKey": "qsr",
+    "truthLayer": "verified",
+    "notes": "Chief burger-QSR rival to Jollibee; ~800+ PH outlets."
+  },
+  {
+    "category": "C02 QSR - Fast Food",
+    "anchorBrand": "KFC",
+    "parentOperator": "JFC Investment Co. (RRHI/Cocina)",
+    "subSegment": "Fried chicken QSR",
+    "formatTier": "Mall/Free-standing",
+    "competitors": [
+      "Jollibee Chickenjoy",
+      "McDonald's",
+      "Chooks-to-Go",
+      "Andok's",
+      "Bonchon",
+      "Mang Inasal"
+    ],
+    "conceptKey": "qsr",
+    "truthLayer": "verified",
+    "notes": "Fried-chicken segment; competes head-on with Jollibee & grilled-chicken brands."
+  },
+  {
+    "category": "C02 QSR - Fast Food",
+    "anchorBrand": "Burger King",
+    "parentOperator": "Jollibee Foods Corp (JFC)",
+    "subSegment": "Burger QSR",
+    "formatTier": "Mall/Free-standing",
+    "competitors": [
+      "McDonald's",
+      "Jollibee",
+      "Wendy's",
+      "Army Navy",
+      "Angel's Burger"
+    ],
+    "conceptKey": "qsr",
+    "truthLayer": "verified",
+    "notes": "JFC-owned but positioned against McDonald's in the flame-grilled burger tier."
+  },
+  {
+    "category": "C02 QSR - Fast Food",
+    "anchorBrand": "Mang Inasal",
+    "parentOperator": "Jollibee Foods Corp (JFC)",
+    "subSegment": "Grilled chicken / Filipino",
+    "formatTier": "Mall/Free-standing",
+    "competitors": [
+      "Bacolod Chicken Inasal",
+      "Chooks-to-Go",
+      "Andok's",
+      "Reyes Barbecue",
+      "KFC",
+      "Jollibee"
+    ],
+    "conceptKey": "grilled_qsr",
+    "truthLayer": "verified",
+    "notes": "Grilled-chicken + unli-rice niche; cannibalizes and is cannibalized by fried-chicken QSR."
+  },
+  {
+    "category": "C02 QSR - Fast Food",
+    "anchorBrand": "Chowking",
+    "parentOperator": "Jollibee Foods Corp (JFC)",
+    "subSegment": "Chinese QSR",
+    "formatTier": "Mall/Free-standing",
+    "competitors": [
+      "Chinese-style QSR",
+      "Tokyo Tokyo",
+      "Mann Hann",
+      "indie panciteria",
+      "Jollibee/McDo"
+    ],
+    "conceptKey": "chinese_qsr",
+    "truthLayer": "verified",
+    "notes": "Chinese-fastfood niche; overlaps with broader QSR on the value meal occasion."
+  },
+  {
+    "category": "C02 QSR - Fast Food",
+    "anchorBrand": "Chooks-to-Go",
+    "parentOperator": "Bounty Fresh Group",
+    "subSegment": "Roasted chicken take-out",
+    "formatTier": "Kiosk/roadside",
+    "competitors": [
+      "Andok's",
+      "Baliwag",
+      "Sr. Pedro",
+      "Mang Inasal",
+      "KFC",
+      "Uncle John's ready-to-eat"
+    ],
+    "conceptKey": "grilled_qsr",
+    "truthLayer": "verified",
+    "notes": "~1,800 outlets; roast-chicken take-out competing with grilled + fried chicken brands."
+  },
+  {
+    "category": "C02 QSR - Fast Food",
+    "anchorBrand": "Andok's",
+    "parentOperator": "Andok's Litson Corp.",
+    "subSegment": "Roasted chicken/litson",
+    "formatTier": "Roadside/kiosk",
+    "competitors": [
+      "Chooks-to-Go",
+      "Baliwag",
+      "Sr. Pedro",
+      "Mang Inasal"
+    ],
+    "conceptKey": "grilled_qsr",
+    "truthLayer": "verified",
+    "notes": "Roast/lechon manok pioneer; direct rival to Chooks-to-Go."
+  },
+  {
+    "category": "C02 QSR - Fast Food",
+    "anchorBrand": "Bonchon",
+    "parentOperator": "Bonchon PH",
+    "subSegment": "Korean fried chicken",
+    "formatTier": "Mall/inline",
+    "competitors": [
+      "KFC",
+      "4Fingers",
+      "Chir Chir",
+      "Manam-style",
+      "Jollibee Chickenjoy"
+    ],
+    "conceptKey": "qsr",
+    "truthLayer": "assumed",
+    "notes": "Korean-style fried chicken; premium tier of the fried-chicken set."
+  },
+  {
+    "category": "C02 QSR - Fast Food",
+    "anchorBrand": "Army Navy",
+    "parentOperator": "Army Navy Burger + Burrito",
+    "subSegment": "Burger/burrito casual-QSR",
+    "formatTier": "Mall/free-standing",
+    "competitors": [
+      "McDonald's",
+      "Burger King",
+      "Wendy's",
+      "Mexican-QSR (Taco Bell/Zark's)"
+    ],
+    "conceptKey": "qsr",
+    "truthLayer": "assumed",
+    "notes": "Premium burger + Tex-Mex; bridges QSR and fast-casual."
+  },
+  {
+    "category": "C03 Coffee - Milk Tea",
+    "anchorBrand": "Starbucks",
+    "parentOperator": "Rustan Coffee Corp.",
+    "subSegment": "Premium coffee cafe",
+    "formatTier": "Mall/free-standing/drive-thru",
+    "competitors": [
+      "Coffee Bean & Tea Leaf",
+      "Bo's Coffee",
+      "Tim Hortons",
+      "Coffee Project",
+      "Seattle's Best"
+    ],
+    "conceptKey": "coffee",
+    "truthLayer": "verified",
+    "notes": "Premium cafe leader ~500 stores; anchor of the sit-down coffee set."
+  },
+  {
+    "category": "C03 Coffee - Milk Tea",
+    "anchorBrand": "Bo's Coffee",
+    "parentOperator": "Bo's Coffee",
+    "subSegment": "Local premium coffee",
+    "formatTier": "Mall/inline",
+    "competitors": [
+      "Starbucks",
+      "Coffee Bean",
+      "Coffee Project",
+      "KA-PE",
+      "Figaro"
+    ],
+    "conceptKey": "coffee",
+    "truthLayer": "verified",
+    "notes": "Largest Filipino-owned cafe chain; positioned vs Starbucks value tier."
+  },
+  {
+    "category": "C03 Coffee - Milk Tea",
+    "anchorBrand": "Dunkin'",
+    "parentOperator": "Golden Donuts Inc.",
+    "subSegment": "Coffee + donuts QSR",
+    "formatTier": "Kiosk/free-standing",
+    "competitors": [
+      "Mister Donut",
+      "Krispy Kreme",
+      "J.CO",
+      "Starbucks (coffee)",
+      "Go Nuts Donuts"
+    ],
+    "conceptKey": "bakery",
+    "truthLayer": "verified",
+    "notes": "~800 stores; competes on donuts AND grab-and-go coffee."
+  },
+  {
+    "category": "C03 Coffee - Milk Tea",
+    "anchorBrand": "Macao Imperial Tea",
+    "parentOperator": "Macao Imperial Tea",
+    "subSegment": "Milk tea",
+    "formatTier": "Mall/inline",
+    "competitors": [
+      "Serenitea",
+      "CoCo",
+      "Gong Cha",
+      "Chatime",
+      "Tiger Sugar",
+      "Happy Lemon",
+      "Dakasi"
+    ],
+    "conceptKey": "milk_tea",
+    "truthLayer": "verified",
+    "notes": "Note: this is Grid's demo tenant. Milk-tea set is intensely cannibalistic within malls."
+  },
+  {
+    "category": "C03 Coffee - Milk Tea",
+    "anchorBrand": "Serenitea",
+    "parentOperator": "Serenitea",
+    "subSegment": "Milk tea (pioneer)",
+    "formatTier": "Mall/inline",
+    "competitors": [
+      "Macao Imperial",
+      "CoCo",
+      "Gong Cha",
+      "Chatime",
+      "Happy Lemon",
+      "Tiger Sugar"
+    ],
+    "conceptKey": "milk_tea",
+    "truthLayer": "verified",
+    "notes": "~80 stores; original PH milk-tea pioneer, full overlap with all bubble-tea brands."
+  },
+  {
+    "category": "C03 Coffee - Milk Tea",
+    "anchorBrand": "CoCo",
+    "parentOperator": "CoCo Fresh Tea & Juice",
+    "subSegment": "Milk tea (global)",
+    "formatTier": "Mall/inline",
+    "competitors": [
+      "Macao Imperial",
+      "Serenitea",
+      "Gong Cha",
+      "Chatime",
+      "Tiger Sugar",
+      "Dakasi"
+    ],
+    "conceptKey": "milk_tea",
+    "truthLayer": "assumed",
+    "notes": "Global bubble-tea brand; same mall pad competitors."
+  },
+  {
+    "category": "C03 Coffee - Milk Tea",
+    "anchorBrand": "Gong Cha",
+    "parentOperator": "Gong Cha PH",
+    "subSegment": "Premium milk tea",
+    "formatTier": "Mall/inline",
+    "competitors": [
+      "CoCo",
+      "Chatime",
+      "Macao Imperial",
+      "Serenitea",
+      "Tiger Sugar",
+      "Ollin"
+    ],
+    "conceptKey": "milk_tea",
+    "truthLayer": "assumed",
+    "notes": "Premium bubble tea; cannibalizes and is cannibalized by all milk-tea kiosks."
+  },
+  {
+    "category": "C03 Coffee - Milk Tea",
+    "anchorBrand": "Coffee Project",
+    "parentOperator": "Coffee Project (Vitarich/CnP grp)",
+    "subSegment": "Aesthetic cafe + food",
+    "formatTier": "Mall/free-standing",
+    "competitors": [
+      "Starbucks",
+      "Bo's Coffee",
+      "Tim Hortons",
+      "Kubli",
+      "indie specialty cafes"
+    ],
+    "conceptKey": "coffee",
+    "truthLayer": "assumed",
+    "notes": "Instagrammable full-service cafe; overlaps Starbucks + casual dining."
+  },
+  {
+    "category": "C04 Bakery - Bread",
+    "anchorBrand": "Goldilocks",
+    "parentOperator": "Goldilocks Bakeshop",
+    "subSegment": "Filipino bakeshop/cakes",
+    "formatTier": "Mall/free-standing",
+    "competitors": [
+      "Red Ribbon",
+      "Conti's",
+      "Kambal Pandesal",
+      "indie cake shops",
+      "Purple Oven"
+    ],
+    "conceptKey": "bakery",
+    "truthLayer": "verified",
+    "notes": "~1,000 stores; the anchor cake/bakeshop rival to Red Ribbon."
+  },
+  {
+    "category": "C04 Bakery - Bread",
+    "anchorBrand": "Red Ribbon",
+    "parentOperator": "Jollibee Foods Corp (JFC)",
+    "subSegment": "Bakeshop/cakes",
+    "formatTier": "Mall/free-standing",
+    "competitors": [
+      "Goldilocks",
+      "Conti's",
+      "Contis",
+      "Cara Mia",
+      "indie bakeshops"
+    ],
+    "conceptKey": "bakery",
+    "truthLayer": "verified",
+    "notes": "JFC bakeshop; head-to-head with Goldilocks on cakes and celebrations."
+  },
+  {
+    "category": "C04 Bakery - Bread",
+    "anchorBrand": "Julie's Bakeshop",
+    "parentOperator": "Julie's Franchise Corp.",
+    "subSegment": "Neighborhood bakery",
+    "formatTier": "Community/roadside",
+    "competitors": [
+      "Pan de Manila",
+      "Kambal Pandesal",
+      "French Baker",
+      "Gardenia retail",
+      "indie panaderia"
+    ],
+    "conceptKey": "bakery",
+    "truthLayer": "verified",
+    "notes": "Community pandesal bakery; competes with every neighborhood panaderia + branded bread."
+  },
+  {
+    "category": "C04 Bakery - Bread",
+    "anchorBrand": "Pan de Manila",
+    "parentOperator": "Pan de Manila",
+    "subSegment": "Pandesal / bread",
+    "formatTier": "Community",
+    "competitors": [
+      "Julie's Bakeshop",
+      "Kambal Pandesal",
+      "indie panaderia",
+      "Gardenia (retail bread)"
+    ],
+    "conceptKey": "bakery",
+    "truthLayer": "assumed",
+    "notes": "Pandesal-focused; overlaps Julie's on the daily-bread run."
+  },
+  {
+    "category": "C04 Bakery - Bread",
+    "anchorBrand": "Mister Donut",
+    "parentOperator": "Mister Donut (Dunkin grp/CFC)",
+    "subSegment": "Donut kiosk",
+    "formatTier": "Kiosk/mall",
+    "competitors": [
+      "Dunkin'",
+      "Krispy Kreme",
+      "J.CO",
+      "Go Nuts Donuts",
+      "Master Donut"
+    ],
+    "conceptKey": "bakery",
+    "truthLayer": "verified",
+    "notes": "Widest donut kiosk footprint; competes with Dunkin' donuts side."
+  },
+  {
+    "category": "C04 Bakery - Bread",
+    "anchorBrand": "Krispy Kreme",
+    "parentOperator": "Max's Group / MaxLimited",
+    "subSegment": "Premium donuts",
+    "formatTier": "Mall/free-standing",
+    "competitors": [
+      "J.CO",
+      "Dunkin'",
+      "Mister Donut",
+      "Go Nuts Donuts"
+    ],
+    "conceptKey": "bakery",
+    "truthLayer": "verified",
+    "notes": "Premium donut tier vs J.CO."
+  },
+  {
+    "category": "C05 Convenience & Retail",
+    "anchorBrand": "7-Eleven",
+    "parentOperator": "Philippine Seven Corp.",
+    "subSegment": "Convenience store",
+    "formatTier": "Corner/inline/mall",
+    "competitors": [
+      "Uncle John's",
+      "Alfamart",
+      "FamilyMart",
+      "Lawson",
+      "Ministop legacy",
+      "Dali (grocery-adjacent)"
+    ],
+    "conceptKey": "convenience",
+    "truthLayer": "verified",
+    "notes": "Largest CVS chain (thousands of stores). Anchor of the convenience cannibalization set."
+  },
+  {
+    "category": "C05 Convenience & Retail",
+    "anchorBrand": "Uncle John's",
+    "parentOperator": "Robinsons Retail (RRHI)",
+    "subSegment": "Convenience store",
+    "formatTier": "Corner/inline",
+    "competitors": [
+      "7-Eleven",
+      "Alfamart",
+      "FamilyMart",
+      "Lawson",
+      "ready-to-eat QSR"
+    ],
+    "conceptKey": "convenience",
+    "truthLayer": "verified",
+    "notes": "Rebranded from Ministop; ready-to-eat CVS competing directly with 7-Eleven."
+  },
+  {
+    "category": "C05 Convenience & Retail",
+    "anchorBrand": "Alfamart",
+    "parentOperator": "SM/Alfamart (SMIC + Alfa grp)",
+    "subSegment": "Mini-market / CVS hybrid",
+    "formatTier": "Neighborhood",
+    "competitors": [
+      "7-Eleven",
+      "Uncle John's",
+      "Dali",
+      "O!Save",
+      "Puregold minimart",
+      "sari-sari stores"
+    ],
+    "conceptKey": "convenience",
+    "truthLayer": "verified",
+    "notes": "Mini-market bridging CVS and grocery; overlaps 7-Eleven AND hard-discount grocers."
+  },
+  {
+    "category": "C05 Convenience & Retail",
+    "anchorBrand": "Dali",
+    "parentOperator": "Dali Discount AG / HDPI",
+    "subSegment": "Hard-discount grocery",
+    "formatTier": "Neighborhood box",
+    "competitors": [
+      "O!Save",
+      "Alfamart",
+      "Puregold minimart",
+      "sari-sari stores",
+      "Savemore"
+    ],
+    "conceptKey": "convenience",
+    "truthLayer": "verified",
+    "notes": "~900-1,000 Luzon stores; hard-discount disruptor. Competes on grocery basket, not impulse."
+  },
+  {
+    "category": "C05 Convenience & Retail",
+    "anchorBrand": "O!Save",
+    "parentOperator": "Robinsons Retail (RRHI)",
+    "subSegment": "Hard-discount grocery",
+    "formatTier": "Neighborhood box",
+    "competitors": [
+      "Dali",
+      "Alfamart",
+      "Puregold minimart",
+      "Savemore",
+      "sari-sari stores"
+    ],
+    "conceptKey": "convenience",
+    "truthLayer": "verified",
+    "notes": "RRHI's hard-discount answer to Dali; head-to-head on the discount basket."
+  },
+  {
+    "category": "C05 Convenience & Retail",
+    "anchorBrand": "FamilyMart",
+    "parentOperator": "(operator-dependent)",
+    "subSegment": "Convenience store",
+    "formatTier": "Mall/corner",
+    "competitors": [
+      "7-Eleven",
+      "Uncle John's",
+      "Lawson",
+      "Alfamart"
+    ],
+    "conceptKey": "convenience",
+    "truthLayer": "assumed",
+    "notes": "Japanese-format CVS; overlaps 7-Eleven on ready-to-eat + impulse."
+  },
+  {
+    "category": "C05 Convenience & Retail",
+    "anchorBrand": "Lawson",
+    "parentOperator": "PG Lawson (Puregold JV)",
+    "subSegment": "Convenience store",
+    "formatTier": "Mall/corner",
+    "competitors": [
+      "7-Eleven",
+      "Uncle John's",
+      "FamilyMart",
+      "Alfamart"
+    ],
+    "conceptKey": "convenience",
+    "truthLayer": "assumed",
+    "notes": "Puregold-backed CVS; same convenience occasion as 7-Eleven."
+  },
+  {
+    "category": "C05 Convenience & Retail",
+    "anchorBrand": "Monterey Meatshop",
+    "parentOperator": "San Miguel Foods (SMC)",
+    "subSegment": "Fresh-meat retail",
+    "formatTier": "Neighborhood",
+    "competitors": [
+      "Magnolia meatshop",
+      "Pure Foods stalls",
+      "wet-market vendors",
+      "supermarket meat sections"
+    ],
+    "conceptKey": "convenience",
+    "truthLayer": "verified",
+    "notes": "Specialty fresh-meat retail; competes with wet markets + grocery meat aisles."
+  },
+  {
+    "category": "C06 Health, Wellness & Beauty",
+    "anchorBrand": "Watsons",
+    "parentOperator": "SM Retail / A.S. Watson",
+    "subSegment": "Health & beauty retail",
+    "formatTier": "Mall/inline",
+    "competitors": [
+      "Mercury Drug (front-store)",
+      "The SM Store beauty",
+      "Sasa",
+      "indie beauty",
+      "Rose Pharmacy H&B"
+    ],
+    "conceptKey": "pharmacy",
+    "truthLayer": "verified",
+    "notes": "Leading H&B retailer; competes with drugstores' front-of-store and beauty specialists."
+  },
+  {
+    "category": "C06 Health, Wellness & Beauty",
+    "anchorBrand": "Mercury Drug",
+    "parentOperator": "Mercury Drug Corp.",
+    "subSegment": "Pharmacy / drugstore",
+    "formatTier": "Free-standing/mall",
+    "competitors": [
+      "Rose Pharmacy",
+      "Watsons",
+      "Generika",
+      "The Generics Pharmacy",
+      "South Star Drug"
+    ],
+    "conceptKey": "pharmacy",
+    "truthLayer": "verified",
+    "notes": "Dominant pharmacy; the anchor drugstore cannibalization set."
+  },
+  {
+    "category": "C06 Health, Wellness & Beauty",
+    "anchorBrand": "The Generics Pharmacy",
+    "parentOperator": "TGP",
+    "subSegment": "Generics drugstore",
+    "formatTier": "Community",
+    "competitors": [
+      "Generika",
+      "Rose Pharmacy",
+      "Mercury Drug",
+      "South Star Drug"
+    ],
+    "conceptKey": "pharmacy",
+    "truthLayer": "verified",
+    "notes": "Low-cost generics; competes on price vs Mercury + other generics chains."
+  },
+  {
+    "category": "C06 Health, Wellness & Beauty",
+    "anchorBrand": "Generika",
+    "parentOperator": "Generika (Ayala/AC Health)",
+    "subSegment": "Generics drugstore",
+    "formatTier": "Community",
+    "competitors": [
+      "The Generics Pharmacy",
+      "Rose Pharmacy",
+      "Mercury Drug"
+    ],
+    "conceptKey": "pharmacy",
+    "truthLayer": "assumed",
+    "notes": "Ayala-backed generics; head-to-head with TGP."
+  },
+  {
+    "category": "C06 Health, Wellness & Beauty",
+    "anchorBrand": "Nail Spa / Posh Nails",
+    "parentOperator": "(brand-dependent)",
+    "subSegment": "Nail & beauty spa",
+    "formatTier": "Mall/inline",
+    "competitors": [
+      "Lay Bare",
+      "Nailaholics",
+      "Beauty & Butter",
+      "indie nail salons"
+    ],
+    "conceptKey": "salon",
+    "truthLayer": "assumed",
+    "notes": "Beauty-services set; competes with waxing + nail chains on the same pampering occasion."
+  },
+  {
+    "category": "C06 Health, Wellness & Beauty",
+    "anchorBrand": "Bench Fix Salon",
+    "parentOperator": "Suyen Corp (Bench)",
+    "subSegment": "Salon / grooming",
+    "formatTier": "Mall",
+    "competitors": [
+      "David's Salon",
+      "Ricky Reyes",
+      "Tony & Jackey",
+      "indie barbershops"
+    ],
+    "conceptKey": "salon",
+    "truthLayer": "assumed",
+    "notes": "Salon-services tier; overlaps all mall salon chains."
+  },
+  {
+    "category": "C07 Laundry - Home Services",
+    "anchorBrand": "Lava Station",
+    "parentOperator": "Lava Station",
+    "subSegment": "Self-service laundry",
+    "formatTier": "Community/inline",
+    "competitors": [
+      "Wash Inc.",
+      "Laundrybox",
+      "Labamatic",
+      "indie coin laundry",
+      "water-refill combos"
+    ],
+    "conceptKey": "laundry",
+    "truthLayer": "assumed",
+    "notes": "Self-service laundromat; competes with any neighborhood coin-laundry."
+  },
+  {
+    "category": "C07 Laundry - Home Services",
+    "anchorBrand": "Laundrybox",
+    "parentOperator": "Laundrybox",
+    "subSegment": "24/7 self-service laundry",
+    "formatTier": "Community",
+    "competitors": [
+      "Lava Station",
+      "Wash Inc.",
+      "Labamatic",
+      "indie laundromats"
+    ],
+    "conceptKey": "laundry",
+    "truthLayer": "assumed",
+    "notes": "Automated laundromat; same neighborhood laundry demand."
+  },
+  {
+    "category": "C07 Laundry - Home Services",
+    "anchorBrand": "Wash Inc.",
+    "parentOperator": "Wash Inc.",
+    "subSegment": "Laundry shop",
+    "formatTier": "Community",
+    "competitors": [
+      "Lava Station",
+      "Laundrybox",
+      "indie labandera services"
+    ],
+    "conceptKey": "laundry",
+    "truthLayer": "assumed",
+    "notes": "Full-service + self-service laundry."
+  },
+  {
+    "category": "C07 Laundry - Home Services",
+    "anchorBrand": "Aquabest",
+    "parentOperator": "GQwest Inc.",
+    "subSegment": "Water refilling station",
+    "formatTier": "Community",
+    "competitors": [
+      "Aqua Master",
+      "Crystal Clear",
+      "indie refilling stations",
+      "bottled-water retail"
+    ],
+    "conceptKey": "laundry",
+    "truthLayer": "verified",
+    "notes": "Leading branded water-refill chain; competes with every barangay refilling station."
+  },
+  {
+    "category": "C07 Laundry - Home Services",
+    "anchorBrand": "Crystal Clear",
+    "parentOperator": "Crystal Clear",
+    "subSegment": "Water refilling station",
+    "formatTier": "Community",
+    "competitors": [
+      "Aquabest",
+      "Aqua Master",
+      "indie refilling stations"
+    ],
+    "conceptKey": "laundry",
+    "truthLayer": "assumed",
+    "notes": "Direct rival to Aquabest on the refill route."
+  },
+  {
+    "category": "C08 Education - Learning",
+    "anchorBrand": "Kumon",
+    "parentOperator": "Kumon PH",
+    "subSegment": "After-school enrichment",
+    "formatTier": "Mall/inline center",
+    "competitors": [
+      "MathMonkey",
+      "Mathnasium",
+      "Eye Level",
+      "Galileo",
+      "indie tutorial centers"
+    ],
+    "conceptKey": "education",
+    "truthLayer": "verified",
+    "notes": "Global math/reading enrichment; anchor of the learning-center set."
+  },
+  {
+    "category": "C08 Education - Learning",
+    "anchorBrand": "Eye Level",
+    "parentOperator": "Daekyo Eye Level",
+    "subSegment": "Enrichment (math/English)",
+    "formatTier": "Mall/inline",
+    "competitors": [
+      "Kumon",
+      "Mathnasium",
+      "MathMonkey",
+      "Galileo"
+    ],
+    "conceptKey": "education",
+    "truthLayer": "assumed",
+    "notes": "Direct rival to Kumon on enrichment tutoring."
+  },
+  {
+    "category": "C08 Education - Learning",
+    "anchorBrand": "Mathnasium",
+    "parentOperator": "Mathnasium PH",
+    "subSegment": "Math learning center",
+    "formatTier": "Mall/inline",
+    "competitors": [
+      "Kumon",
+      "Eye Level",
+      "MathMonkey"
+    ],
+    "conceptKey": "education",
+    "truthLayer": "assumed",
+    "notes": "Math-focused center; overlaps Kumon math."
+  },
+  {
+    "category": "C08 Education - Learning",
+    "anchorBrand": "AMA / STI-style Computer Learning",
+    "parentOperator": "(brand-dependent)",
+    "subSegment": "Vocational / IT training",
+    "formatTier": "Mall/free-standing",
+    "competitors": [
+      "CIIT",
+      "Informatics",
+      "indie review centers",
+      "TESDA providers"
+    ],
+    "conceptKey": "education",
+    "truthLayer": "assumed",
+    "notes": "Skills/IT training tier; competes on vocational enrollment."
+  },
+  {
+    "category": "C08 Education - Learning",
+    "anchorBrand": "Review Centers (e.g., CPAR)",
+    "parentOperator": "(brand-dependent)",
+    "subSegment": "Board-exam review",
+    "formatTier": "Inline/office",
+    "competitors": [
+      "Other review centers",
+      "online review platforms"
+    ],
+    "conceptKey": "education",
+    "truthLayer": "projected",
+    "notes": "Board-review niche; competes with online review + rival centers."
+  },
+  {
+    "category": "C09 Business Services",
+    "anchorBrand": "LBC",
+    "parentOperator": "LBC Express",
+    "subSegment": "Courier / remittance",
+    "formatTier": "Mall/free-standing",
+    "competitors": [
+      "J&T Express",
+      "JRS",
+      "2GO",
+      "Ninja Van",
+      "Palawan Express (remittance)"
+    ],
+    "conceptKey": "remittance",
+    "truthLayer": "verified",
+    "notes": "Leading courier + padala; competes on both parcel and remittance occasions."
+  },
+  {
+    "category": "C09 Business Services",
+    "anchorBrand": "J&T Express",
+    "parentOperator": "J&T Express PH",
+    "subSegment": "Parcel courier",
+    "formatTier": "Inline/community",
+    "competitors": [
+      "LBC",
+      "Ninja Van",
+      "Flash Express",
+      "JRS",
+      "2GO"
+    ],
+    "conceptKey": "remittance",
+    "truthLayer": "verified",
+    "notes": "E-commerce courier; head-to-head with LBC on parcels."
+  },
+  {
+    "category": "C09 Business Services",
+    "anchorBrand": "Palawan Pawnshop / Express",
+    "parentOperator": "Palawan Group",
+    "subSegment": "Pawnshop / remittance",
+    "formatTier": "Community",
+    "competitors": [
+      "Cebuana Lhuillier",
+      "M Lhuillier",
+      "Western Union agents",
+      "LBC padala"
+    ],
+    "conceptKey": "remittance",
+    "truthLayer": "verified",
+    "notes": "Pawn + remittance; competes with Cebuana on micro-financial services."
+  },
+  {
+    "category": "C09 Business Services",
+    "anchorBrand": "Cebuana Lhuillier",
+    "parentOperator": "Cebuana Lhuillier",
+    "subSegment": "Pawnshop / remittance",
+    "formatTier": "Community",
+    "competitors": [
+      "Palawan",
+      "M Lhuillier",
+      "Western Union agents",
+      "GCash cash-in points"
+    ],
+    "conceptKey": "remittance",
+    "truthLayer": "verified",
+    "notes": "Largest pawnshop network; overlaps Palawan + digital cash-in."
+  },
+  {
+    "category": "C09 Business Services",
+    "anchorBrand": "Netopia / Printing",
+    "parentOperator": "(brand-dependent)",
+    "subSegment": "Business services / printing",
+    "formatTier": "Mall/inline",
+    "competitors": [
+      "Indie print shops",
+      "internet cafes",
+      "mall business-service kiosks"
+    ],
+    "conceptKey": "remittance",
+    "truthLayer": "projected",
+    "notes": "Print/net-cafe services; competes with indie shops and digital substitutes."
+  },
+  {
+    "category": "C10 Casual Dining",
+    "anchorBrand": "Max's Restaurant",
+    "parentOperator": "Max's Group Inc.",
+    "subSegment": "Filipino casual dining",
+    "formatTier": "Mall/free-standing",
+    "competitors": [
+      "Gerry's Grill",
+      "Classic Savory",
+      "Kuya J",
+      "Mesa",
+      "Sizzling Pepper Steak",
+      "Aristocrat"
+    ],
+    "conceptKey": "casual_dining",
+    "truthLayer": "verified",
+    "notes": "Filipino full-service anchor; competes with all Filipino casual-dining chains."
+  },
+  {
+    "category": "C10 Casual Dining",
+    "anchorBrand": "Gerry's Grill",
+    "parentOperator": "Gerry's Grill",
+    "subSegment": "Filipino grill / bar",
+    "formatTier": "Mall/free-standing",
+    "competitors": [
+      "Max's",
+      "Kuya J",
+      "Mesa",
+      "Chili's-tier",
+      "Gerry's-style grills"
+    ],
+    "conceptKey": "casual_dining",
+    "truthLayer": "verified",
+    "notes": "Grill + bar occasion; overlaps Max's and Filipino casual dining."
+  },
+  {
+    "category": "C10 Casual Dining",
+    "anchorBrand": "Yellow Cab Pizza",
+    "parentOperator": "Max's Group Inc.",
+    "subSegment": "Pizza casual dining",
+    "formatTier": "Mall/inline",
+    "competitors": [
+      "Pizza Hut",
+      "Shakey's",
+      "Greenwich",
+      "Angel's Pizza",
+      "S&R pizza"
+    ],
+    "conceptKey": "casual_dining",
+    "truthLayer": "verified",
+    "notes": "NY-style pizza; competes with all pizza chains across dine-in + delivery."
+  },
+  {
+    "category": "C10 Casual Dining",
+    "anchorBrand": "Shakey's",
+    "parentOperator": "Shakey's Pizza Asia Ventures (PIZZA)",
+    "subSegment": "Pizza + chicken dine-in",
+    "formatTier": "Free-standing/mall",
+    "competitors": [
+      "Yellow Cab",
+      "Pizza Hut",
+      "Greenwich",
+      "Angel's Pizza"
+    ],
+    "conceptKey": "casual_dining",
+    "truthLayer": "verified",
+    "notes": "Dine-in pizza-chicken; anchor of casual pizza set."
+  },
+  {
+    "category": "C10 Casual Dining",
+    "anchorBrand": "Pizza Hut",
+    "parentOperator": "Jollibee/licensed operator",
+    "subSegment": "Pizza casual dining",
+    "formatTier": "Mall/free-standing",
+    "competitors": [
+      "Shakey's",
+      "Yellow Cab",
+      "Greenwich",
+      "Angel's Pizza",
+      "Papa John's"
+    ],
+    "conceptKey": "casual_dining",
+    "truthLayer": "verified",
+    "notes": "Global pizza brand; head-to-head with Shakey's + Yellow Cab."
+  },
+  {
+    "category": "C10 Casual Dining",
+    "anchorBrand": "Vikings",
+    "parentOperator": "Vikings Group",
+    "subSegment": "Buffet dining",
+    "formatTier": "Mall",
+    "competitors": [
+      "Buffet 101",
+      "Sambo Kojin",
+      "Yakimix",
+      "Dads/Saisaki"
+    ],
+    "conceptKey": "casual_dining",
+    "truthLayer": "assumed",
+    "notes": "Eat-all-you-can buffet tier; competes with all buffet chains on the celebration occasion."
+  },
+  {
+    "category": "C10 Casual Dining",
+    "anchorBrand": "Conti's",
+    "parentOperator": "Eight8Ate Holdings",
+    "subSegment": "Bakeshop-restaurant casual dining",
+    "formatTier": "Mall/free-standing",
+    "competitors": [
+      "Max's",
+      "C2 Classic Cuisine",
+      "Cara Mia",
+      "Italianni's-tier"
+    ],
+    "conceptKey": "casual_dining",
+    "truthLayer": "assumed",
+    "notes": "Bakeshop + full-service; bridges bakery and casual dining."
+  },
+  {
+    "category": "C11 Supermarket - Grocery - Retail Anchor",
+    "anchorBrand": "SM Supermalls",
+    "parentOperator": "SM Prime Holdings",
+    "subSegment": "Regional shopping mall",
+    "formatTier": "Mega/regional mall",
+    "competitors": [
+      "Ayala Malls",
+      "Robinsons Malls",
+      "Vista Malls",
+      "Megaworld lifestyle malls"
+    ],
+    "conceptKey": "grocery",
+    "truthLayer": "verified",
+    "notes": "Largest mall operator; competes with Ayala/Robinsons for anchor tenants + footfall."
+  },
+  {
+    "category": "C11 Supermarket - Grocery - Retail Anchor",
+    "anchorBrand": "Ayala Malls",
+    "parentOperator": "Ayala Land",
+    "subSegment": "Lifestyle mall",
+    "formatTier": "Regional/lifestyle",
+    "competitors": [
+      "SM Supermalls",
+      "Robinsons Malls",
+      "Megaworld",
+      "Vista"
+    ],
+    "conceptKey": "grocery",
+    "truthLayer": "verified",
+    "notes": "Premium lifestyle malls; direct rival to SM in overlapping catchments."
+  },
+  {
+    "category": "C11 Supermarket - Grocery - Retail Anchor",
+    "anchorBrand": "Robinsons Malls",
+    "parentOperator": "Robinsons Land (RLC)",
+    "subSegment": "Shopping mall",
+    "formatTier": "Regional/community",
+    "competitors": [
+      "SM Supermalls",
+      "Ayala Malls",
+      "Vista",
+      "Megaworld"
+    ],
+    "conceptKey": "grocery",
+    "truthLayer": "verified",
+    "notes": "Third major mall operator; competes on the same tenant + shopper base."
+  },
+  {
+    "category": "C11 Supermarket - Grocery - Retail Anchor",
+    "anchorBrand": "S&R",
+    "parentOperator": "S&R Membership Shopping (Cosco)",
+    "subSegment": "Membership warehouse club",
+    "formatTier": "Big-box",
+    "competitors": [
+      "Landers Superstore",
+      "Puregold",
+      "Costco-style clubs"
+    ],
+    "conceptKey": "grocery",
+    "truthLayer": "verified",
+    "notes": "Membership warehouse; head-to-head with Landers on bulk/premium grocery."
+  },
+  {
+    "category": "C11 Supermarket - Grocery - Retail Anchor",
+    "anchorBrand": "Landers",
+    "parentOperator": "Landers Superstore (Vistamalls)",
+    "subSegment": "Membership warehouse club",
+    "formatTier": "Big-box",
+    "competitors": [
+      "S&R",
+      "Puregold",
+      "AllDay Supermarket"
+    ],
+    "conceptKey": "grocery",
+    "truthLayer": "verified",
+    "notes": "Direct rival to S&R in the membership-club tier."
+  },
+  {
+    "category": "C11 Supermarket - Grocery - Retail Anchor",
+    "anchorBrand": "Puregold",
+    "parentOperator": "Puregold Price Club",
+    "subSegment": "Supermarket / hypermarket",
+    "formatTier": "Community/regional",
+    "competitors": [
+      "SM Supermarket",
+      "Robinsons Supermarket",
+      "Savemore",
+      "AllDay",
+      "Gaisano"
+    ],
+    "conceptKey": "grocery",
+    "truthLayer": "verified",
+    "notes": "Value supermarket leader; competes with SM/Robinsons grocery + hard-discount below it."
+  },
+  {
+    "category": "C11 Supermarket - Grocery - Retail Anchor",
+    "anchorBrand": "SM Supermarket / Savemore",
+    "parentOperator": "SM Retail",
+    "subSegment": "Supermarket",
+    "formatTier": "Mall/community",
+    "competitors": [
+      "Puregold",
+      "Robinsons Supermarket",
+      "AllDay",
+      "Gaisano",
+      "Dali (discount)"
+    ],
+    "conceptKey": "grocery",
+    "truthLayer": "verified",
+    "notes": "SM grocery formats; pressured from above (premium) and below (Dali/O!Save)."
+  },
+  {
+    "category": "C12 Fitness Gyms",
+    "anchorBrand": "Anytime Fitness",
+    "parentOperator": "Anytime Fitness PH (Purpose Brands)",
+    "subSegment": "24/7 access gym",
+    "formatTier": "Inline/mall/community",
+    "competitors": [
+      "Gold's Gym",
+      "Fitness First",
+      "Slimmers World",
+      "indie gyms",
+      "Plana Forma-tier studios"
+    ],
+    "conceptKey": "fitness",
+    "truthLayer": "verified",
+    "notes": "Largest PH fitness chain by branches; 24/7 convenience gym anchor."
+  },
+  {
+    "category": "C12 Fitness Gyms",
+    "anchorBrand": "Gold's Gym",
+    "parentOperator": "Gold's Gym PH",
+    "subSegment": "Full-service gym",
+    "formatTier": "Mall/free-standing",
+    "competitors": [
+      "Anytime Fitness",
+      "Fitness First",
+      "Slimmers World",
+      "360 Fitness"
+    ],
+    "conceptKey": "fitness",
+    "truthLayer": "verified",
+    "notes": "Full-service bodybuilding-heritage gym; competes with Anytime + Fitness First."
+  },
+  {
+    "category": "C12 Fitness Gyms",
+    "anchorBrand": "Fitness First",
+    "parentOperator": "Fitness First PH",
+    "subSegment": "Premium full-service gym",
+    "formatTier": "Mall",
+    "competitors": [
+      "Gold's Gym",
+      "Anytime Fitness",
+      "Slimmers World",
+      "boutique studios"
+    ],
+    "conceptKey": "fitness",
+    "truthLayer": "verified",
+    "notes": "Premium tier; classes + equipment vs Gold's and Anytime."
+  },
+  {
+    "category": "C12 Fitness Gyms",
+    "anchorBrand": "Slimmers World",
+    "parentOperator": "Slimmers World Int'l",
+    "subSegment": "Fitness + wellness/slimming",
+    "formatTier": "Mall/free-standing",
+    "competitors": [
+      "Gold's Gym",
+      "Fitness First",
+      "Anytime Fitness",
+      "spa-gym hybrids"
+    ],
+    "conceptKey": "fitness",
+    "truthLayer": "assumed",
+    "notes": "Fitness + slimming positioning; overlaps mainstream gyms on membership."
+  },
+  {
+    "category": "C12 Fitness Gyms",
+    "anchorBrand": "Plana Forma / Boutique Studios",
+    "parentOperator": "(brand-dependent)",
+    "subSegment": "Boutique fitness studio",
+    "formatTier": "Inline/mall",
+    "competitors": [
+      "Ride Revolution",
+      "Saddle Row",
+      "Electric Studio",
+      "Beyond Yoga",
+      "indie studios"
+    ],
+    "conceptKey": "fitness",
+    "truthLayer": "assumed",
+    "notes": "Class-based boutique tier; competes for the premium fitness member vs big-box gyms."
+  },
+  {
+    "category": "C12 Fitness Gyms",
+    "anchorBrand": "360 Fitness Club",
+    "parentOperator": "360 Fitness",
+    "subSegment": "Mid-market gym",
+    "formatTier": "Community/mall",
+    "competitors": [
+      "Anytime Fitness",
+      "Gold's Gym",
+      "indie neighborhood gyms"
+    ],
+    "conceptKey": "fitness",
+    "truthLayer": "projected",
+    "notes": "Mid-market neighborhood gym; competes on price + proximity."
+  }
+]
