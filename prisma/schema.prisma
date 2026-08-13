@@ -1,0 +1,611 @@
+// BSA — Business Site Analysis
+// Grid Property Ventures · Prisma schema · PostgreSQL (local dev) / neon.tech (prod)
+//
+// 16 tables in 5 groups: Core domain · Reference data · Run/Output · AI/Search · Ops.
+// Truth Layer (Verified/Assumed/Projected) is a COLUMN on every reference and result
+// row — it is enforced at the data layer, never as a display-only flag, and it travels
+// with the data into the AI context.
+//
+// Geo + vector notes:
+//   - `geom` columns are PostGIS `geography(Point/Polygon, 4326)`, modelled as
+//     Unsupported() because Prisma has no native geography type. They are populated
+//     from lat/lon on write (see lib/geo) and indexed with GiST in migration SQL.
+//   - `doc_chunk.embedding` is pgvector `vector(1536)`, also Unsupported(); HNSW +
+//     GIN indexes are added in migration SQL. Raw queries in lib/ai handle it.
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions", "driverAdapters"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  // Migrations & introspection use the DIRECT (non-pooled) connection. On Neon,
+  // DDL / CREATE EXTENSION must not run through the pooler. Falls back to
+  // DATABASE_URL locally where DIRECT_URL is unset (Prisma treats an unset env as
+  // absent and uses `url`).
+  directUrl  = env("DIRECT_URL")
+  extensions = [vector, postgis, pg_trgm, citext]
+}
+
+// ============================================================================
+// ENUMS
+// ============================================================================
+
+/// Truth Layer classification — assigned at ingestion, preserved through every read.
+enum TruthLayer {
+  verified
+  assumed
+  projected
+}
+
+enum Sector {
+  FnB
+  Retail
+  Services
+}
+
+/// Business vertical picked at intake — drives which modules/datasets activate.
+enum Vertical {
+  fnb_qsr
+  fnb_cafe
+  fnb_bakery
+  retail_apparel
+  retail_specialty
+  services_salon
+  services_spa
+  services_fitness
+  services_laundry
+  convenience
+  remittance
+  pharmacy
+  diagnostics
+  fuel
+  automotive
+  hotel
+  education
+  other
+}
+
+enum IntakeStatus {
+  draft
+  validated
+  submitted
+}
+
+enum OutletStatus {
+  open
+  closed
+  renovating
+}
+
+enum PerformanceTag {
+  hero
+  above
+  avg
+  below
+  problem
+}
+
+enum RunStatus {
+  queued
+  researching
+  analyzing
+  composing
+  ready
+  failed
+}
+
+enum Confidence {
+  high
+  med
+  low
+}
+
+enum Verdict {
+  go
+  caution
+  nogo
+}
+
+/// Each analysis module writes a typed module_result row keyed by this enum.
+/// New features plug in by adding a value here — no core-schema reshape.
+enum ModuleKind {
+  site_fit
+  financial
+  risk
+  calibration
+  territory
+  lease
+  daypart
+  whitespace
+  mall
+  healthcare
+  informal
+  land
+  scorecard
+}
+
+enum PoiCategory {
+  competitor
+  anchor
+  transport
+  school
+  hospital
+  clinic
+  diagnostic
+  mall
+  office
+  residential
+  other
+}
+
+enum PoiSource {
+  osm
+  manual
+}
+
+enum MallTier {
+  A
+  B
+  C
+}
+
+enum FootfallBand {
+  very_high
+  high
+  medium
+  low
+}
+
+enum ReportFormat {
+  pdf
+  docx
+}
+
+enum UserRole {
+  admin
+  analyst
+  broker
+  franchisor
+}
+
+enum AiPurpose {
+  verdict
+  summary
+  section
+}
+
+// ============================================================================
+// GROUP 1 — CORE DOMAIN
+// ============================================================================
+
+/// The brand/company that owns the intake. One row per franchisor client.
+/// Truth Layer: n/a — factual client record.
+model Franchisor {
+  id          String   @id @default(uuid()) @db.Uuid
+  brandName   String   @map("brand_name")
+  legalName   String?  @map("legal_name")
+  sector      Sector
+  subCategory String?  @map("sub_category")
+  positioning String?
+  /// Franchise requirements template (fee, investment, space, ROI, staffing, support,
+  /// each with a Truth Layer + source) — imported from the Franchise Intelligence sheets.
+  /// Powers the intake "Use franchise template" auto-prefill. Null = no template.
+  requirements Json?   @map("requirements")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  outlets     Outlet[]
+  intakes     IntakeSubmission[]
+  runs        PipelineRun[]
+  users       AppUser[]
+
+  @@index([sector, subCategory])
+  @@map("franchisor")
+}
+
+/// One completed intake per run. Mirrors the A–K checklist as typed JSONB sections,
+/// not stringified Airtable cells. Truth Layer: field-level via section JSONB metadata.
+model IntakeSubmission {
+  id             String       @id @default(uuid()) @db.Uuid
+  franchisorId   String       @map("franchisor_id") @db.Uuid
+  vertical       Vertical
+  completenessPct Decimal     @default(0) @map("completeness_pct") @db.Decimal(5, 2)
+  sectionA       Json?        @map("section_a")
+  sectionB       Json?        @map("section_b")
+  sectionC       Json?        @map("section_c")
+  sectionD       Json?        @map("section_d")
+  sectionE       Json?        @map("section_e")
+  sectionF       Json?        @map("section_f")
+  sectionG       Json?        @map("section_g") // outlet master summary/meta (rows live in Outlet)
+  sectionH       Json?        @map("section_h")
+  sectionI       Json?        @map("section_i")
+  sectionJ       Json?        @map("section_j")
+  sectionK       Json?        @map("section_k") // governance (audit consent etc.)
+  status         IntakeStatus @default(draft)
+  submittedAt    DateTime?    @map("submitted_at") @db.Timestamptz(6)
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  /// The user who created this intake (run ownership + "My Runs" history).
+  createdByUserId String?     @map("created_by_user_id") @db.Uuid
+  /// Version history: the first intake of a lineage is v1 with no parent; an
+  /// edit-and-rerun creates v2… pointing back to the ORIGINAL intake id.
+  parentIntakeId String?      @map("parent_intake_id") @db.Uuid
+  version        Int          @default(1)
+
+  franchisor     Franchisor   @relation(fields: [franchisorId], references: [id], onDelete: Cascade)
+  run            PipelineRun?
+
+  @@index([franchisorId])
+  @@index([status])
+  @@map("intake_submission")
+}
+
+/// The franchisor's existing branches (intake Section G). Powers calibration AND
+/// Territory Guard cannibalization math. Truth Layer: sales/perf = Assumed unless
+/// franchisor-verified. `geom` = geography(Point,4326) computed from lat/lon on write.
+model Outlet {
+  id             String          @id @default(uuid()) @db.Uuid
+  franchisorId   String          @map("franchisor_id") @db.Uuid
+  outletName     String          @map("outlet_name")
+  format         String?
+  status         OutletStatus    @default(open)
+  lat            Float           @db.DoublePrecision
+  lon            Float           @db.DoublePrecision
+  geom           Unsupported("geography(Point, 4326)")?
+  floorAreaSqm   Decimal?        @map("floor_area_sqm") @db.Decimal(10, 2)
+  monthlySalesPhp Decimal?       @map("monthly_sales_php") @db.Decimal(14, 2)
+  avgTicketPhp   Decimal?        @map("avg_ticket_php") @db.Decimal(10, 2)
+  monthlyRentPhp Decimal?        @map("monthly_rent_php") @db.Decimal(12, 2)
+  performanceTag PerformanceTag? @map("performance_tag")
+  openingDate    DateTime?       @map("opening_date") @db.Date
+  truthLayer     TruthLayer      @default(assumed) @map("truth_layer")
+  createdAt      DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  franchisor     Franchisor      @relation(fields: [franchisorId], references: [id], onDelete: Cascade)
+
+  @@index([franchisorId])
+  @@map("outlet")
+}
+
+/// A location being evaluated in a run. Carries coordinates and the scored result
+/// per pillar. Truth Layer: geom Verified, scores Projected.
+model CandidateSite {
+  id             String          @id @default(uuid()) @db.Uuid
+  pipelineRunId  String          @map("pipeline_run_id") @db.Uuid
+  label          String
+  address        String?
+  barangay       String?
+  city           String?
+  lat            Float           @db.DoublePrecision
+  lon            Float           @db.DoublePrecision
+  geom           Unsupported("geography(Point, 4326)")?
+  siteType       String?         @map("site_type")
+  compositeScore Decimal?        @map("composite_score") @db.Decimal(6, 2)
+  verdict        Verdict?
+  createdAt      DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  run            PipelineRun     @relation(fields: [pipelineRunId], references: [id], onDelete: Cascade)
+  results        ModuleResult[]
+
+  @@index([pipelineRunId])
+  @@map("candidate_site")
+}
+
+// ============================================================================
+// GROUP 2 — REFERENCE DATA (all carry a Truth Layer column)
+// ============================================================================
+
+/// Points of interest — competitor density, footfall proxies, anchors, healthcare.
+/// Sourced from OSM Overpass. Truth Layer: coord Verified, barangay Assumed.
+model Poi {
+  id         BigInt      @id @default(autoincrement())
+  name       String
+  category   PoiCategory
+  lat        Float       @db.DoublePrecision
+  lon        Float       @db.DoublePrecision
+  geom       Unsupported("geography(Point, 4326)")?
+  city       String?
+  barangay   String?
+  source     PoiSource   @default(osm)
+  truthLayer TruthLayer  @default(verified) @map("truth_layer")
+  osmId      BigInt?     @unique @map("osm_id")
+
+  @@index([category])
+  @@map("poi")
+}
+
+/// On-demand POI cache coverage log. Records which (grid cell, vertical) areas have been
+/// fetched from OSM and when — so a report checks here FIRST and only calls Overpass when
+/// an area is uncovered or its data is older than the TTL. The `poi` rows this guards are
+/// shared platform-wide: once any user's report warms a cell, every later report reuses it.
+/// This replaces bulk pre-loading with demand-driven, self-warming, low-API-usage caching.
+model PoiCoverage {
+  id          BigInt   @id @default(autoincrement())
+  /// Grid cell key — lat/lon rounded to ~1.1km (3 decimals) so nearby requests share a cell.
+  cellKey     String   @map("cell_key")
+  /// The vertical/concept whose establishments were fetched for this cell.
+  vertical    String
+  /// Cell centroid (for debugging / re-fetch), and how many POIs the fetch yielded.
+  lat         Float    @db.DoublePrecision
+  lon         Float    @db.DoublePrecision
+  poiCount    Int      @default(0) @map("poi_count")
+  /// When this cell+vertical was last pulled from OSM. Drives TTL-based re-fetch.
+  fetchedAt   DateTime @default(now()) @map("fetched_at") @db.Timestamptz(6)
+  /// Where the coverage came from — 'osm' (live pull) or 'bulk' (pre-warm ingest).
+  source      String   @default("osm")
+
+  @@unique([cellKey, vertical], name: "coverage_cell_vertical")
+  @@index([vertical])
+  @@map("poi_coverage")
+}
+
+/// BIR RDO zonal schedules — tax-reference FLOORS ONLY, never market-price proxies.
+/// Truth Layer: Verified/Assumed per source completeness.
+model ZonalValue {
+  id                 BigInt     @id @default(autoincrement())
+  region             String
+  province           String?
+  cityMunicipality   String     @map("city_municipality")
+  rdo                String?
+  classificationCode String     @map("classification_code")
+  lowPhpSqm          Decimal?   @map("low_php_sqm") @db.Decimal(12, 2)
+  highPhpSqm         Decimal?   @map("high_php_sqm") @db.Decimal(12, 2)
+  truthLayer         TruthLayer @default(verified) @map("truth_layer")
+  notes              String?
+
+  @@unique([region, cityMunicipality, rdo, classificationCode], name: "zonal_natural_key")
+  @@index([region, cityMunicipality])
+  @@map("zonal_value")
+}
+
+/// NEW — Lease Benchmark dataset. Observed lease terms by format, corridor, mall.
+/// Seeded from ARIA + brokers, grows from each run. Truth Layer: Verified comps vs Assumed estimates.
+model LeaseComp {
+  id             BigInt     @id @default(autoincrement())
+  format         String
+  corridor       String
+  mallName       String?    @map("mall_name")
+  baseRentPhpSqm Decimal?   @map("base_rent_php_sqm") @db.Decimal(10, 2)
+  escalationPct  Decimal?   @map("escalation_pct") @db.Decimal(5, 2)
+  cusaPhpSqm     Decimal?   @map("cusa_php_sqm") @db.Decimal(10, 2)
+  leaseTermYears Int?       @map("lease_term_years")
+  fitoutMonths   Int?       @map("fitout_months")
+  observedDate   DateTime?  @map("observed_date") @db.Date
+  truthLayer     TruthLayer @default(verified) @map("truth_layer")
+  sampleSource   String?    @map("sample_source")
+
+  @@index([format, corridor])
+  @@index([mallName])
+  @@map("lease_comp")
+}
+
+/// NEW — Mall Intelligence dataset. Tier, footfall band, rent/CUSA norms, co-tenancy.
+/// Truth Layer: tier Verified, footfall Assumed.
+model MallProperty {
+  id            BigInt       @id @default(autoincrement())
+  mallName      String       @map("mall_name")
+  city          String?
+  tier          MallTier
+  footfallBand  FootfallBand @map("footfall_band")
+  rentBandPhpSqm String?     @map("rent_band_php_sqm")
+  cusaBand      String?      @map("cusa_band")
+  lat           Float?       @db.DoublePrecision
+  lon           Float?       @db.DoublePrecision
+  geom          Unsupported("geography(Point, 4326)")?
+  truthLayer    TruthLayer   @default(assumed) @map("truth_layer")
+
+  @@index([tier])
+  @@map("mall_property")
+}
+
+/// PSA-derived demographics by barangay/grid cell. Powers catchment scoring,
+/// Daypart, White-Space. Truth Layer: PSA Verified, projections Assumed.
+model DemographicCell {
+  id           BigInt     @id @default(autoincrement())
+  psgcCode     String     @unique @map("psgc_code")
+  barangay     String?
+  city         String?
+  population   Int?
+  incomeBand   String?    @map("income_band")
+  ageProfile   Json?      @map("age_profile")
+  renterSharePct Decimal? @map("renter_share_pct") @db.Decimal(5, 2)
+  daytimePop   Int?       @map("daytime_pop")
+  geom         Unsupported("geography(Polygon, 4326)")?
+  truthLayer   TruthLayer @default(verified) @map("truth_layer")
+
+  @@map("demographic_cell")
+}
+
+// ============================================================================
+// GROUP 3 — RUN / OUTPUT
+// ============================================================================
+
+/// One BSL analysis run. Tracks state through the phases; links intake → sites → report.
+/// Truth Layer: run-level confidence = Truth Layer mix.
+model PipelineRun {
+  id                 String        @id @default(uuid()) @db.Uuid
+  intakeSubmissionId String        @unique @map("intake_submission_id") @db.Uuid
+  franchisorId       String        @map("franchisor_id") @db.Uuid
+  vertical           Vertical
+  status             RunStatus     @default(queued)
+  confidence         Confidence?
+  exclusivityRadiusM Int           @default(1500) @map("exclusivity_radius_m")
+  startedAt          DateTime?     @map("started_at") @db.Timestamptz(6)
+  finishedAt         DateTime?     @map("finished_at") @db.Timestamptz(6)
+  createdAt          DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  /// User-facing label for the run so the owner can tell reports apart (auto-generated
+  /// on submit, e.g. "BrewLab Tea — 2 sites — Aug 3, 3:24 PM"; renameable in the UI).
+  name               String?       @map("name")
+  /// Denormalised owner for fast "My Runs" scoping (mirrors intake.createdByUserId).
+  createdByUserId    String?       @map("created_by_user_id") @db.Uuid
+
+  intake             IntakeSubmission @relation(fields: [intakeSubmissionId], references: [id], onDelete: Cascade)
+  franchisor         Franchisor       @relation(fields: [franchisorId], references: [id], onDelete: Cascade)
+  sites              CandidateSite[]
+  results            ModuleResult[]
+  report             Report?
+  generations        AiGeneration[]
+
+  @@index([franchisorId])
+  @@index([status])
+  @@map("pipeline_run")
+}
+
+/// One result per (site × module). How new features plug in without schema churn.
+/// Truth Layer: row-level per module output.
+model ModuleResult {
+  id              String        @id @default(uuid()) @db.Uuid
+  candidateSiteId String        @map("candidate_site_id") @db.Uuid
+  pipelineRunId   String        @map("pipeline_run_id") @db.Uuid
+  module          ModuleKind
+  score           Decimal?      @db.Decimal(6, 2)
+  payload         Json?
+  truthLayer      TruthLayer    @map("truth_layer")
+  flags           String[]      @default([])
+  createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  site            CandidateSite @relation(fields: [candidateSiteId], references: [id], onDelete: Cascade)
+  run             PipelineRun   @relation(fields: [pipelineRunId], references: [id], onDelete: Cascade)
+
+  @@unique([candidateSiteId, module], name: "site_module_key")
+  @@index([module])
+  @@map("module_result")
+}
+
+/// The generated Site Intelligence Report (9 sections). Stores metadata + storage
+/// pointer, not the blob. Truth Layer: inherits run confidence.
+model Report {
+  id            String       @id @default(uuid()) @db.Uuid
+  pipelineRunId String       @unique @map("pipeline_run_id") @db.Uuid
+  storageKey    String?      @map("storage_key")
+  format        ReportFormat @default(pdf)
+  confidence    Confidence?
+  generatedAt   DateTime?    @map("generated_at") @db.Timestamptz(6)
+
+  run           PipelineRun  @relation(fields: [pipelineRunId], references: [id], onDelete: Cascade)
+
+  @@map("report")
+}
+
+// ============================================================================
+// GROUP 4 — AI / SEARCH
+// ============================================================================
+
+/// Retrieve-then-generate substrate. Chunked reference text with embeddings +
+/// tsvector for hybrid semantic+keyword lookup. Truth Layer carried into AI context.
+/// `embedding` = vector(1536); `tsv` = tsvector — both managed in migration SQL.
+model DocChunk {
+  id          BigInt     @id @default(autoincrement())
+  sourceTable String     @map("source_table")
+  sourceId    String     @map("source_id")
+  chunkIndex  Int        @default(0) @map("chunk_index")
+  content     String
+  embedding   Unsupported("vector(1536)")?
+  truthLayer  TruthLayer @map("truth_layer")
+  tsv         Unsupported("tsvector")?
+  createdAt   DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([sourceTable, sourceId, chunkIndex], name: "doc_chunk_natural_key")
+  @@map("doc_chunk")
+}
+
+/// Audit trail of every AI call: what was retrieved, what prompt, what came back.
+/// Keeps AI output traceable and Truth-Layer-honest.
+model AiGeneration {
+  id                String      @id @default(uuid()) @db.Uuid
+  pipelineRunId     String?     @map("pipeline_run_id") @db.Uuid
+  purpose           AiPurpose
+  retrievedChunkIds BigInt[]    @default([]) @map("retrieved_chunk_ids")
+  model             String
+  inputTokens       Int?        @map("input_tokens")
+  outputTokens      Int?        @map("output_tokens")
+  output            String
+  createdAt         DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  run               PipelineRun? @relation(fields: [pipelineRunId], references: [id], onDelete: SetNull)
+
+  @@map("ai_generation")
+}
+
+// ============================================================================
+// GROUP 5 — OPS / GOVERNANCE
+// ============================================================================
+
+/// Grid staff / broker / franchisor accounts. Role-based access; JWT + bcrypt.
+model AppUser {
+  id           String    @id @default(uuid()) @db.Uuid
+  email        String    @unique @db.Citext
+  passwordHash String    @map("password_hash")
+  role         UserRole
+  franchisorId String?   @map("franchisor_id") @db.Uuid
+  /// First-run onboarding tour seen? Drives the guided shout-outs for new users.
+  hasOnboarded Boolean   @default(false) @map("has_onboarded")
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  franchisor   Franchisor? @relation(fields: [franchisorId], references: [id], onDelete: SetNull)
+  auditLogs    AuditLog[]
+
+  @@map("app_user")
+}
+
+/// Who did what, when — governance requirement (intake Section K).
+model AuditLog {
+  id       BigInt   @id @default(autoincrement())
+  actorId  String?  @map("actor_id") @db.Uuid
+  action   String
+  entity   String
+  entityId String?  @map("entity_id")
+  at       DateTime @default(now()) @db.Timestamptz(6)
+  meta     Json?
+
+  actor    AppUser? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([entity, entityId])
+  @@map("audit_log")
+}
+
+/// Competitor set — the cannibalization map. For each anchor brand, `competitors` is the
+/// trade-area competitive set that shares demand (the brands a scaling operator is
+/// cannibalized by / cannibalizes at a candidate site). Sourced from the GPV Franchise
+/// Intelligence Cannibalization Map. `conceptKey` ties the row to the concept engine
+/// (lib/places/competitorRelevance) so Territory Guard can, for a NEW brand with no own
+/// outlets, still read competitive saturation from concept-matching establishments nearby
+/// instead of returning a false 0% overlap. Truth Layer per row (Verified/Assumed/Projected).
+model CompetitorSet {
+  id             BigInt     @id @default(autoincrement())
+  category       String
+  conceptKey     String     @map("concept_key")
+  anchorBrand    String     @unique @map("anchor_brand")
+  parentOperator String?    @map("parent_operator")
+  subSegment     String?    @map("sub_segment")
+  formatTier     String?    @map("format_tier")
+  competitors    String[]   @default([])
+  truthLayer     TruthLayer @default(assumed) @map("truth_layer")
+  notes          String?
+  createdAt      DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([conceptKey])
+  @@map("competitor_set")
+}
+
+/// NCR/Davao corridor traffic + seasonality reference — powers the Land & Traffic screen's
+/// vehicle-traffic band (replacing the earlier POI-count proxy) and the seasonal demand
+/// range. `baseBand` is the ordinary-weekday vehicle-traffic band for the corridor, anchored
+/// to MMDA/DPWH AADT where a figure exists (Assumed) else inferred from context (Projected).
+/// `seasonal` is a JSON map of season -> {low, high} multipliers on commercial-relevant traffic
+/// (Christmas peak, Undas exodus/cemetery-spike, Holy Week dip, payday/school-open uplift) —
+/// all Projected. This is a modelled low/high range, never a live count.
+model TrafficCorridor {
+  id          BigInt       @id @default(autoincrement())
+  corridor    String       @unique
+  baseBand    FootfallBand @map("base_band")
+  aadtRef     Int?         @map("aadt_ref")
+  seasonal    Json
+  truthLayer  TruthLayer   @default(assumed) @map("truth_layer")
+  notes       String?
+  source      String?
+  createdAt   DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("traffic_corridor")
+}

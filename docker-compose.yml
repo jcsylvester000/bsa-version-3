@@ -1,0 +1,29 @@
+# Local Postgres for BSA development.
+# Builds Postgres 16 with BOTH PostGIS and pgvector (see prisma/Dockerfile.postgres),
+# plus pg_trgm and citext via the init script — all four extensions the schema needs.
+# Production runs the same schema on neon.tech (which has pgvector + PostGIS).
+services:
+  db:
+    build:
+      context: .
+      dockerfile: prisma/Dockerfile.postgres
+    image: bsa-postgres:16
+    container_name: bsa_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: bsa
+      POSTGRES_PASSWORD: bsa_local_dev
+      POSTGRES_DB: bsa_dev
+    ports:
+      - '5433:5432'
+    volumes:
+      - bsa_pgdata:/var/lib/postgresql/data
+      - ./prisma/init-extensions.sql:/docker-entrypoint-initdb.d/00-extensions.sql:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U bsa -d bsa_dev']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  bsa_pgdata:

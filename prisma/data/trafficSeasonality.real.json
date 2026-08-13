@@ -1,0 +1,782 @@
+[
+  {
+    "corridor": "BGC",
+    "baseBand": "very_high",
+    "aadtRef": 380000,
+    "truthLayer": "assumed",
+    "seasonal": {
+      "normal": {
+        "low": 1.0,
+        "high": 1.0,
+        "truthLayer": "assumed",
+        "label": "Ordinary weekday"
+      },
+      "payday": {
+        "low": 1.1,
+        "high": 1.25,
+        "truthLayer": "projected",
+        "label": "Payday (15th/30th/Fri) surge"
+      },
+      "holiday": {
+        "low": 0.9,
+        "high": 1.15,
+        "truthLayer": "projected",
+        "label": "Regular public holiday / long weekend"
+      },
+      "christmas": {
+        "low": 1.25,
+        "high": 1.6,
+        "truthLayer": "projected",
+        "label": "Christmas / ber-months peak (Nov 15–Jan 6)"
+      },
+      "undas": {
+        "low": 0.7,
+        "high": 0.9,
+        "truthLayer": "projected",
+        "label": "Undas (All Saints/Souls) — intra-NCR exodus dip"
+      },
+      "holy_week": {
+        "low": 0.55,
+        "high": 0.8,
+        "truthLayer": "projected",
+        "label": "Holy Week — exodus, quieter malls & roads"
+      },
+      "school_open": {
+        "low": 1.05,
+        "high": 1.2,
+        "truthLayer": "projected",
+        "label": "School term-open — campus-corridor uplift"
+      }
+    },
+    "notes": "BGC/EDSA-Kalayaan & C5 access; dense CBD, high vehicle + pedestrian.",
+    "source": "MMDA/DPWH AADT (EDSA ~427k ref) + NCR seasonality (Christmas/Undas/Holy Week) — corridor bands Assumed/Projected; seasonal factors Projected."
+  },
+  {
+    "corridor": "Makati CBD",
+    "baseBand": "very_high",
+    "aadtRef": 400000,
+    "truthLayer": "assumed",
+    "seasonal": {
+      "normal": {
+        "low": 1.0,
+        "high": 1.0,
+        "truthLayer": "assumed",
+        "label": "Ordinary weekday"
+      },
+      "payday": {
+        "low": 1.1,
+        "high": 1.25,
+        "truthLayer": "projected",
+        "label": "Payday (15th/30th/Fri) surge"
+      },
+      "holiday": {
+        "low": 0.9,
+        "high": 1.15,
+        "truthLayer": "projected",
+        "label": "Regular public holiday / long weekend"
+      },
+      "christmas": {
+        "low": 1.25,
+        "high": 1.6,
+        "truthLayer": "projected",
+        "label": "Christmas / ber-months peak (Nov 15–Jan 6)"
+      },
+      "undas": {
+        "low": 0.7,
+        "high": 0.9,
+        "truthLayer": "projected",
+        "label": "Undas (All Saints/Souls) — intra-NCR exodus dip"
+      },
+      "holy_week": {
+        "low": 0.55,
+        "high": 0.8,
+        "truthLayer": "projected",
+        "label": "Holy Week — exodus, quieter malls & roads"
+      },
+      "school_open": {
+        "low": 1.05,
+        "high": 1.2,
+        "truthLayer": "projected",
+        "label": "School term-open — campus-corridor uplift"
+      }
+    },
+    "notes": "Ayala Ave/EDSA-Makati; among the busiest NCR corridors.",
+    "source": "MMDA/DPWH AADT (EDSA ~427k ref) + NCR seasonality (Christmas/Undas/Holy Week) — corridor bands Assumed/Projected; seasonal factors Projected."
+  },
+  {
+    "corridor": "Ortigas",
+    "baseBand": "very_high",
+    "aadtRef": 360000,
+    "truthLayer": "assumed",
+    "seasonal": {
+      "normal": {
+        "low": 1.0,
+        "high": 1.0,
+        "truthLayer": "assumed",
+        "label": "Ordinary weekday"
+      },
+      "payday": {
+        "low": 1.1,
+        "high": 1.25,
+        "truthLayer": "projected",
+        "label": "Payday (15th/30th/Fri) surge"
+      },
+      "holiday": {
+        "low": 0.9,
+        "high": 1.15,
+        "truthLayer": "projected",
+        "label": "Regular public holiday / long weekend"
+      },
+      "christmas": {
+        "low": 1.25,
+        "high": 1.6,
+        "truthLayer": "projected",
+        "label": "Christmas / ber-months peak (Nov 15–Jan 6)"
+      },
+      "undas": {
+        "low": 0.7,
+        "high": 0.9,
+        "truthLayer": "projected",
+        "label": "Undas (All Saints/Souls) — intra-NCR exodus dip"
+      },
+      "holy_week": {
+        "low": 0.55,
+        "high": 0.8,
+        "truthLayer": "projected",
+        "label": "Holy Week — exodus, quieter malls & roads"
+      },
+      "school_open": {
+        "low": 1.05,
+        "high": 1.2,
+        "truthLayer": "projected",
+        "label": "School term-open — campus-corridor uplift"
+      }
+    },
+    "notes": "EDSA-Ortigas/Shaw; major CBD interchange.",
+    "source": "MMDA/DPWH AADT (EDSA ~427k ref) + NCR seasonality (Christmas/Undas/Holy Week) — corridor bands Assumed/Projected; seasonal factors Projected."
+  },
+  {
+    "corridor": "Quezon City",
+    "baseBand": "very_high",
+    "aadtRef": 427000,
+    "truthLayer": "assumed",
+    "seasonal": {
+      "normal": {
+        "low": 1.0,
+        "high": 1.0,
+        "truthLayer": "assumed",
+        "label": "Ordinary weekday"
+      },
+      "payday": {
+        "low": 1.1,
+        "high": 1.25,
+        "truthLayer": "projected",
+        "label": "Payday (15th/30th/Fri) surge"
+      },
+      "holiday": {
+        "low": 0.9,
+        "high": 1.15,
+        "truthLayer": "projected",
+        "label": "Regular public holiday / long weekend"
+      },
+      "christmas": {
+        "low": 1.25,
+        "high": 1.6,
+        "truthLayer": "projected",
+        "label": "Christmas / ber-months peak (Nov 15–Jan 6)"
+      },
+      "undas": {
+        "low": 1.2,
+        "high": 1.45,
+        "truthLayer": "projected",
+        "label": "Undas (All Saints/Souls) — intra-NCR exodus dip"
+      },
+      "holy_week": {
+        "low": 0.55,
+        "high": 0.8,
+        "truthLayer": "projected",
+        "label": "Holy Week — exodus, quieter malls & roads"
+      },
+      "school_open": {
+        "low": 1.05,
+        "high": 1.2,
+        "truthLayer": "projected",
+        "label": "School term-open — campus-corridor uplift"
+      }
+    },
+    "notes": "EDSA-Cubao/Commonwealth/Quezon Ave; EDSA AADT ~427k (MMDA).",
+    "source": "MMDA/DPWH AADT (EDSA ~427k ref) + NCR seasonality (Christmas/Undas/Holy Week) — corridor bands Assumed/Projected; seasonal factors Projected."
+  },
+  {
+    "corridor": "Mandaluyong",
+    "baseBand": "high",
+    "aadtRef": 300000,
+    "truthLayer": "assumed",
+    "seasonal": {
+      "normal": {
+        "low": 1.0,
+        "high": 1.0,
+        "truthLayer": "assumed",
+        "label": "Ordinary weekday"
+      },
+      "payday": {
+        "low": 1.1,
+        "high": 1.25,
+        "truthLayer": "projected",
+        "label": "Payday (15th/30th/Fri) surge"
+      },
+      "holiday": {
+        "low": 0.9,
+        "high": 1.15,
+        "truthLayer": "projected",
+        "label": "Regular public holiday / long weekend"
+      },
+      "christmas": {
+        "low": 1.25,
+        "high": 1.6,
+        "truthLayer": "projected",
+        "label": "Christmas / ber-months peak (Nov 15–Jan 6)"
+      },
+      "undas": {
+        "low": 0.7,
+        "high": 0.9,
+        "truthLayer": "projected",
+        "label": "Undas (All Saints/Souls) — intra-NCR exodus dip"
+      },
+      "holy_week": {
+        "low": 0.55,
+        "high": 0.8,
+        "truthLayer": "projected",
+        "label": "Holy Week — exodus, quieter malls & roads"
+      },
+      "school_open": {
+        "low": 1.05,
+        "high": 1.2,
+        "truthLayer": "projected",
+        "label": "School term-open — campus-corridor uplift"
+      }
+    },
+    "notes": "EDSA-Boni/Shaw/Pioneer; heavy through-traffic.",
+    "source": "MMDA/DPWH AADT (EDSA ~427k ref) + NCR seasonality (Christmas/Undas/Holy Week) — corridor bands Assumed/Projected; seasonal factors Projected."
+  },
+  {
+    "corridor": "Manila",
+    "baseBand": "high",
+    "aadtRef": 280000,
+    "truthLayer": "assumed",
+    "seasonal": {
+      "normal": {
+        "low": 1.0,
+        "high": 1.0,
+        "truthLayer": "assumed",
+        "label": "Ordinary weekday"
+      },
+      "payday": {
+        "low": 1.1,
+        "high": 1.25,
+        "truthLayer": "projected",
+        "label": "Payday (15th/30th/Fri) surge"
+      },
+      "holiday": {
+        "low": 0.9,
+        "high": 1.15,
+        "truthLayer": "projected",
+        "label": "Regular public holiday / long weekend"
+      },
+      "christmas": {
+        "low": 1.25,
+        "high": 1.6,
+        "truthLayer": "projected",
+        "label": "Christmas / ber-months peak (Nov 15–Jan 6)"
+      },
+      "undas": {
+        "low": 1.2,
+        "high": 1.45,
+        "truthLayer": "projected",
+        "label": "Undas (All Saints/Souls) — intra-NCR exodus dip"
+      },
+      "holy_week": {
+        "low": 0.55,
+        "high": 0.8,
+        "truthLayer": "projected",
+        "label": "Holy Week — exodus, quieter malls & roads"
+      },
+      "school_open": {
+        "low": 1.05,
+        "high": 1.2,
+        "truthLayer": "projected",
+        "label": "School term-open — campus-corridor uplift"
+      }
+    },
+    "notes": "España/Quiapo/Taft; dense mixed commercial + campus.",
+    "source": "MMDA/DPWH AADT (EDSA ~427k ref) + NCR seasonality (Christmas/Undas/Holy Week) — corridor bands Assumed/Projected; seasonal factors Projected."
+  },
+  {
+    "corridor": "Pasay Bay Area",
+    "baseBand": "high",
+    "aadtRef": 260000,
+    "truthLayer": "assumed",
+    "seasonal": {
+      "normal": {
+        "low": 1.0,
+        "high": 1.0,
+        "truthLayer": "assumed",
+        "label": "Ordinary weekday"
+      },
+      "payday": {
+        "low": 1.1,
+        "high": 1.25,
+        "truthLayer": "projected",
+        "label": "Payday (15th/30th/Fri) surge"
+      },
+      "holiday": {
+        "low": 0.9,
+        "high": 1.15,
+        "truthLayer": "projected",
+        "label": "Regular public holiday / long weekend"
+      },
+      "christmas": {
+        "low": 1.25,
+        "high": 1.6,
+        "truthLayer": "projected",
+        "label": "Christmas / ber-months peak (Nov 15–Jan 6)"
+      },
+      "undas": {
+        "low": 0.7,
+        "high": 0.9,
+        "truthLayer": "projected",
+        "label": "Undas (All Saints/Souls) — intra-NCR exodus dip"
+      },
+      "holy_week": {
+        "low": 0.55,
+        "high": 0.8,
+        "truthLayer": "projected",
+        "label": "Holy Week — exodus, quieter malls & roads"
+      },
+      "school_open": {
+        "low": 1.05,
+        "high": 1.2,
+        "truthLayer": "projected",
+        "label": "School term-open — campus-corridor uplift"
+      }
+    },
+    "notes": "Roxas Blvd/MOA/Aseana; entertainment + reclamation.",
+    "source": "MMDA/DPWH AADT (EDSA ~427k ref) + NCR seasonality (Christmas/Undas/Holy Week) — corridor bands Assumed/Projected; seasonal factors Projected."
+  },
+  {
+    "corridor": "Alabang",
+    "baseBand": "high",
+    "aadtRef": 240000,
+    "truthLayer": "assumed",
+    "seasonal": {
+      "normal": {
+        "low": 1.0,
+        "high": 1.0,
+        "truthLayer": "assumed",
+        "label": "Ordinary weekday"
+      },
+      "payday": {
+        "low": 1.1,
+        "high": 1.25,
+        "truthLayer": "projected",
+        "label": "Payday (15th/30th/Fri) surge"
+      },
+      "holiday": {
+        "low": 0.9,
+        "high": 1.15,
+        "truthLayer": "projected",
+        "label": "Regular public holiday / long weekend"
+      },
+      "christmas": {
+        "low": 1.25,
+        "high": 1.6,
+        "truthLayer": "projected",
+        "label": "Christmas / ber-months peak (Nov 15–Jan 6)"
+      },
+      "undas": {
+        "low": 0.7,
+        "high": 0.9,
+        "truthLayer": "projected",
+        "label": "Undas (All Saints/Souls) — intra-NCR exodus dip"
+      },
+      "holy_week": {
+        "low": 0.55,
+        "high": 0.8,
+        "truthLayer": "projected",
+        "label": "Holy Week — exodus, quieter malls & roads"
+      },
+      "school_open": {
+        "low": 1.05,
+        "high": 1.2,
+        "truthLayer": "projected",
+        "label": "School term-open — campus-corridor uplift"
+      }
+    },
+    "notes": "Alabang-Zapote/SLEX gateway; southern retail belt.",
+    "source": "MMDA/DPWH AADT (EDSA ~427k ref) + NCR seasonality (Christmas/Undas/Holy Week) — corridor bands Assumed/Projected; seasonal factors Projected."
+  },
+  {
+    "corridor": "San Juan",
+    "baseBand": "medium",
+    "aadtRef": 120000,
+    "truthLayer": "projected",
+    "seasonal": {
+      "normal": {
+        "low": 1.0,
+        "high": 1.0,
+        "truthLayer": "assumed",
+        "label": "Ordinary weekday"
+      },
+      "payday": {
+        "low": 1.1,
+        "high": 1.25,
+        "truthLayer": "projected",
+        "label": "Payday (15th/30th/Fri) surge"
+      },
+      "holiday": {
+        "low": 0.9,
+        "high": 1.15,
+        "truthLayer": "projected",
+        "label": "Regular public holiday / long weekend"
+      },
+      "christmas": {
+        "low": 1.25,
+        "high": 1.6,
+        "truthLayer": "projected",
+        "label": "Christmas / ber-months peak (Nov 15–Jan 6)"
+      },
+      "undas": {
+        "low": 0.7,
+        "high": 0.9,
+        "truthLayer": "projected",
+        "label": "Undas (All Saints/Souls) — intra-NCR exodus dip"
+      },
+      "holy_week": {
+        "low": 0.55,
+        "high": 0.8,
+        "truthLayer": "projected",
+        "label": "Holy Week — exodus, quieter malls & roads"
+      },
+      "school_open": {
+        "low": 1.05,
+        "high": 1.2,
+        "truthLayer": "projected",
+        "label": "School term-open — campus-corridor uplift"
+      }
+    },
+    "notes": "Greenhills/Wilson; compact commercial, moderate flow.",
+    "source": "MMDA/DPWH AADT (EDSA ~427k ref) + NCR seasonality (Christmas/Undas/Holy Week) — corridor bands Assumed/Projected; seasonal factors Projected."
+  },
+  {
+    "corridor": "Marikina",
+    "baseBand": "medium",
+    "aadtRef": 140000,
+    "truthLayer": "projected",
+    "seasonal": {
+      "normal": {
+        "low": 1.0,
+        "high": 1.0,
+        "truthLayer": "assumed",
+        "label": "Ordinary weekday"
+      },
+      "payday": {
+        "low": 1.1,
+        "high": 1.25,
+        "truthLayer": "projected",
+        "label": "Payday (15th/30th/Fri) surge"
+      },
+      "holiday": {
+        "low": 0.9,
+        "high": 1.15,
+        "truthLayer": "projected",
+        "label": "Regular public holiday / long weekend"
+      },
+      "christmas": {
+        "low": 1.25,
+        "high": 1.6,
+        "truthLayer": "projected",
+        "label": "Christmas / ber-months peak (Nov 15–Jan 6)"
+      },
+      "undas": {
+        "low": 0.7,
+        "high": 0.9,
+        "truthLayer": "projected",
+        "label": "Undas (All Saints/Souls) — intra-NCR exodus dip"
+      },
+      "holy_week": {
+        "low": 0.55,
+        "high": 0.8,
+        "truthLayer": "projected",
+        "label": "Holy Week — exodus, quieter malls & roads"
+      },
+      "school_open": {
+        "low": 1.05,
+        "high": 1.2,
+        "truthLayer": "projected",
+        "label": "School term-open — campus-corridor uplift"
+      }
+    },
+    "notes": "Marcos Hwy/Sumulong; suburban commercial.",
+    "source": "MMDA/DPWH AADT (EDSA ~427k ref) + NCR seasonality (Christmas/Undas/Holy Week) — corridor bands Assumed/Projected; seasonal factors Projected."
+  },
+  {
+    "corridor": "Las Piñas",
+    "baseBand": "medium",
+    "aadtRef": 160000,
+    "truthLayer": "projected",
+    "seasonal": {
+      "normal": {
+        "low": 1.0,
+        "high": 1.0,
+        "truthLayer": "assumed",
+        "label": "Ordinary weekday"
+      },
+      "payday": {
+        "low": 1.1,
+        "high": 1.25,
+        "truthLayer": "projected",
+        "label": "Payday (15th/30th/Fri) surge"
+      },
+      "holiday": {
+        "low": 0.9,
+        "high": 1.15,
+        "truthLayer": "projected",
+        "label": "Regular public holiday / long weekend"
+      },
+      "christmas": {
+        "low": 1.25,
+        "high": 1.6,
+        "truthLayer": "projected",
+        "label": "Christmas / ber-months peak (Nov 15–Jan 6)"
+      },
+      "undas": {
+        "low": 0.7,
+        "high": 0.9,
+        "truthLayer": "projected",
+        "label": "Undas (All Saints/Souls) — intra-NCR exodus dip"
+      },
+      "holy_week": {
+        "low": 0.55,
+        "high": 0.8,
+        "truthLayer": "projected",
+        "label": "Holy Week — exodus, quieter malls & roads"
+      },
+      "school_open": {
+        "low": 1.05,
+        "high": 1.2,
+        "truthLayer": "projected",
+        "label": "School term-open — campus-corridor uplift"
+      }
+    },
+    "notes": "Alabang-Zapote/CAA; southern corridor.",
+    "source": "MMDA/DPWH AADT (EDSA ~427k ref) + NCR seasonality (Christmas/Undas/Holy Week) — corridor bands Assumed/Projected; seasonal factors Projected."
+  },
+  {
+    "corridor": "CAMANAVA",
+    "baseBand": "medium",
+    "aadtRef": 180000,
+    "truthLayer": "projected",
+    "seasonal": {
+      "normal": {
+        "low": 1.0,
+        "high": 1.0,
+        "truthLayer": "assumed",
+        "label": "Ordinary weekday"
+      },
+      "payday": {
+        "low": 1.1,
+        "high": 1.25,
+        "truthLayer": "projected",
+        "label": "Payday (15th/30th/Fri) surge"
+      },
+      "holiday": {
+        "low": 0.9,
+        "high": 1.15,
+        "truthLayer": "projected",
+        "label": "Regular public holiday / long weekend"
+      },
+      "christmas": {
+        "low": 1.25,
+        "high": 1.6,
+        "truthLayer": "projected",
+        "label": "Christmas / ber-months peak (Nov 15–Jan 6)"
+      },
+      "undas": {
+        "low": 1.2,
+        "high": 1.45,
+        "truthLayer": "projected",
+        "label": "Undas (All Saints/Souls) — intra-NCR exodus dip"
+      },
+      "holy_week": {
+        "low": 0.55,
+        "high": 0.8,
+        "truthLayer": "projected",
+        "label": "Holy Week — exodus, quieter malls & roads"
+      },
+      "school_open": {
+        "low": 1.05,
+        "high": 1.2,
+        "truthLayer": "projected",
+        "label": "School term-open — campus-corridor uplift"
+      }
+    },
+    "notes": "MacArthur Hwy/Samson/Letre; north commercial + flood-prone.",
+    "source": "MMDA/DPWH AADT (EDSA ~427k ref) + NCR seasonality (Christmas/Undas/Holy Week) — corridor bands Assumed/Projected; seasonal factors Projected."
+  },
+  {
+    "corridor": "Pateros",
+    "baseBand": "low",
+    "aadtRef": 45000,
+    "truthLayer": "projected",
+    "seasonal": {
+      "normal": {
+        "low": 1.0,
+        "high": 1.0,
+        "truthLayer": "assumed",
+        "label": "Ordinary weekday"
+      },
+      "payday": {
+        "low": 1.1,
+        "high": 1.25,
+        "truthLayer": "projected",
+        "label": "Payday (15th/30th/Fri) surge"
+      },
+      "holiday": {
+        "low": 0.9,
+        "high": 1.15,
+        "truthLayer": "projected",
+        "label": "Regular public holiday / long weekend"
+      },
+      "christmas": {
+        "low": 1.25,
+        "high": 1.6,
+        "truthLayer": "projected",
+        "label": "Christmas / ber-months peak (Nov 15–Jan 6)"
+      },
+      "undas": {
+        "low": 0.7,
+        "high": 0.9,
+        "truthLayer": "projected",
+        "label": "Undas (All Saints/Souls) — intra-NCR exodus dip"
+      },
+      "holy_week": {
+        "low": 0.55,
+        "high": 0.8,
+        "truthLayer": "projected",
+        "label": "Holy Week — exodus, quieter malls & roads"
+      },
+      "school_open": {
+        "low": 1.05,
+        "high": 1.2,
+        "truthLayer": "projected",
+        "label": "School term-open — campus-corridor uplift"
+      }
+    },
+    "notes": "Small LGU; local streets, low vehicle volume.",
+    "source": "MMDA/DPWH AADT (EDSA ~427k ref) + NCR seasonality (Christmas/Undas/Holy Week) — corridor bands Assumed/Projected; seasonal factors Projected."
+  },
+  {
+    "corridor": "Davao City",
+    "baseBand": "high",
+    "aadtRef": 160000,
+    "truthLayer": "assumed",
+    "seasonal": {
+      "normal": {
+        "low": 1.0,
+        "high": 1.0,
+        "truthLayer": "assumed",
+        "label": "Ordinary weekday"
+      },
+      "payday": {
+        "low": 1.1,
+        "high": 1.25,
+        "truthLayer": "projected",
+        "label": "Payday (15th/30th/Fri) surge"
+      },
+      "holiday": {
+        "low": 0.9,
+        "high": 1.15,
+        "truthLayer": "projected",
+        "label": "Regular public holiday / long weekend"
+      },
+      "christmas": {
+        "low": 1.25,
+        "high": 1.6,
+        "truthLayer": "projected",
+        "label": "Christmas / ber-months peak (Nov 15–Jan 6)"
+      },
+      "undas": {
+        "low": 0.7,
+        "high": 0.9,
+        "truthLayer": "projected",
+        "label": "Undas (All Saints/Souls) — intra-NCR exodus dip"
+      },
+      "holy_week": {
+        "low": 0.55,
+        "high": 0.8,
+        "truthLayer": "projected",
+        "label": "Holy Week — exodus, quieter malls & roads"
+      },
+      "school_open": {
+        "low": 1.05,
+        "high": 1.2,
+        "truthLayer": "projected",
+        "label": "School term-open — campus-corridor uplift"
+      }
+    },
+    "notes": "C.M. Recto/JP Laurel/Quimpo; Davao commercial core.",
+    "source": "MMDA/DPWH AADT (EDSA ~427k ref) + NCR seasonality (Christmas/Undas/Holy Week) — corridor bands Assumed/Projected; seasonal factors Projected."
+  },
+  {
+    "corridor": "Davao Provinces",
+    "baseBand": "medium",
+    "aadtRef": 70000,
+    "truthLayer": "projected",
+    "seasonal": {
+      "normal": {
+        "low": 1.0,
+        "high": 1.0,
+        "truthLayer": "assumed",
+        "label": "Ordinary weekday"
+      },
+      "payday": {
+        "low": 1.1,
+        "high": 1.25,
+        "truthLayer": "projected",
+        "label": "Payday (15th/30th/Fri) surge"
+      },
+      "holiday": {
+        "low": 0.9,
+        "high": 1.15,
+        "truthLayer": "projected",
+        "label": "Regular public holiday / long weekend"
+      },
+      "christmas": {
+        "low": 1.25,
+        "high": 1.6,
+        "truthLayer": "projected",
+        "label": "Christmas / ber-months peak (Nov 15–Jan 6)"
+      },
+      "undas": {
+        "low": 0.7,
+        "high": 0.9,
+        "truthLayer": "projected",
+        "label": "Undas (All Saints/Souls) — intra-NCR exodus dip"
+      },
+      "holy_week": {
+        "low": 0.55,
+        "high": 0.8,
+        "truthLayer": "projected",
+        "label": "Holy Week — exodus, quieter malls & roads"
+      },
+      "school_open": {
+        "low": 1.05,
+        "high": 1.2,
+        "truthLayer": "projected",
+        "label": "School term-open — campus-corridor uplift"
+      }
+    },
+    "notes": "Provincial highways; lower density than city core.",
+    "source": "MMDA/DPWH AADT (EDSA ~427k ref) + NCR seasonality (Christmas/Undas/Holy Week) — corridor bands Assumed/Projected; seasonal factors Projected."
+  }
+]

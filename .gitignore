@@ -1,0 +1,39 @@
+# dependencies
+/node_modules
+/.pnp
+.pnp.js
+
+# next
+/.next/
+/out/
+next-env.d.ts
+
+# production
+/build
+
+# secrets — never commit
+.env
+.env*.local
+.env.production
+
+# prisma
+/prisma/*.db
+
+# local object storage (dev)
+/.storage
+
+# misc
+.DS_Store
+*.pem
+/coverage
+*.log
+npm-debug.log*
+
+# editor
+.vscode/*
+!.vscode/extensions.json
+.idea
+
+# session scratch (do not publish)
+/_to_delete
+/.storage

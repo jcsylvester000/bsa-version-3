@@ -1,0 +1,6 @@
+[
+  { "region": "NCR", "province": "Metro Manila", "city_municipality": "Taguig", "rdo": "RDO 44", "classification_code": "CR", "low_php_sqm": 55000, "high_php_sqm": 95000, "notes": "BGC commercial" },
+  { "region": "NCR", "province": "Metro Manila", "city_municipality": "Taguig", "rdo": "RDO 44", "classification_code": "RR", "low_php_sqm": 30000, "high_php_sqm": 60000, "notes": "BGC residential" },
+  { "region": "NCR", "province": "Metro Manila", "city_municipality": "Makati", "rdo": "RDO 47", "classification_code": "CR", "low_php_sqm": 60000, "high_php_sqm": 110000, "notes": "Ayala CBD" },
+  { "region": "NCR", "province": "Metro Manila", "city_municipality": "Pasig", "rdo": "RDO 43", "classification_code": "CR", "low_php_sqm": 40000, "high_php_sqm": null, "notes": "Ortigas partial" }
+]

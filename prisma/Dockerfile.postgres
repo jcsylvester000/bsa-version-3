@@ -1,0 +1,13 @@
+# Local dev Postgres for BSA — PostGIS + pgvector on Postgres 16.
+#
+# The official postgis/postgis image already ships PostGIS, pg_trgm and citext and
+# uses the PostgreSQL apt repository (PGDG), which carries pgvector. We install
+# pgvector on top so the schema's `CREATE EXTENSION vector` works. All four
+# extensions the schema needs (vector, postgis, pg_trgm, citext) are then present.
+#
+# Production (neon.tech) already provides pgvector + PostGIS, so this is dev-only.
+FROM postgis/postgis:16-3.4
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends postgresql-16-pgvector \
+    && rm -rf /var/lib/apt/lists/*

@@ -1,0 +1,12 @@
+[
+  { "osm_id": 1001, "name": "Chatime BGC", "category": "competitor", "lat": 14.5520, "lon": 121.0490, "city": "Taguig", "barangay": "Fort Bonifacio" },
+  { "osm_id": 1002, "name": "Coco Fresh BGC", "category": "competitor", "lat": 14.5548, "lon": 121.0512, "city": "Taguig", "barangay": "Fort Bonifacio" },
+  { "osm_id": 1003, "name": "Macao Imperial Uptown", "category": "competitor", "lat": 14.5559, "lon": 121.0528, "city": "Taguig", "barangay": "Fort Bonifacio" },
+  { "osm_id": 1004, "name": "Serenitea High Street", "category": "competitor", "lat": 14.5501, "lon": 121.0480, "city": "Taguig", "barangay": "Fort Bonifacio" },
+  { "osm_id": 1005, "name": "SM Aura", "category": "mall", "lat": 14.5470, "lon": 121.0553, "city": "Taguig", "barangay": "Fort Bonifacio" },
+  { "osm_id": 1006, "name": "Market! Market!", "category": "mall", "lat": 14.5490, "lon": 121.0560, "city": "Taguig", "barangay": "Fort Bonifacio" },
+  { "osm_id": 1007, "name": "BGC Bus Stop 7th Ave", "category": "transport", "lat": 14.5555, "lon": 121.0500, "city": "Taguig", "barangay": "Fort Bonifacio" },
+  { "osm_id": 1008, "name": "International School Manila", "category": "school", "lat": 14.5498, "lon": 121.0553, "city": "Taguig", "barangay": "Fort Bonifacio" },
+  { "osm_id": 1009, "name": "St. Luke's BGC", "category": "hospital", "lat": 14.5540, "lon": 121.0470, "city": "Taguig", "barangay": "Fort Bonifacio" },
+  { "osm_id": 1001, "name": "Chatime BGC (dup)", "category": "competitor", "lat": 14.5520, "lon": 121.0490, "city": "Taguig", "barangay": "Fort Bonifacio" }
+]
