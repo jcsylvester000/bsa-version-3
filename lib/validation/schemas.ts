@@ -101,7 +101,7 @@ export const intakeSubmitSchema = z.object({
   vertical: z.enum(VERTICALS),
   sections: z.record(z.string(), z.unknown()).default({}),
   outlets: z.array(outletInputSchema).default([]),
-  candidateSites: z.array(candidateSiteInputSchema).min(1),
+  candidateSites: z.array(candidateSiteInputSchema).min(1).max(5, 'A run can evaluate at most 5 candidate sites.'),
   /// Set when this is an edit-and-rerun → creates a new version linked to the original.
   parentIntakeId: z.string().uuid().optional(),
 }).refine((v) => !!v.franchisorId || !!v.independent, {

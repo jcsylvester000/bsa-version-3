@@ -683,7 +683,11 @@ export function SteppedIntakeWizard({ franchisors, mockMode = false, mockRunId, 
               </div>
             ))}
           </div>
-          <button onClick={() => setCandidates((cs) => [...cs, { label: '', address: '', city: '', lat: '', lon: '', siteType: 'inline' }])} className="mt-2 text-sm text-accent hover:underline">+ Add another site</button>
+          {candidates.length < 5 ? (
+            <button onClick={() => setCandidates((cs) => (cs.length >= 5 ? cs : [...cs, { label: '', address: '', city: '', lat: '', lon: '', siteType: 'inline' }]))} className="mt-2 text-sm text-accent hover:underline">+ Add another site ({candidates.length}/5)</button>
+          ) : (
+            <p className="mt-2 text-xs text-ink-muted">Maximum of 5 candidate sites per run reached.</p>
+          )}
         </div>
       )}
 
