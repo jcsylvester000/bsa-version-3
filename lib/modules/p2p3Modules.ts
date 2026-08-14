@@ -83,7 +83,8 @@ export async function runDaypart(runId: string, siteId: string, vertical: string
   if (seasonality.peakSeason) flags.push(`season_peak_${seasonality.peakSeason.season}`);
 
   // Peak-hour mix + seasonality are Projected.
-  await persist(runId, siteId, 'daypart', r.windowMatchPct, { ...r, demographicRadiusM: usedRadius, seasonality, corridor: corridorName ?? null }, 'projected', flags);
+  const noCatchmentData = res + day === 0;
+  await persist(runId, siteId, 'daypart', r.windowMatchPct, { ...r, demographicRadiusM: usedRadius, noCatchmentData, seasonality, corridor: corridorName ?? null }, 'projected', flags);
 }
 
 export async function runInformal(runId: string, siteId: string, vertical: string, units?: number | null): Promise<void> {

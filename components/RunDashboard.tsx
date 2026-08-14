@@ -75,7 +75,7 @@ export function RunDashboard({
       {/* KPI tiles */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatTile label="Sites cleared GO" value={data.sitesCleared.go} sub={`of ${data.sitesCleared.total} · ${data.sitesCleared.flagged} flagged`} accent="go" />
-        <StatTile label="Top site fit" value={data.topSiteFit.score != null ? `${Math.round(data.topSiteFit.score)}` : '—'} sub={data.topSiteFit.site ?? 'run the pipeline'} accent="accent" />
+        <StatTile label="Top site fit" value={data.topSiteFit.score != null ? `${Math.round(data.topSiteFit.score)}` : '—'} sub={data.topSiteFit.score != null ? (data.topSiteFit.site ?? '') : (data.topSiteFit.note ?? 'run the pipeline')} accent="accent" />
         <StatTile label="Territory conflicts" value={data.territoryConflicts} sub="overlap with existing outlets" accent={data.territoryConflicts > 0 ? 'nogo' : 'go'} />
         <StatTile label="Lease outliers" value={data.leaseOutliers} sub="above corridor benchmark" accent={data.leaseOutliers > 0 ? 'caution' : 'go'} />
       </div>

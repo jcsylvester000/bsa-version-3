@@ -18,7 +18,7 @@ export interface SiteModulePayloads {
     competitorMix?: { direct: number; adjacent: number; unrelated: number };
     weightedCompetitorCount?: number; conceptLabel?: string;
     headlineSource?: 'own' | 'competitive' | 'none';
-    competitorSet?: { anchorBrand: string; competitors: string[]; truthLayer: string } | null;
+    competitorSet?: { anchorBrand: string; competitors: string[]; truthLayer: string; subjectBrand?: string | null } | null;
     verdict?: 'adds' | 'mixed' | 'redistributes'; candidateCatchmentM?: number;
     affectedOutlets?: Array<{ outletName: string; overlapPct: number; distanceM: number }>;
     realCompetitors?: Array<{ name: string; lat: number; lon: number }>;
@@ -33,7 +33,7 @@ export interface SiteModulePayloads {
   } | null;
   daypart: {
     daytimeShare?: number; windowMatchPct?: number; hourly?: number[]; peakHour?: number;
-    verdict?: string; corridor?: string | null;
+    verdict?: string; corridor?: string | null; noCatchmentData?: boolean;
     seasonality?: {
       peakSeason?: { season: string; label: string; low: number; high: number } | null;
       troughSeason?: { season: string; label: string; low: number; high: number } | null;
@@ -246,7 +246,9 @@ function TerritoryTab({ site, outlets, p, primary = true }: { site: { lat: numbe
           <div className="card p-5">
             <p className="mb-1 text-sm font-medium text-ink-text">Competes with</p>
             <p className="mb-2 text-[11px] text-ink-muted">
-              Cannibalization set for {p.competitorSet.anchorBrand} ({p.competitorSet.truthLayer})
+              {p.competitorSet.subjectBrand
+                ? `Competitor set for ${p.competitorSet.subjectBrand} — ${p.competitorSet.anchorBrand}-class rivals (${p.competitorSet.truthLayer})`
+                : `Reference competitor set — ${p.competitorSet.anchorBrand}-class (${p.competitorSet.truthLayer})`}
             </p>
             <div className="flex flex-wrap gap-1.5">
               {p.competitorSet.competitors.slice(0, 10).map((c, i) => (
@@ -427,6 +429,10 @@ function LeaseTab({ p, primary = true }: { p: SiteModulePayloads['lease']; prima
 /* ---- Daypart ------------------------------------------------------------ */
 function DaypartTab({ p, primary = true }: { p: SiteModulePayloads['daypart']; primary?: boolean }) {
   if (!p) return <RerunNote module="Daypart Demand" />;
+  // Honest degrade: with no demographic (daytime-population) layer in range, the
+  // daytime/residential split can't be derived. Show that plainly instead of a false
+  // "0% daytime" curve. Seasonality below is corridor-modelled and still valid.
+  const noData = p.noCatchmentData === true;
   const share = p.daytimeShare ?? 50;
   const officeLed = share >= 50;
   // Round for display so a 84.3 daytime share doesn't render its residential
@@ -439,13 +445,26 @@ function DaypartTab({ p, primary = true }: { p: SiteModulePayloads['daypart']; p
     <div>
     {!primary && <ContextualNote module="Daypart Demand" />}
     <div className="grid gap-5 lg:grid-cols-3">
-      <div className="card p-5 lg:col-span-2">
-        <p className="mb-3 text-sm font-medium text-ink-text">Demand across the day · {officeLed ? 'office-led (midday peak)' : 'residential (evening peak)'}</p>
-        <DaypartCurve data={data} />
-      </div>
+      {noData ? (
+        <div className="card p-5 lg:col-span-2">
+          <p className="mb-2 text-sm font-medium text-ink-text">Demand across the day</p>
+          <p className="text-sm text-ink-muted">The daytime-vs-residential split for this catchment isn&apos;t derived — the demographic (daytime-population) layer isn&apos;t loaded for this location. Rather than show a false 0% curve, the app withholds the daypart mix here. Load a demographic layer to compute it. Seasonality (right) is modelled from corridor data and still applies.</p>
+        </div>
+      ) : (
+        <div className="card p-5 lg:col-span-2">
+          <p className="mb-3 text-sm font-medium text-ink-text">Demand across the day · {officeLed ? 'office-led (midday peak)' : 'residential (evening peak)'}</p>
+          <DaypartCurve data={data} />
+        </div>
+      )}
       <div className="space-y-3">
+        {noData ? (
+          <Stat label="Catchment mix" value="Not derived" sub="demographic layer not loaded (Projected)" />
+        ) : (
+          <>
         <Stat label="Peak-hour demand captured" value={`${p.windowMatchPct ?? 0}%`} sub="falls inside the format's target window (Projected)" />
         <Stat label="Catchment mix" value={`${daytimePct}% daytime`} sub={`${residentialPct}% residential · peaks ${officeLed ? '11:00–14:00' : '17:00–20:00'}`} />
+          </>
+        )}
 
         {/* SEASONALITY — the "& Seasonality" half. Corridor demand swing across the NCR
             calendar (Christmas peak, Undas/Holy Week exodus dip) + vertical term-time note. */}

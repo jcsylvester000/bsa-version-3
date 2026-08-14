@@ -26,7 +26,7 @@ export interface DashAlert {
 
 export interface DashboardData {
   sitesCleared: { go: number; total: number; flagged: number };
-  topSiteFit: { score: number | null; site: string | null };
+  topSiteFit: { score: number | null; site: string | null; note?: string };
   territoryConflicts: number;
   leaseOutliers: number;
   ranked: DashSite[];
@@ -62,7 +62,8 @@ export function buildDashboard(rows: ModuleResultLite[]): DashboardData {
   const ranked: DashSite[] = [];
   let territoryConflicts = 0;
   let leaseOutliers = 0;
-  let topSiteFit: { score: number | null; site: string | null } = { score: null, site: null };
+  let topSiteFit: { score: number | null; site: string | null; note?: string } = { score: null, site: null };
+  let siteFitDemandMissing = false;
   const alerts: DashAlert[] = [];
   const allLayers: TruthLayer[] = [];
 
@@ -74,6 +75,7 @@ export function buildDashboard(rows: ModuleResultLite[]): DashboardData {
     if (fit?.score != null && (topSiteFit.score == null || fit.score > topSiteFit.score)) {
       topSiteFit = { score: fit.score, site: s.label };
     }
+    if (fit && (fit.flags ?? []).includes('site_fit_demand_layer_missing')) siteFitDemandMissing = true;
 
     const terr = byModule.get('territory');
     if (terr) {
@@ -95,7 +97,9 @@ export function buildDashboard(rows: ModuleResultLite[]): DashboardData {
           detail: `Trade-area overlaps an existing branch at ${overlap}%. ${cannibText}`,
           truthLayer: 'projected',
         });
-      } else if (v === 'adds') {
+      } else {
+        // Any non-conflict territory outcome still reports a status, so the
+        // shortlist subtitle is consistent instead of falling back to the city name.
         highlights.push('no territory conflict');
       }
     }
@@ -141,6 +145,8 @@ export function buildDashboard(rows: ModuleResultLite[]): DashboardData {
       highlights: highlights.slice(0, 3),
     });
   }
+
+  if (topSiteFit.score == null && siteFitDemandMissing) topSiteFit.note = 'Demographic layer not loaded';
 
   ranked.sort((a, b) => (b.composite ?? -1) - (a.composite ?? -1));
 

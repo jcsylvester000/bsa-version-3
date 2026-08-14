@@ -54,13 +54,15 @@ export function rollUpPillarTruth(pillars: Pillar[]): TruthLayer {
 
 /**
  * The demand pillar is the primary driver of site fit. If it is missing (no
- * catchment data — e.g. a candidate in a data-sparse edge geography), a composite
- * built on the remaining secondary pillars must NOT read as a confident high score.
- * We cap it and downgrade the verdict + Truth Layer so the app degrades HONESTLY
- * instead of reporting a falsely-confident "Go" it can't justify.
+ * catchment/demographic data for this location), we do NOT publish a Site-Fit
+ * composite at all — a score without its 50%-weight demand driver is not a true
+ * site-fit read, and a bare number ("0" or a capped "44") reads as either broken or
+ * falsely precise. The row degrades to 'insufficient' and the UI explains WHY
+ * (demographic layer not loaded). The competition pillar is retained in `pillars` so
+ * the detailed report can still surface it as a sub-metric. Load a real demographic
+ * layer and Site Fit publishes a full score normally.
  */
 const DEMAND_PILLAR_KEY = 'demand';
-const NO_DEMAND_COMPOSITE_CAP = 44; // below the 45 "caution" floor → never a "go"
 
 export function scoreSiteFit(pillars: Pillar[]): SiteFitResult {
   let composite = compositeScore(pillars);
@@ -70,15 +72,16 @@ export function scoreSiteFit(pillars: Pillar[]): SiteFitResult {
 
   // Only guard when the demand pillar is DEFINED for this run but has no score
   // (real data-sparse case). If the pillar set doesn't model demand at all, there's
-  // nothing to cap.
+  // nothing to withhold.
   const demand = pillars.find((p) => p.key === DEMAND_PILLAR_KEY);
   const demandMissing = demand != null && demand.score == null;
 
-  // Cap the composite when the primary demand pillar has no data, so a lone
-  // secondary pillar (e.g. competition headroom = 100) can't manufacture a perfect score.
-  if (composite != null && demandMissing) {
-    if (composite > NO_DEMAND_COMPOSITE_CAP) composite = NO_DEMAND_COMPOSITE_CAP;
-    flags.push('low_confidence_no_demand_data');
+  // Honest degrade: without the primary demand pillar we do not publish a headline
+  // composite at all. Mark it 'insufficient' (composite null) so the UI shows '—'
+  // with a reason rather than a misleading number built on secondary pillars alone.
+  if (demandMissing) {
+    composite = null;
+    flags.push('site_fit_demand_layer_missing');
   }
 
   const verdict = verdictFromComposite(composite);
@@ -86,6 +89,7 @@ export function scoreSiteFit(pillars: Pillar[]): SiteFitResult {
   // Without the primary demand read, the row can never be Verified.
   if (demandMissing && truthLayer === 'verified') truthLayer = 'assumed';
 
-  if (verdict === 'insufficient') flags.push('no_pillars_scored');
+  const anyScored = pillars.some((p) => p.score != null);
+  if (!anyScored) flags.push('no_pillars_scored');
   return { composite, verdict, pillars, truthLayer, flags };
 }

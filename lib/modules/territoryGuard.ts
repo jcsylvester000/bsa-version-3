@@ -69,7 +69,7 @@ export interface TerritoryGuardResult {
    * Map (competitor_set). Lets the report say WHO competes, not just how many. Empty when
    * no anchor matches the brand/concept. Truth Layer carried per the map row.
    */
-  competitorSet: { anchorBrand: string; competitors: string[]; truthLayer: TruthLayer } | null;
+  competitorSet: { anchorBrand: string; competitors: string[]; truthLayer: TruthLayer; subjectBrand: string | null } | null;
   /** Which signal set the headline: 'own' (own-branch overlap) or 'competitive' (saturation). */
   headlineSource: 'own' | 'competitive' | 'none';
   /** Verified: mean overlap across affected OWN outlets. */
@@ -375,7 +375,13 @@ export async function runTerritoryGuard(
 
   // Name the competitor brands this concept is cannibalized by (from the Cannibalization
   // Map), so the report can say WHO competes, not just how many establishments were found.
-  const competitorSet = await lookupCompetitorSet(vertical, brandOrConcept);
+  const competitorSetRaw = await lookupCompetitorSet(vertical, brandOrConcept);
+  // The anchorBrand is the representative brand of the comparison set (e.g. "Mercury Drug"
+  // for pharmacies). Carry the run's OWN brand as the subject so the UI can label the set
+  // "for <this run's brand>" instead of mislabelling it as being for the anchor brand.
+  const competitorSet = competitorSetRaw
+    ? { ...competitorSetRaw, subjectBrand: (ownBrandName ?? '').trim() || null }
+    : null;
 
   // HEADLINE = the stronger of the two signals. Own-branch overlap is Verified; competitive
   // saturation is Projected. The verdict reads whichever is more binding, so a saturated

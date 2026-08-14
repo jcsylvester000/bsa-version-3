@@ -24,8 +24,12 @@ export async function GET(_req: NextRequest) {
   });
   // De-dupe by brand name (some brands were seeded more than once historically).
   const seen = new Set<string>();
+  // Normalise curly vs straight apostrophes (and spacing) before de-duping, so
+  // "Andok's" and "Andok’s" collapse to one entry instead of appearing twice.
+  const dedupeKey = (name: string) =>
+    name.toLowerCase().replace(/[\u2018\u2019\u02bc\u0060\u00b4']/g, '').replace(/\s+/g, ' ').trim();
   const brands = rows.filter((r) => {
-    const k = r.brandName.toLowerCase();
+    const k = dedupeKey(r.brandName);
     if (seen.has(k)) return false;
     seen.add(k);
     return true;

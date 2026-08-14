@@ -52,16 +52,17 @@ describe('scoreSiteFit', () => {
     expect(r.verdict).toBe('insufficient');
     expect(r.flags).toContain('no_pillars_scored');
   });
-  // QA v4: a demand pillar DEFINED but unscored (data-sparse edge geography) must NOT
-  // let a lone secondary pillar manufacture a confident high score/Go.
-  it('caps the composite + downgrades verdict when demand is defined but unscored', () => {
+  // A demand pillar DEFINED but unscored (no demographic/population layer for the
+  // catchment) means the primary driver is missing — we WITHHOLD the composite entirely
+  // rather than publish a number built on secondary pillars alone, and flag why.
+  it('withholds the composite when demand is defined but unscored', () => {
     const demand: Pillar = { key: 'demand', label: 'Catchment demand', score: null, weight: 0.5, truthLayer: 'verified' };
     const competition: Pillar = { key: 'competition', label: 'Competition', score: 100, weight: 0.35, truthLayer: 'verified' };
     const r = scoreSiteFit([demand, competition]);
-    expect(r.composite).toBeLessThanOrEqual(44); // never a "go"
-    expect(r.verdict).not.toBe('go');
+    expect(r.composite).toBeNull();
+    expect(r.verdict).toBe('insufficient');
     expect(r.truthLayer).not.toBe('verified'); // no primary demand read → not Verified
-    expect(r.flags).toContain('low_confidence_no_demand_data');
+    expect(r.flags).toContain('site_fit_demand_layer_missing');
   });
   it('does NOT cap when demand IS scored', () => {
     const demand: Pillar = { key: 'demand', label: 'Catchment demand', score: 90, weight: 0.5, truthLayer: 'verified' };

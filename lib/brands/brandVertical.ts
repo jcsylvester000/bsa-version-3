@@ -73,19 +73,22 @@ export function verticalFromSubCategory(subCategory: string | null | undefined):
   if (/(casual dining|buffet|full-service|restaurant|dining)/.test(s)) return 'fnb_qsr';
   if (/(convenience|mini-?grocery|grocery)/.test(s)) return 'convenience';
   if (/(pharmacy|drugstore|drug)/.test(s)) return 'pharmacy';
+  if (/(perfume|fragrance|cosmetic|beauty|personal care)/.test(s)) return 'retail_specialty';
   if (/(apparel|clothing)/.test(s)) return 'retail_apparel';
   if (/(book|specialty retail|health & beauty)/.test(s)) return 'retail_specialty';
   if (/(salon|barber|nail)/.test(s)) return 'services_salon';
   if (/(spa|wellness|aesthetic)/.test(s)) return 'services_spa';
   if (/(fitness|gym)/.test(s)) return 'services_fitness';
   if (/(laundr|laundromat)/.test(s)) return 'services_laundry';
-  if (/(remittance|pawnshop|pawn)/.test(s)) return 'remittance';
+  if (/(remittance|pawnshop|pawn|bills? payment|padala|money transfer)/.test(s)) return 'remittance';
   if (/(diagnostic|clinic|medical|laboratory|lab)/.test(s)) return 'diagnostics';
   if (/(fuel|petrol|gas station|lpg)/.test(s)) return 'fuel';
   if (/(automotive|auto service|auto\b)/.test(s)) return 'automotive';
   if (/(hotel|lodging|travel)/.test(s)) return 'hotel';
   if (/(review center|tutorial|education|school)/.test(s)) return 'education';
   if (/(water refilling|water station)/.test(s)) return 'convenience';
+  if (/(courier|logistics|cargo|freight)/.test(s)) return 'other';
+  if (/(repair|vulcaniz|locksmith|key duplicat)/.test(s)) return 'other';
   if (/(pet)/.test(s)) return 'other';
   return null;
 }

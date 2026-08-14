@@ -100,8 +100,14 @@ function factsForModule(row: ModuleRow): string[] {
       ];
     }
     case 'site_fit':
-      return [`[${row.siteLabel}] Site fit: composite ${row.score ?? 'n/a'}/100, verdict "${p.verdict ?? '?'}" (${row.truthLayer}).`];
+      if (row.score == null) {
+        return [`[${row.siteLabel}] Site fit: not scored — the demographic/population layer for this catchment is not loaded, so the demand pillar (the primary driver) can't be measured. Competition headroom is shown in the site detail; load a demographic layer to publish a full Site-Fit score.`];
+      }
+      return [`[${row.siteLabel}] Site fit: composite ${row.score}/100, verdict "${p.verdict ?? '?'}" (${row.truthLayer}).`];
     case 'daypart':
+      if (p.noCatchmentData) {
+        return [`[${row.siteLabel}] Daypart: daytime/residential split not derived — the demographic (daytime-population) layer isn't loaded for this catchment, so no daypart curve is published (seasonality is modelled from corridor data and still shown).`];
+      }
       return [`[${row.siteLabel}] Daypart: ${p.windowMatchPct ?? '?'}% of demand in the target window, ${p.daytimeShare ?? '?'}% daytime (Projected).`];
     case 'informal':
       return [`[${row.siteLabel}] Competition: ${p.digitalCount ?? '?'} digital competitors (Verified) + ~${p.estimatedInformal ?? '?'} informal (Assumed)${p.onGroundCheckAdvised ? '; on-ground check advised' : ''}.`];
