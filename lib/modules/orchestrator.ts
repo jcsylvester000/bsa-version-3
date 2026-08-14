@@ -25,8 +25,12 @@ import type { ModuleKind } from '@prisma/client';
 
 export interface RunResult {
   runId: string;
-  status: 'ready' | 'failed';
-  confidence: Confidence;
+  status: 'ready' | 'failed' | 'analyzing';
+  confidence: Confidence | null;
+  /** false while more sites remain to analyze (client should re-invoke); true when the run is finalized. */
+  complete: boolean;
+  /** sites still awaiting analysis after this batch. */
+  remaining: number;
   modulesRun: ModuleKind[];
   siteCount: number;
   perSite: Array<{ siteId: string; label: string; composite: number | null; verdict: string | null }>;
@@ -70,12 +74,37 @@ export async function runPipeline(runId: string): Promise<RunResult> {
   const allLayers: TruthLayer[] = [];
   let onGroundFlagged = false;
 
-  await prisma.pipelineRun.update({ where: { id: runId }, data: { status: 'analyzing', startedAt: new Date() } });
+  const PIPELINE_BUDGET_MS = 5500;
+  const pipelineStart = Date.now();
+
+  // Resumable batch (serverless-safe): process only sites that have no
+  // module_results yet, and stop once we're over the wall-clock budget. The
+  // client re-invokes this route until `complete` — so a run with more sites
+  // than fit in one function invocation still analyzes EVERY site instead of
+  // timing out after ~2 heavy sites.
+  const doneBeforeRows = await prisma.moduleResult.findMany({
+    where: { pipelineRunId: runId },
+    select: { candidateSiteId: true },
+    distinct: ['candidateSiteId'],
+  });
+  const doneBefore = new Set(doneBeforeRows.map((r) => r.candidateSiteId));
+  const pending = run.sites.filter((s) => !doneBefore.has(s.id));
+
+  await prisma.pipelineRun.update({
+    where: { id: runId },
+    data: { status: 'analyzing', ...(doneBefore.size === 0 ? { startedAt: new Date() } : {}) },
+  });
 
   const perSite: RunResult['perSite'] = [];
+  let processedThisCall = 0;
 
-  try {
-    for (const site of run.sites) {
+  for (const site of pending) {
+    // Budget guard: once at least one site is done this call and we're over
+    // budget, stop and hand back to the client to re-invoke for the rest.
+    if (processedThisCall > 0 && Date.now() - pipelineStart > PIPELINE_BUDGET_MS) break;
+    processedThisCall++;
+
+    try {
       // Concept-aware competitor count within the site-fit competition radius (800 m),
       // so the competition pillar reflects only genuine same-concept competitors.
       // Cache-through: warms this area from OSM on a miss (free, shared across all users),
@@ -175,19 +204,95 @@ export async function runPipeline(runId: string): Promise<RunResult> {
           if (ps) { ps.composite = composite; ps.verdict = band; }
         }
       }
+    } catch (err) {
+      // Fault isolation: one failed site must not stall the whole run. Persist a
+      // sentinel territory result so the site counts as processed and the batch
+      // makes forward progress instead of retrying the same site every call.
+      const detail = String((err as { message?: string })?.message ?? err);
+      await prisma.moduleResult.upsert({
+        where: { site_module_key: { candidateSiteId: site.id, module: 'territory' } },
+        create: {
+          candidateSiteId: site.id,
+          pipelineRunId: runId,
+          module: 'territory',
+          score: null,
+          payload: { error: 'pipeline_site_error', detail } as object,
+          truthLayer: 'projected',
+          flags: ['pipeline_error'],
+        },
+        update: {
+          payload: { error: 'pipeline_site_error', detail } as object,
+          truthLayer: 'projected',
+          flags: ['pipeline_error'],
+        },
+      });
     }
-
-    const confidence = rollUpConfidence(allLayers, { onGroundCheckFlagged: onGroundFlagged });
-    await prisma.pipelineRun.update({
-      where: { id: runId },
-      data: { status: 'ready', confidence, finishedAt: new Date() },
-    });
-
-    return { runId, status: 'ready', confidence, modulesRun: modules, siteCount: run.sites.length, perSite };
-  } catch (err) {
-    await prisma.pipelineRun.update({ where: { id: runId }, data: { status: 'failed', finishedAt: new Date() } });
-    throw err;
   }
+
+  // After this batch, how many sites still have no module_results at all?
+  const doneAfterRows = await prisma.moduleResult.findMany({
+    where: { pipelineRunId: runId },
+    select: { candidateSiteId: true },
+    distinct: ['candidateSiteId'],
+  });
+  const doneAfter = new Set(doneAfterRows.map((r) => r.candidateSiteId));
+  const remaining = run.sites.filter((s) => !doneAfter.has(s.id)).length;
+
+  if (remaining > 0) {
+    // Still sites to analyze — stay 'analyzing' and let the client re-invoke.
+    return {
+      runId,
+      status: 'analyzing',
+      confidence: null,
+      complete: false,
+      remaining,
+      modulesRun: modules,
+      siteCount: run.sites.length,
+      perSite,
+    };
+  }
+
+  // Every site analyzed — finalize. Roll confidence up from EVERY module_result's
+  // truth layer read back from the DB (so it reflects all batches, not just this call).
+  const allRows = await prisma.moduleResult.findMany({
+    where: { pipelineRunId: runId },
+    select: { module: true, truthLayer: true, flags: true },
+  });
+  const finalLayers = allRows.map((r) => r.truthLayer as TruthLayer);
+  const finalOnGround = allRows.some((r) =>
+    r.module === 'informal' ||
+    (r.flags ?? []).includes('secondary_terms_over_market') ||
+    (r.flags ?? []).includes('pipeline_error'),
+  );
+  const confidence = rollUpConfidence(finalLayers, { onGroundCheckFlagged: finalOnGround });
+  await prisma.pipelineRun.update({
+    where: { id: runId },
+    data: { status: 'ready', confidence, finishedAt: new Date() },
+  });
+
+  // Rebuild perSite from the DB so the finalizing call returns every site, even
+  // if it processed zero pending sites itself.
+  const finalSiteRows = await prisma.candidateSite.findMany({
+    where: { id: { in: run.sites.map((s) => s.id) } },
+    select: { id: true, label: true, compositeScore: true, verdict: true },
+  });
+  const perSiteFinal = finalSiteRows.map((s) => ({
+    siteId: s.id,
+    label: s.label,
+    composite: s.compositeScore != null ? Number(s.compositeScore) : null,
+    verdict: (s.verdict as string | null) ?? null,
+  }));
+
+  return {
+    runId,
+    status: 'ready',
+    confidence,
+    complete: true,
+    remaining: 0,
+    modulesRun: modules,
+    siteCount: run.sites.length,
+    perSite: perSiteFinal,
+  };
 }
 
 /**
