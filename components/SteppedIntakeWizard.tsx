@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { computeCompleteness } from '@/lib/modules/completeness';
-import { sectorForVertical, verticalForBrand } from '@/lib/brands/brandVertical';
+import { verticalForBrand } from '@/lib/brands/brandVertical';
 import { DEMO_SCENARIOS } from '@/lib/mock/demoData';
 import { LocationPicker } from '@/components/LocationPicker';
 import { AnalysisOverlay } from '@/components/AnalysisSequence';
@@ -267,11 +267,14 @@ export function SteppedIntakeWizard({ franchisors, mockMode = false, mockRunId, 
   // vertical must match it exactly; brands without a mapped vertical fall back to the
   // vertical's broad sector, so newly-added brands still show under the right category.
   const visibleFranchisorGroups = useMemo(() => {
-    const wantSector = sectorForVertical(vertical);
+    // Strict vertical match. Previously brands with no mapped vertical fell back to a
+    // broad SECTOR match, which leaked cross-category brands into specialised pickers
+    // (a perfume retailer under Pharmacy; remittance/courier brands under Fitness). A
+    // brand now appears only under the vertical it actually resolves to.
     return franchisorGroups
       .map((g) => ({
         sector: g.sector,
-        brands: g.brands.filter((b) => (b.vertical ? b.vertical === vertical : g.sector === wantSector)),
+        brands: g.brands.filter((b) => b.vertical === vertical),
       }))
       .filter((g) => g.brands.length > 0);
   }, [franchisorGroups, vertical]);
