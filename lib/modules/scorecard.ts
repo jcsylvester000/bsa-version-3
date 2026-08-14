@@ -91,6 +91,27 @@ export function scorecardCriteria(moduleScores: ModuleScore[]): ScorecardCriteri
 }
 
 /**
+ * When Site Fit can't be scored (no demographic/population layer → its demand pillar is
+ * absent), the run is missing its single largest decision input. The secondary pillars
+ * alone must NOT be allowed to manufacture a confident GO — so we cap the composite just
+ * below the GO threshold, topping the verdict out at CAUTION until a demographic layer is
+ * loaded. This mirrors the Site Fit module's own withholding and keeps the app honest:
+ * "we can't confirm a GO without demand data." Applied to BOTH the dashboard headline and
+ * the scorecard so they always agree.
+ */
+const NO_SITEFIT_GO_CAP = 64; // scorecardBand: >=65 GO, >=45 CAUTION → 64 tops out at CAUTION
+
+function cappedComposite(criteria: ScorecardCriterion[]): number | null {
+  let composite = scorecardComposite(criteria);
+  const siteFit = criteria.find((c) => c.key === 'site_fit');
+  const siteFitMissing = siteFit != null && siteFit.score == null;
+  if (composite != null && siteFitMissing && composite > NO_SITEFIT_GO_CAP) {
+    composite = NO_SITEFIT_GO_CAP;
+  }
+  return composite;
+}
+
+/**
  * The site's decision-grade composite + band from ALL contributing modules — the
  * single source of truth for both the dashboard headline and the scorecard band.
  * `band` is 'insufficient' when nothing scored.
@@ -100,14 +121,14 @@ export function siteCompositeFromModules(moduleScores: ModuleScore[]): {
   band: Scorecard['band'];
 } {
   const criteria = scorecardCriteria(moduleScores);
-  const composite = scorecardComposite(criteria);
+  const composite = cappedComposite(criteria);
   return { composite, band: scorecardBand(composite) };
 }
 
 /** Build the scorecard from the run's module scores for one site. */
 export function buildScorecard(siteLabel: string, moduleScores: ModuleScore[]): Scorecard {
   const criteria = scorecardCriteria(moduleScores);
-  const composite = scorecardComposite(criteria);
+  const composite = cappedComposite(criteria);
   return {
     siteLabel,
     criteria,

@@ -90,4 +90,19 @@ describe('siteCompositeFromModules — dashboard/scorecard reconciliation', () =
     const { band } = siteCompositeFromModules(modules);
     expect(band).toBe('go');
   });
+
+  it('caps below GO when Site Fit cannot be scored (no demographic layer)', () => {
+    // Strong secondary pillars, but Site Fit unscored (demand layer absent) → the run is
+    // missing its largest input and must NOT read as a confident GO.
+    const modules = [
+      { module: 'site_fit', score: null, truthLayer: 'assumed' as const, note: '' },
+      { module: 'territory', score: 2, truthLayer: 'projected' as const, note: '' }, // 98 goodness
+      { module: 'lease', score: 85, truthLayer: 'assumed' as const, note: '' },
+    ];
+    const { composite, band } = siteCompositeFromModules(modules);
+    expect(composite!).toBeLessThanOrEqual(64);
+    expect(band).not.toBe('go');
+    // Dashboard headline and scorecard artifact must still agree.
+    expect(composite).toBe(buildScorecard('X', modules).composite);
+  });
 });
