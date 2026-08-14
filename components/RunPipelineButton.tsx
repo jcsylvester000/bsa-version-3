@@ -14,14 +14,22 @@ export function RunPipelineButton({ runId }: { runId: string }) {
 
   async function run() {
     setState('running');
-    const res = await fetch(`/api/runs/${runId}/run`, { method: 'POST' });
-    const json = await res.json();
-    if (!json.ok) {
+    // The pipeline is resumable and time-boxed on the server: each POST analyzes
+    // as many sites as fit in the function budget and returns `complete: false`
+    // with a `remaining` count while sites are left. Re-invoke until complete so
+    // runs with many candidate sites finish every site instead of stalling.
+    try {
+      for (let i = 0; i < 30; i++) {
+        const res = await fetch(`/api/runs/${runId}/run`, { method: 'POST' });
+        const json = await res.json();
+        if (!json.ok) { setState('error'); return; }
+        if (json.data?.complete !== false) break; // finalized (or legacy response shape)
+      }
+      setState('done');
+      router.refresh();
+    } catch {
       setState('error');
-      return;
     }
-    setState('done');
-    router.refresh();
   }
 
   return (

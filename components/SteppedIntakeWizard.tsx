@@ -339,7 +339,14 @@ export function SteppedIntakeWizard({ franchisors, mockMode = false, mockRunId, 
     // "generate final result" moment), then navigate to the populated dashboard.
     setAnimating(true);
     try {
-      await fetch(`/api/runs/${runId}/run`, { method: 'POST' });
+      // Resumable pipeline: re-invoke until the server reports the run is complete,
+      // so multi-site intakes analyze every candidate site rather than timing out
+      // after the first couple in a single serverless invocation.
+      for (let i = 0; i < 30; i++) {
+        const r = await fetch(`/api/runs/${runId}/run`, { method: 'POST' });
+        const j = await r.json().catch(() => null);
+        if (!j || !j.ok || j.data?.complete !== false) break;
+      }
     } catch {
       /* dashboard shows the manual Run pipeline control as a fallback */
     }
