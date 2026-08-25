@@ -25,6 +25,7 @@ function area(
     weightedCompetitorCount: 0,
     nearestOwnM: null,
     nearbyBusinesses: [],
+    nearbyPoints: [],
     ...extra,
   };
 }

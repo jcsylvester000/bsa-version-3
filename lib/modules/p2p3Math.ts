@@ -358,8 +358,13 @@ export interface WhiteSpaceArea {
   weightedCompetitorCount: number;
   /** Distance to the operator's nearest own outlet, metres (null = none within the scan window). */
   nearestOwnM: number | null;
-  /** Names of the actual same-concept / adjacent businesses found in the area (for the UI). */
+  /** Names of the actual same-concept / adjacent businesses found in the area (for the UI chips). */
   nearbyBusinesses: string[];
+  /**
+   * Individual nearby businesses with coordinates + tier, for the map: 'direct' = an exact
+   * same-concept rival (drawn red), 'adjacent' = a similar/adjacent-format business (drawn white).
+   */
+  nearbyPoints: Array<{ name: string; lat: number; lon: number; tier: 'direct' | 'adjacent' }>;
 }
 
 export type WhiteSpaceVerdict = 'open' | 'workable' | 'contested';

@@ -5,6 +5,34 @@ The cross-thread state record. Read this (with the Master Instruction and the cu
 
 ---
 
+## 2026-08-25 (later 2) — White-Space map dots (red/white) + all-industry POI ingest — COMPLETE (needs re-ingest + re-run on neon)
+
+Two user asks on the working White-Space v2:
+1. **Map: red dots = exact/direct rivals, white dots = similar/adjacent**, across ALL 5 areas so the visual matches the per-area data.
+2. **Data coverage for ALL industries**, not just F&B.
+
+Map dots:
+- `lib/modules/p2p3Math.ts` — WhiteSpaceArea gains `nearbyPoints: {name,lat,lon,tier}[]` (tier 'direct'|'adjacent'); flows through the ranker via spread.
+- `lib/modules/p2p3Modules.ts` — `scoreAt` now keeps each hit's lat/lon and emits `nearbyPoints` (cap 60/area, direct-first, deduped) alongside `nearbyBusinesses` (10 names for chips).
+- `components/GapsMap.tsx` — new optional `businesses: BusinessPoint[]` prop; draws red (#e5484d, direct/exact) and white (#e6ebf5, adjacent/similar) dots UNDER the numbered area pins; native-title tooltips; dep array includes businesses.
+- `components/SiteIntelligenceTabs.tsx` — flattens `recs.flatMap(r => r.nearbyPoints)` → `businesses`, passes to GapsMap, adds a map legend (red/white/# with counts). New rec field `nearbyPoints?` added to payload type.
+
+All-industry POI ingest (data breadth):
+- `lib/places/osmService.ts` — OSM_SELECTORS broadened: NEW `grocery` (supermarket/greengrocer/wholesale/marketplace), `hardware` (hardware/doityourself/paint/electrical), `electronics` (electronics/mobile_phone/computer/appliance); richer retail_apparel (+shoes/boutique), retail_specialty (+books/stationery/gift/toys/jewelry/cosmetics), remittance (+pawnbroker), diagnostics (+healthcare=clinic/centre), automotive (+car_parts/tyres), hotel (+guest_house/hostel), education (+college).
+- `prisma/ingestOsm.ts` — SWEEP_VERTICALS was 14 (F&B-heavy, MISSING diagnostics/automotive/hotel and all grocery/hardware/electronics). Now 20, spanning F&B + full retail + convenience + pharmacy/diagnostics + services + fuel/automotive + hotel + education. BRAND_PULL expanded ~40→~70: added grocery/supermarket (SM Supermarket, Savemore, Puregold, Robinsons Supermarket, WalterMart, Landers, S&R, Rustan, Shopwise, Metro), apparel/retail (Uniqlo, Penshoppe, Bench, Oxygen, National Book Store, Ace Hardware, Wilcon, Handyman, Abenson, Automatic Centre), health (Generika, Hi-Precision, Healthway), more F&B (Max's, Yellow Cab, Shakey's, Pizza Hut, Army Navy, Potato Corner, Bo's Coffee, Tim Hortons, Dunkin, Mister Donut, Krispy Kreme, J.CO), services/fitness (Nuat Thai, Ace Water Spa, Fitness First, Slimmers World), fuel/auto (Seaoil, Phoenix, Rapide, Ziebart), remittance/courier (J&T), hotels/education (Go Hotels, Red Planet, RedDoorz, Kumon).
+
+Note on coverage: OSM_SELECTORS + conceptFor already cover every intake Vertical. Gaps were (a) sweep list omissions and (b) no grocery/supermarket data at all — both fixed. NOT added this round: a dedicated grocery/supermarket INTAKE vertical + conceptFor mapping (would need a Prisma enum change + migration on neon) — flagged as a future option; the competitor_set C11 grocery rows already exist for naming.
+
+Verified in cloud: UI + server tsc clean, GapsMap compiles (maplibre shim), ingest files parse, 14 vitest tests pass (whitespace.test.ts factory updated with nearbyPoints).
+
+**⚠️ ACTION REQUIRED (local, writes to NEON — DB target is neon.tech, not local Docker):**
+1. `npm run db:ingest:osm` — re-ingest POIs across all industries from OSM/Overpass (free, no key; ~20 category sweeps + ~70 brand pulls; takes a while, politeness delays). Populates non-F&B businesses.
+2. `npm run db:populate:ncr` if not already done (demographic_cell / barangays) — fixes any lingering "scanned 0".
+3. Re-run the analysis → White-Space map now shows red/white business dots across all 5 areas.
+4. `npm run typecheck` && `npm run test` to confirm.
+
+---
+
 ## 2026-08-25 (later) — White-Space v2: always top-5 BETTER alternatives vs the proposed site — COMPLETE
 
 Symptom: White-Space showed "scanned 0 barangays / no low-cannibalization areas." Root cause =

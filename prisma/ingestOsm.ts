@@ -26,24 +26,54 @@ import {
   type OsmPlace,
 } from '../lib/places/osmService';
 
-// Verticals we sweep for competitor density across NCR. (The full set the app scores on.)
+// Categories we sweep for competitor density across NCR. Covers ALL industries the app scores
+// on — F&B, the full retail spread (apparel, specialty, grocery/supermarket, hardware,
+// electronics), convenience, pharmacy/diagnostics, every service format, fuel/automotive,
+// hospitality and education — not just F&B. Each key maps to OSM tag selectors in osmService.
 const SWEEP_VERTICALS = [
-  'fnb_qsr', 'fnb_cafe', 'fnb_bakery', 'convenience', 'pharmacy',
-  'services_salon', 'services_spa', 'services_fitness', 'services_laundry',
-  'remittance', 'education', 'retail_apparel', 'retail_specialty', 'fuel',
+  // Food & beverage
+  'fnb_qsr', 'fnb_cafe', 'fnb_bakery',
+  // Retail (broadened well beyond F&B)
+  'retail_apparel', 'retail_specialty', 'grocery', 'hardware', 'electronics', 'convenience',
+  // Health & beauty
+  'pharmacy', 'diagnostics', 'services_salon', 'services_spa',
+  // Services
+  'services_fitness', 'services_laundry', 'remittance', 'education',
+  // Land-intensive / hospitality
+  'fuel', 'automotive', 'hotel',
 ];
 
 // Brands whose NCR branches we map (drives saturation / white-space). Sourced from the
 // franchise-intelligence catalog — the well-known chains OSM is most likely to have tagged.
+// Spans every covered industry so brand branches exist for non-F&B verticals too.
 const BRAND_PULL = [
+  // QSR / casual dining
   'Jollibee', 'Mang Inasal', 'Chowking', 'Greenwich', 'KFC', 'McDonald', 'Bonchon',
-  'Mercury Drug', 'The Generics Pharmacy', 'Watsons', 'Rose Pharmacy', 'South Star Drug',
-  '7-Eleven', 'Ministop', 'FamilyMart', 'Alfamart', 'Uncle John',
+  'Max\'s', 'Yellow Cab', 'Shakey', 'Pizza Hut', 'Army Navy', 'Potato Corner',
+  // Coffee / milk tea / bakery / dessert
   'Starbucks', 'Chatime', 'Gong Cha', 'CoCo', 'Serenitea', 'Macao Imperial Tea', 'Coffee Bean',
+  'Bo\'s Coffee', 'Tim Hortons', 'Dunkin', 'Mister Donut', 'Krispy Kreme', 'J.CO',
   'Red Ribbon', 'Goldilocks', 'Julie', 'Figaro',
-  'David\'s Salon', 'Bruno', 'Lay Bare', 'Posh Nails',
-  'Anytime Fitness', 'Gold\'s Gym', 'Petron', 'Shell', 'Caltex',
-  'Palawan', 'Cebuana', 'LBC', 'M Lhuillier',
+  // Pharmacy / health / diagnostics
+  'Mercury Drug', 'The Generics Pharmacy', 'Watsons', 'Rose Pharmacy', 'South Star Drug', 'Generika',
+  'Hi-Precision', 'Healthway',
+  // Convenience
+  '7-Eleven', 'Ministop', 'FamilyMart', 'Alfamart', 'Uncle John', 'Lawson',
+  // Grocery / supermarket / warehouse
+  'SM Supermarket', 'Savemore', 'Puregold', 'Robinsons Supermarket', 'WalterMart', 'Landers',
+  'S&R', 'Rustan', 'Shopwise', 'Metro Supermarket',
+  // Apparel / specialty / department / electronics / hardware retail
+  'Uniqlo', 'Penshoppe', 'Bench', 'Oxygen', 'National Book Store', 'Ace Hardware', 'Wilcon',
+  'Handyman', 'Abenson', 'Automatic Centre',
+  // Salon / spa / fitness / laundry
+  'David\'s Salon', 'Bruno', 'Lay Bare', 'Posh Nails', 'Nuat Thai', 'Ace Water Spa',
+  'Anytime Fitness', 'Gold\'s Gym', 'Fitness First', 'Slimmers World',
+  // Fuel / automotive
+  'Petron', 'Shell', 'Caltex', 'Seaoil', 'Phoenix', 'Rapide', 'Ziebart',
+  // Remittance / courier
+  'Palawan', 'Cebuana', 'LBC', 'M Lhuillier', 'J&T',
+  // Hotels / education
+  'Go Hotels', 'Red Planet', 'RedDoorz', 'Kumon',
 ];
 
 interface Args { quick: boolean; competitors: boolean; brands: boolean; }

@@ -349,13 +349,14 @@ export async function runWhiteSpace(
   // with the own-branch overlap proxy → the area's cannibalization + the nearby business names.
   const scoreAt = (lat: number | null, lon: number | null) => {
     let direct = 0, adjacent = 0;
-    const hits: Array<{ name: string; tier: string; d: number }> = [];
+    const hits: Array<{ name: string; lat: number; lon: number; tier: 'direct' | 'adjacent'; d: number }> = [];
     if (lat != null && lon != null) {
       for (const p of relevantPois) {
         const d = haversineMeters({ lat, lon }, { lat: p.lat, lon: p.lon });
         if (d > catchmentM) continue;
-        if (p.tier === 'direct') direct++; else adjacent++;
-        hits.push({ name: p.name, tier: p.tier, d });
+        const tier = p.tier === 'direct' ? 'direct' : 'adjacent';
+        if (tier === 'direct') direct++; else adjacent++;
+        hits.push({ name: p.name, lat: p.lat, lon: p.lon, tier, d });
       }
     }
     const mix: TierCounts = { direct, adjacent, unrelated: 0 };
@@ -366,17 +367,20 @@ export async function runWhiteSpace(
     // at ~2× catchment. Keeps an area the brand already sits on from being recommended. Projected.
     const ownOverlapProxy = own == null ? 0 : Math.max(0, Math.min(100, Math.round((1 - own / (2 * catchmentM)) * 100)));
     const cannibalizationPct = Math.max(saturation, ownOverlapProxy);
+    // Direct rivals first, then adjacent; nearest first within each tier.
     hits.sort((a, b) => (a.tier === b.tier ? a.d - b.d : a.tier === 'direct' ? -1 : 1));
+    // Dedupe by name for BOTH the chip list (names, 10) and the map points (coords+tier, 60).
     const seen = new Set<string>();
     const nearbyBusinesses: string[] = [];
+    const nearbyPoints: Array<{ name: string; lat: number; lon: number; tier: 'direct' | 'adjacent' }> = [];
     for (const h of hits) {
       const k = h.name.trim().toLowerCase();
       if (seen.has(k)) continue;
       seen.add(k);
-      nearbyBusinesses.push(h.name);
-      if (nearbyBusinesses.length >= 10) break;
+      if (nearbyBusinesses.length < 10) nearbyBusinesses.push(h.name);
+      if (nearbyPoints.length < 60) nearbyPoints.push({ name: h.name, lat: h.lat, lon: h.lon, tier: h.tier });
     }
-    return { mix, weighted, saturation, cannibalizationPct, nearestOwn: own, nearbyBusinesses };
+    return { mix, weighted, saturation, cannibalizationPct, nearestOwn: own, nearbyBusinesses, nearbyPoints };
   };
 
   // Candidate areas — demographic_cell (barangay centroids + population) first.
@@ -445,7 +449,7 @@ export async function runWhiteSpace(
     areas.push({
       psgcCode: c.psgc, barangay: c.brgy, city: c.city, population: c.pop, lat: c.lat, lon: c.lon,
       cannibalizationPct: s.cannibalizationPct, competitorMix: s.mix, weightedCompetitorCount: s.weighted,
-      nearestOwnM: s.nearestOwn, nearbyBusinesses: s.nearbyBusinesses,
+      nearestOwnM: s.nearestOwn, nearbyBusinesses: s.nearbyBusinesses, nearbyPoints: s.nearbyPoints,
     });
   }
 

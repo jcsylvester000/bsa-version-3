@@ -55,6 +55,7 @@ export interface SiteModulePayloads {
       weightedCompetitorCount: number;
       nearestOwnM: number | null;
       nearbyBusinesses: string[];
+      nearbyPoints?: Array<{ name: string; lat: number; lon: number; tier: 'direct' | 'adjacent' }>;
       recommendationScore: number;
       verdict: 'open' | 'workable' | 'contested';
       beatsProposed?: boolean | null;
@@ -592,6 +593,13 @@ function WhiteSpaceTab({ p }: { p: SiteModulePayloads['whitespace']; primary?: b
     }))
     .filter((g) => Number.isFinite(g.lat) && Number.isFinite(g.lon));
 
+  // Actual businesses across ALL 5 areas, for the map dots: red = direct/exact, white = adjacent/similar.
+  const businessPoints = recs.flatMap((r) =>
+    (r.nearbyPoints ?? []).filter((b) => Number.isFinite(b.lat) && Number.isFinite(b.lon)),
+  );
+  const directCount = businessPoints.filter((b) => b.tier === 'direct').length;
+  const adjacentCount = businessPoints.filter((b) => b.tier === 'adjacent').length;
+
   return (
     <div className="space-y-4">
       {/* Header — reframed against the site the user actually proposed. */}
@@ -625,11 +633,29 @@ function WhiteSpaceTab({ p }: { p: SiteModulePayloads['whitespace']; primary?: b
         )}
       </div>
 
-      {/* Overview map: every recommended area pinned by its rank. */}
+      {/* Overview map: every recommended area pinned by its rank, with the actual businesses
+          plotted as red (exact/direct) and white (similar/adjacent) dots so the visual matches
+          the per-area data. */}
       <div className="card p-5">
-        <p className="mb-3 text-sm font-medium text-ink-text">Recommended areas · OpenStreetMap</p>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm font-medium text-ink-text">Recommended areas · OpenStreetMap</p>
+          <div className="flex items-center gap-3 text-[11px] text-ink-muted">
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: '#e5484d', border: '1.5px solid #0b1426' }} />
+              Exact / same concept{directCount ? ` (${directCount})` : ''}
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: '#e6ebf5', border: '1.5px solid #0b1426' }} />
+              Similar / adjacent{adjacentCount ? ` (${adjacentCount})` : ''}
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="grid h-4 w-4 place-items-center rounded-full bg-accent text-[9px] font-bold text-ink-bg">#</span>
+              Recommended area
+            </span>
+          </div>
+        </div>
         {mapPoints.length > 0 ? (
-          <GapsMap gaps={mapPoints} />
+          <GapsMap gaps={mapPoints} businesses={businessPoints} />
         ) : (
           <div className="rounded-lg border border-dashed border-ink-border p-4 text-center text-xs text-ink-muted">
             Re-run this analysis to attach area coordinates — the recommended areas will then plot on a map here.

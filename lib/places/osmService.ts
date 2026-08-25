@@ -53,20 +53,27 @@ const OSM_SELECTORS: Record<string, string[]> = {
   fnb_qsr: ['"amenity"="fast_food"', '"amenity"="restaurant"'],
   fnb_cafe: ['"amenity"="cafe"', '"shop"="coffee"', '"cuisine"="bubble_tea"'],
   fnb_bakery: ['"shop"="bakery"', '"shop"="pastry"'],
-  retail_apparel: ['"shop"="clothes"', '"shop"="fashion"'],
-  retail_specialty: ['"shop"="variety_store"', '"shop"="water"', '"shop"="general"'],
+  retail_apparel: ['"shop"="clothes"', '"shop"="fashion"', '"shop"="shoes"', '"shop"="boutique"'],
+  // Specialty retail broadened beyond variety stores to the common mall/high-street formats.
+  retail_specialty: ['"shop"="variety_store"', '"shop"="water"', '"shop"="general"', '"shop"="books"', '"shop"="stationery"', '"shop"="gift"', '"shop"="toys"', '"shop"="jewelry"', '"shop"="cosmetics"'],
+  // Supermarket / grocery retail — a major retail category that had NO coverage before.
+  grocery: ['"shop"="supermarket"', '"shop"="greengrocer"', '"shop"="wholesale"', '"shop"="marketplace"', '"amenity"="marketplace"'],
+  // Hardware / home-improvement retail.
+  hardware: ['"shop"="hardware"', '"shop"="doityourself"', '"shop"="trade"', '"shop"="paint"', '"shop"="electrical"'],
+  // Consumer electronics / mobile / appliance retail.
+  electronics: ['"shop"="electronics"', '"shop"="mobile_phone"', '"shop"="computer"', '"shop"="appliance"'],
   convenience: ['"shop"="convenience"'],
-  remittance: ['"amenity"="bank"', '"shop"="money_lender"', '"office"="financial"', '"amenity"="money_transfer"'],
+  remittance: ['"amenity"="bank"', '"shop"="money_lender"', '"office"="financial"', '"amenity"="money_transfer"', '"shop"="pawnbroker"'],
   pharmacy: ['"amenity"="pharmacy"', '"shop"="chemist"'],
-  diagnostics: ['"healthcare"="laboratory"', '"amenity"="clinic"'],
+  diagnostics: ['"healthcare"="laboratory"', '"amenity"="clinic"', '"healthcare"="clinic"', '"healthcare"="centre"'],
   services_salon: ['"shop"="hairdresser"', '"shop"="beauty"'],
   services_spa: ['"leisure"="spa"', '"shop"="massage"', '"amenity"="spa"'],
   services_fitness: ['"leisure"="fitness_centre"', '"leisure"="sports_centre"'],
   services_laundry: ['"shop"="laundry"', '"shop"="dry_cleaning"'],
   fuel: ['"amenity"="fuel"'],
-  automotive: ['"shop"="car_repair"', '"amenity"="car_wash"'],
-  hotel: ['"tourism"="hotel"', '"tourism"="motel"'],
-  education: ['"amenity"="school"', '"office"="educational_institution"', '"amenity"="prep_school"'],
+  automotive: ['"shop"="car_repair"', '"amenity"="car_wash"', '"shop"="car_parts"', '"shop"="tyres"'],
+  hotel: ['"tourism"="hotel"', '"tourism"="motel"', '"tourism"="guest_house"', '"tourism"="hostel"'],
+  education: ['"amenity"="school"', '"office"="educational_institution"', '"amenity"="prep_school"', '"amenity"="college"'],
   other: ['"shop"'],
 };
 
