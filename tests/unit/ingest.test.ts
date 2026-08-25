@@ -53,9 +53,18 @@ describe('normalizeZonal', () => {
   it('rejects rows missing region/city/classification', () => {
     expect(normalizeZonal({ region: 'NCR' })).toBeNull();
   });
-  it('builds a stable natural key', () => {
+  it('builds a stable natural key (city grain has an empty barangay segment)', () => {
     const z = normalizeZonal({ region: 'NCR', city_municipality: 'Taguig', rdo: 'RDO 44', classification_code: 'CR', low_php_sqm: 1, high_php_sqm: 2 })!;
-    expect(zonalNaturalKey(z)).toBe('NCR|Taguig|RDO 44|CR');
+    expect(zonalNaturalKey(z)).toBe('NCR|Taguig||RDO 44|CR');
+  });
+  it('includes the barangay in the natural key for barangay-grain rows', () => {
+    const z = normalizeZonal({ region: 'NCR', city_municipality: 'Taguig', barangay: 'Fort Bonifacio', classification_code: 'CR', low_php_sqm: 1, high_php_sqm: 2 })!;
+    expect(z.barangay).toBe('Fort Bonifacio');
+    expect(zonalNaturalKey(z)).toBe('NCR|Taguig|Fort Bonifacio||CR');
+  });
+  it('honors an explicit BIR data status over the derived one', () => {
+    const z = normalizeZonal({ region: 'NCR', city_municipality: 'Taguig', classification_code: 'CR', low_php_sqm: 1, high_php_sqm: 2, truth_layer: 'Assumed' })!;
+    expect(z.truthLayer).toBe('assumed');
   });
 });
 
