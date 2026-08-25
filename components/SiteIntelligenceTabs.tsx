@@ -30,6 +30,17 @@ export interface SiteModulePayloads {
     medianPhpSqm?: number | null; p25PhpSqm?: number | null; p75PhpSqm?: number | null;
     verdict?: 'below_market' | 'at_market' | 'above_market' | 'insufficient_data' | 'corridor_benchmark';
     comps?: Array<{ baseRentPhpSqm: number | null }>;
+    /** BIR zonal-value context: Verified land-value band + Projected cross-check + fallback anchor. */
+    zonal?: {
+      band?: {
+        code?: string; classification?: string; lowPhpSqm?: number | null; highPhpSqm?: number | null;
+        midPhpSqm?: number | null; grain?: 'barangay' | 'city'; cityMunicipality?: string;
+        barangay?: string | null; truthLayer?: string;
+      } | null;
+      crossCheck?: { rentPer1000?: number | null; position?: 'rich' | 'inline' | 'thin' | 'unknown'; note?: string } | null;
+      indicativeRent?: { lowPhpSqm?: number | null; highPhpSqm?: number | null; midPhpSqm?: number | null } | null;
+      usedAsFallback?: boolean;
+    } | null;
   } | null;
   daypart: {
     daytimeShare?: number; windowMatchPct?: number; hourly?: number[]; peakHour?: number;
@@ -344,6 +355,17 @@ function LeaseTab({ p, primary = true }: { p: SiteModulePayloads['lease']; prima
   // corridor distribution (bars + median line) so the benchmark is visible immediately.
   const chartAsking = askingValid ? asking : null;
 
+  // --- BIR zonal-value context (Verified band + Projected cross-check + fallback) ---
+  const zband = p.zonal?.band ?? null;
+  const zmid = zband?.midPhpSqm ?? null;
+  const indRent = p.zonal?.indicativeRent ?? null;
+  // Cross-check goes live with the user's typed asking rent; else the pipeline's stored value.
+  const liveAsking = askingValid ? asking : null;
+  const rentPer1000 =
+    zmid && liveAsking ? Math.round((liveAsking / zmid) * 1000 * 10) / 10 : (p.zonal?.crossCheck?.rentPer1000 ?? null);
+  const rentPos = rentPer1000 == null ? 'unknown' : rentPer1000 > 14 ? 'rich' : rentPer1000 < 6 ? 'thin' : 'inline';
+  const zonalHasIndicative = indRent?.lowPhpSqm != null && indRent?.highPhpSqm != null;
+
   return (
     <div className="space-y-4">
     {!primary && <ContextualNote module="Lease Benchmark" />}
@@ -353,7 +375,7 @@ function LeaseTab({ p, primary = true }: { p: SiteModulePayloads['lease']; prima
         <p className="mt-1 text-xl font-bold"><Chip tone={L_VERDICT[v].tone}>{L_VERDICT[v].label}</Chip></p>
         <p className="mt-2 text-sm text-ink-muted">
           {v === 'insufficient_data'
-            ? `Only ${n} comparable lease${n === 1 ? '' : 's'} in ${p.corridor ?? 'this corridor'} — treat any range as indicative.`
+            ? `Only ${n} comparable lease${n === 1 ? '' : 's'} in ${p.corridor ?? 'this corridor'}${zonalHasIndicative ? ' — so the read below is anchored on the Verified BIR commercial zonal value (indicative, Projected).' : ' — treat any range as indicative.'}`
             : v === 'corridor_benchmark'
               ? `This ran automatically with your analysis: the ${p.corridor ?? 'corridor'} benchmark from ${n} comparable lease${n === 1 ? '' : 's'}. Enter your asking rent below to see instantly where it lands in the spread (at / above / below market).`
               : `Asking rate sits ${p.baseRentPercentile != null ? `at the ${ordinal(p.baseRentPercentile)} percentile` : 'within the range'} of the ${p.corridor ?? 'corridor'} spread across ${n} comps.`}
@@ -403,6 +425,64 @@ function LeaseTab({ p, primary = true }: { p: SiteModulePayloads['lease']; prima
         />
       )}
     </div>
+
+    {/* BIR commercial zonal value — Verified land-value anchor + Projected cross-check + fallback.
+        Guardrail: a government tax-reference floor, never a market price verdict. */}
+    {zband && (
+      <div className="card p-5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm font-medium text-ink-text">BIR commercial zonal value</p>
+          <Chip tone="muted">
+            {zband.grain === 'barangay' ? `${zband.barangay ?? 'barangay'} grain` : 'city grain'} · {zband.truthLayer ?? 'verified'}
+          </Chip>
+        </div>
+        <p className="mt-1 text-xs text-ink-muted">
+          Government tax-reference land value for {zband.barangay ?? zband.cityMunicipality} ({zband.classification ?? 'Commercial'}).
+          A floor reference, not a market price — used here to anchor and cross-check the rent read.
+        </p>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <Stat
+            label="Commercial zonal band"
+            value={
+              zband.lowPhpSqm != null && zband.highPhpSqm != null
+                ? `₱${zband.lowPhpSqm.toLocaleString()}–${zband.highPhpSqm.toLocaleString()}`
+                : zband.midPhpSqm != null ? `₱${zband.midPhpSqm.toLocaleString()}` : '—'
+            }
+            sub={`${zband.classification ?? 'Commercial'} · /sqm land (Verified)`}
+          />
+          {rentPer1000 != null && (
+            <Stat
+              label="Rent vs land value"
+              value={`₱${rentPer1000} / ₱1k`}
+              sub={
+                rentPos === 'rich' ? 'above typical ₱6–14 band — rich vs land (Projected)'
+                : rentPos === 'thin' ? 'below typical band — cheap vs land (Projected)'
+                : 'in line with typical NCR corridors (Projected)'
+              }
+            />
+          )}
+          {zonalHasIndicative && (
+            <Stat
+              label="Indicative rent (zonal-implied)"
+              value={`₱${indRent!.lowPhpSqm!.toLocaleString()}–${indRent!.highPhpSqm!.toLocaleString()}`}
+              sub="Projected · /sqm/mo · validate with broker"
+            />
+          )}
+        </div>
+        {v === 'insufficient_data' && zonalHasIndicative && (
+          <p className="mt-3 rounded-md border-l-2 border-projected bg-projected/10 px-3 py-1.5 text-[11px] text-ink-muted">
+            Comps are thin in {p.corridor ?? 'this corridor'}, so this indicative rent band is derived from the Verified
+            commercial zonal value (₱{zband.midPhpSqm?.toLocaleString()}/sqm land midpoint × the calibrated NCR rent ratio).
+            Projected — treat as a starting range and validate with a broker.
+          </p>
+        )}
+        {rentPos === 'rich' && v !== 'insufficient_data' && (
+          <p className="mt-2 text-[11px] text-ink-muted">
+            The asking rent is rich relative to the underlying land value — a useful second lens alongside the corridor comps above.
+          </p>
+        )}
+      </div>
+    )}
 
     {/* Distribution chart — the corridor spread, shown automatically with the run.
         Reuses the same chart the standalone Lease Benchmark page uses. */}

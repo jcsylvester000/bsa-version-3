@@ -14,6 +14,7 @@
  *
  * No number is invented: everything here is derived from the comps passed in.
  */
+import type { TruthLayer } from '@/lib/truth/truthLayer';
 
 /** Minimum comps for a term before its benchmark is considered reliable. */
 export const MIN_SAMPLE = 5;
@@ -289,4 +290,123 @@ export function resolveCorridorForSite(
     if (match) return match;
   }
   return fallback;
+}
+
+// ============================================================================
+// BIR ZONAL-VALUE cross-check + fallback rent anchor (Projected).
+// ----------------------------------------------------------------------------
+// Grid guardrail: BIR zonal values are a TAX-REFERENCE FLOOR, never a market price
+// verdict. So zonal never replaces the comp-based verdict — it (1) anchors every
+// lease read to a Verified commercial land value, (2) cross-checks the asking rent
+// against that land value, and (3) supplies an INDICATIVE band when comps are too
+// thin to score, always labelled Projected.
+//
+// Calibration (2026-08): across the 13 NCR corridors that have BOTH lease comps and
+// commercial (CR) zonal, median monthly rent ≈ ₱10 per ₱1,000 of the commercial-zonal
+// midpoint (~1.0%/mo). Stable at ₱8–12 across mid-tier corridors (Ortigas, QC, Pasay,
+// Mandaluyong, Alabang, Manila, CAMANAVA); compresses in the CBD (BGC/Makati trophy-
+// street zonal is inflated → ₱3–5) and widens in low-tier fringes (Marikina/Pateros
+// → ₱25–37). Hence a band, never a point rent.
+// ============================================================================
+
+/** Monthly rent (₱/sqm) per ₱1,000 of commercial-zonal midpoint — central + reliable band. */
+export const ZONAL_RENT_PER_1000_CENTRAL = 10.0;
+export const ZONAL_RENT_PER_1000_LOW = 6.0;
+export const ZONAL_RENT_PER_1000_HIGH = 14.0;
+
+export type ZonalGrain = 'barangay' | 'city';
+
+/** The commercial zonal band resolved for a site (CR preferred, CC fallback). */
+export interface ZonalBand {
+  code: string;            // 'CR' | 'CC'
+  classification: string;  // human label
+  lowPhpSqm: number | null;
+  highPhpSqm: number | null;
+  midPhpSqm: number | null;
+  grain: ZonalGrain;       // barangay match vs city fallback
+  cityMunicipality: string;
+  barangay: string | null;
+  truthLayer: TruthLayer;  // Verified (BIR schedule) typically
+}
+
+/** Midpoint of a low/high band (or whichever bound is present). */
+export function bandMid(low: number | null, high: number | null): number | null {
+  if (low != null && high != null) return Math.round((low + high) / 2);
+  return low ?? high ?? null;
+}
+
+export type ZonalRentPosition = 'rich' | 'inline' | 'thin' | 'unknown';
+
+export interface ZonalCrossCheck {
+  /** asking monthly rent ÷ zonal mid × 1000 = rent per ₱1,000 of commercial land value. */
+  rentPer1000: number | null;
+  position: ZonalRentPosition; // vs the calibrated ₱6–14 band
+  note: string;
+}
+
+/** Where the asking rent sits against the underlying commercial land value. Projected. */
+export function zonalRentCrossCheck(
+  askingRentPhpSqm: number | null | undefined,
+  zonalMid: number | null,
+): ZonalCrossCheck {
+  if (askingRentPhpSqm == null || zonalMid == null || zonalMid <= 0) {
+    return { rentPer1000: null, position: 'unknown', note: 'Not enough data to compare rent to land value.' };
+  }
+  const r = Math.round((askingRentPhpSqm / zonalMid) * 1000 * 10) / 10;
+  const position: ZonalRentPosition =
+    r > ZONAL_RENT_PER_1000_HIGH ? 'rich' : r < ZONAL_RENT_PER_1000_LOW ? 'thin' : 'inline';
+  const note =
+    position === 'rich'
+      ? `Rent runs ₱${r}/mo per ₱1,000 of commercial land value — above the typical ₱${ZONAL_RENT_PER_1000_LOW}–${ZONAL_RENT_PER_1000_HIGH} NCR band, so it is rich relative to the land.`
+      : position === 'thin'
+        ? `Rent runs ₱${r}/mo per ₱1,000 of commercial land value — below the typical band; cheap relative to the land (or a prime-CBD zone where zonal is inflated).`
+        : `Rent runs ₱${r}/mo per ₱1,000 of commercial land value — in line with typical NCR corridors.`;
+  return { rentPer1000: r, position, note };
+}
+
+export interface IndicativeRent {
+  lowPhpSqm: number | null;
+  highPhpSqm: number | null;
+  midPhpSqm: number | null;
+}
+
+/**
+ * Indicative monthly rent band derived from the commercial zonal midpoint, for when
+ * lease comps are too thin to score. Projected and deliberately wide (the ₱6–14 band).
+ */
+export function indicativeRentFromZonal(zonalMid: number | null): IndicativeRent {
+  if (zonalMid == null || zonalMid <= 0) return { lowPhpSqm: null, highPhpSqm: null, midPhpSqm: null };
+  return {
+    lowPhpSqm: Math.round((ZONAL_RENT_PER_1000_LOW / 1000) * zonalMid),
+    highPhpSqm: Math.round((ZONAL_RENT_PER_1000_HIGH / 1000) * zonalMid),
+    midPhpSqm: Math.round((ZONAL_RENT_PER_1000_CENTRAL / 1000) * zonalMid),
+  };
+}
+
+/**
+ * Map a site's city/label to the canonical NCR city name used by the zonal dataset
+ * (e.g. "City of Pasig" / "Ortigas, Pasig" → "Pasig"). Pure, so the zonal lookup and
+ * any test resolve a site the same way. Returns null for a non-NCR / unknown city.
+ */
+export function canonicalNcrCity(city: string | null | undefined, label?: string | null): string | null {
+  const hay = `${city ?? ''} ${label ?? ''}`.toLowerCase();
+  if (!hay.trim()) return null;
+  if (/parañaque|paranaque|\bbf homes\b|sucat|bicutan|aseana/.test(hay)) return 'Parañaque';
+  if (/las ?pi(ñ|n)as|zapote/.test(hay)) return 'Las Piñas';
+  if (/quezon city|\bqc\b|cubao|novaliches|diliman|katipunan|commonwealth|fairview|timog|araneta/.test(hay)) return 'Quezon City';
+  if (/makati/.test(hay)) return 'Makati';
+  if (/taguig|\bbgc\b|bonifacio|fort bonifacio|mckinley/.test(hay)) return 'Taguig';
+  if (/pasig|ortigas|kapitolyo|capitol commons/.test(hay)) return 'Pasig';
+  if (/mandaluyong|shaw|\bboni\b/.test(hay)) return 'Mandaluyong';
+  if (/muntinlupa|alabang|filinvest|festival/.test(hay)) return 'Muntinlupa';
+  if (/pasay|\bmoa\b|mall of asia|bay area/.test(hay)) return 'Pasay';
+  if (/marikina/.test(hay)) return 'Marikina';
+  if (/valenzuela/.test(hay)) return 'Valenzuela';
+  if (/malabon/.test(hay)) return 'Malabon';
+  if (/navotas/.test(hay)) return 'Navotas';
+  if (/caloocan/.test(hay)) return 'Caloocan';
+  if (/pateros/.test(hay)) return 'Pateros';
+  if (/san juan/.test(hay)) return 'San Juan';
+  if (/manila|binondo|ermita|malate|intramuros|sampaloc|quiapo|sta\.? ?cruz|sta\.? ?mesa|\bpaco\b|pandacan|tondo|santa ana|san andres|divisoria|espa(ñ|n)a/.test(hay)) return 'Manila';
+  return null;
 }

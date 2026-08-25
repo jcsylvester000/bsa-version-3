@@ -5,6 +5,54 @@ The cross-thread state record. Read this (with the Master Instruction and the cu
 
 ---
 
+## 2026-08-25 (later 3) — BIR zonal values → Lease Benchmark integration — CODE COMPLETE (needs migrate + seed on neon)
+
+Ingested the user's "NCR BIR Zonal Values" workbooks (19 files, 2 grains each) and wired zonal into
+the Lease Benchmark. Approved options: barangay+city fallback grain; context+cross-check+fallback
+role; ratio calibrated from our own comps.
+
+**Data (Phase 0/1):** ETL over all workbooks → `prisma/data/zonal.real.json` REPLACED (26 → **2,317
+rows**: 219 city-grain + 2,098 barangay-grain). Canonicalized 52 messy labels → 16 NCR cities;
+parsed ₱ strings; kept explicit Verified/Assumed. CR/CC = 733 commercial rows. Anomalies: Valenzuela
+folder held a duplicated Taguig file (city-grain survives via NCR Overview; barangay grain missing);
+**San Juan absent entirely** → task #25 outstanding.
+
+**Schema:** `ZonalValue` gained `barangay String @default("")` ('' = city grain) and `rdo` is now
+`String @default("")`; natural key widened to (region, city, barangay, rdo, classificationCode),
+mapped `zonal_value_natural_key`, + index `zonal_value_city_barangay_idx`. Migration
+`prisma/migrations/20260826000000_zonal_barangay/migration.sql` — additive + idempotent (DO-block
+drops the old unique index by shape, so it is safe on neon + docker). `lib/ingest/normalize.ts` +
+`loaders.ts` updated (RawZonal.barangay + truth_layer; upsert includes barangay).
+
+**Calibration (Phase 1b):** rent↔commercial-zonal ratio from the 13 corridors with BOTH comps and
+zonal → median ≈ **₱10 per ₱1,000 of CR-zonal mid (~1%/mo)**; reliable band ₱6–14 (mid-tier), with
+CBD (BGC/Makati ~3–5) and low-tier fringes (Marikina/Pateros ~25–37) as flagged outliers. Baked into
+`leaseMath.ts` as ZONAL_RENT_PER_1000_CENTRAL/LOW/HIGH.
+
+**Server (Phase 2):** `leaseMath.ts` added pure `canonicalNcrCity`, `bandMid`, `zonalRentCrossCheck`,
+`indicativeRentFromZonal` + `ZonalBand` type. `leaseBenchmark.ts` added `resolveZonalBand(site)`
+(barangay grain → city fallback; CR preferred, CC fallback; aggregates min-low/max-high across
+Manila/QC district rows), attaches `zonal {band, crossCheck, indicativeRent, usedAsFallback}` to the
+result, flags `zonal_fallback_anchor` / `rent_rich_vs_zonal`. GUARDRAIL respected: zonal never
+overrides the comp verdict — Verified band + Projected cross-check/indicative, tax-floor framed.
+
+**UI (Phase 3):** `SiteIntelligenceTabs` LeaseTab + standalone `LeaseBenchmarkView` both show a "BIR
+commercial zonal value" card: Verified band, rent-to-land cross-check (goes live with the user's
+typed asking rent), and a Projected indicative rent band. When comps are insufficient the verdict now
+reads as a zonal-anchored indicative range instead of a dead end. API needed NO change (`...result`
+spreads zonal through). New `tests/unit/zonalLease.test.ts` (10 cases) PASS; all lease UI + server +
+math typecheck clean in cloud.
+
+**⚠️ ACTION REQUIRED (local — DB is neon):**
+1. `npx prisma generate` (client gets the `barangay` field).
+2. `npx prisma migrate deploy` (applies 20260826000000_zonal_barangay to neon; DO-block is safe).
+3. `npm run db:populate:ncr` (loads the 2,317 zonal rows via loadZonal; idempotent, ~1–2 min over neon).
+4. `npm run typecheck && npm run test`; then re-run a lease analysis → the zonal card shows on the Lease tab.
+5. Docker parity (optional): same 3 cmds with the `$env:DATABASE_URL=localhost:5433` override.
+Outstanding data (task #25): re-export real **Valenzuela** (barangay) + **San Juan** (all) zonal.
+
+---
+
 ## 2026-08-25 (later 2) — White-Space map dots (red/white) + all-industry POI ingest — COMPLETE (needs re-ingest + re-run on neon)
 
 Two user asks on the working White-Space v2:

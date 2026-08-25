@@ -69,22 +69,35 @@ export interface RawZonal {
   region?: string | null;
   province?: string | null;
   city_municipality?: string | null;
+  /** Barangay grain — '' / absent = a city-level row. */
+  barangay?: string | null;
   rdo?: string | null;
   classification_code?: string | null;
   low_php_sqm?: number | string | null;
   high_php_sqm?: number | string | null;
+  /** Explicit BIR data status when the source provides it ("Verified"/"Assumed"). */
+  truth_layer?: string | null;
   notes?: string | null;
 }
 export interface NormZonal {
   region: string;
   province: string | null;
   cityMunicipality: string;
-  rdo: string | null;
+  barangay: string;
+  rdo: string;
   classificationCode: string;
   lowPhpSqm: number | null;
   highPhpSqm: number | null;
   truthLayer: TruthLayer;
   notes: string | null;
+}
+
+function asTruthLayer(v: string | null | undefined): TruthLayer | null {
+  const t = (v ?? '').trim().toLowerCase();
+  if (t.startsWith('verif')) return 'verified';
+  if (t.startsWith('assum')) return 'assumed';
+  if (t.startsWith('proj')) return 'projected';
+  return null;
 }
 
 export function normalizeZonal(raw: RawZonal): NormZonal | null {
@@ -98,18 +111,19 @@ export function normalizeZonal(raw: RawZonal): NormZonal | null {
     region,
     province: raw.province?.trim() || null,
     cityMunicipality: city,
-    rdo: raw.rdo?.trim() || null,
+    barangay: raw.barangay?.trim() || '', // '' = city-grain row
+    rdo: raw.rdo?.trim() || '',
     classificationCode: cls,
     lowPhpSqm: low,
     highPhpSqm: high,
-    // Verified when both bounds present; Assumed when partial.
-    truthLayer: low != null && high != null ? 'verified' : 'assumed',
+    // Honor the source's explicit BIR status; else derive (both bounds present → Verified).
+    truthLayer: asTruthLayer(raw.truth_layer) ?? (low != null && high != null ? 'verified' : 'assumed'),
     notes: raw.notes?.trim() || null,
   };
 }
 
 export function zonalNaturalKey(z: NormZonal): string {
-  return `${z.region}|${z.cityMunicipality}|${z.rdo ?? ''}|${z.classificationCode}`;
+  return `${z.region}|${z.cityMunicipality}|${z.barangay}|${z.rdo}|${z.classificationCode}`;
 }
 
 // ---- Demographics (PSA) ----------------------------------------------------

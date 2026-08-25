@@ -39,8 +39,17 @@ interface LeaseResult {
   verdict: 'below_market' | 'at_market' | 'above_market' | 'insufficient_data' | 'corridor_benchmark';
   flags: string[];
   comps: Array<{ baseRentPhpSqm: number | null }>;
-  truth: { comps: TruthLayer; fairRange: TruthLayer };
+  truth: { comps: TruthLayer; fairRange: TruthLayer; zonalBand?: TruthLayer };
   verdictText: string;
+  zonal?: {
+    band?: {
+      classification?: string; lowPhpSqm?: number | null; highPhpSqm?: number | null; midPhpSqm?: number | null;
+      grain?: 'barangay' | 'city'; cityMunicipality?: string; barangay?: string | null; truthLayer?: string;
+    } | null;
+    crossCheck?: { rentPer1000?: number | null; position?: 'rich' | 'inline' | 'thin' | 'unknown'; note?: string } | null;
+    indicativeRent?: { lowPhpSqm?: number | null; highPhpSqm?: number | null; midPhpSqm?: number | null } | null;
+    usedAsFallback?: boolean;
+  } | null;
 }
 
 const VERDICT_META: Record<string, { label: string; cls: string }> = {
@@ -344,6 +353,50 @@ export function LeaseBenchmarkView({
                 </p>
               )}
             </div>
+
+            {/* BIR commercial zonal value — Verified land-value anchor + Projected cross-check + fallback.
+                A government tax-reference floor, not a market price verdict. */}
+            {result.zonal?.band && (
+              <div className="card p-5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-medium text-ink-text">BIR commercial zonal value</p>
+                  <span className="flex items-center gap-2 text-[11px] text-ink-muted">
+                    {result.zonal.band.grain === 'barangay' ? `${result.zonal.band.barangay ?? 'barangay'} grain` : 'city grain'}
+                    <TruthChip layer={(result.zonal.band.truthLayer as TruthLayer) ?? 'verified'} />
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-ink-muted">{result.zonal.band.classification ?? 'Commercial'} land (₱/sqm)</span>
+                  <span className="font-semibold">
+                    {result.zonal.band.lowPhpSqm != null && result.zonal.band.highPhpSqm != null
+                      ? `₱${result.zonal.band.lowPhpSqm.toLocaleString()}–${result.zonal.band.highPhpSqm.toLocaleString()}`
+                      : result.zonal.band.midPhpSqm != null ? `₱${result.zonal.band.midPhpSqm.toLocaleString()}` : '—'}
+                  </span>
+                </div>
+                {result.zonal.crossCheck?.rentPer1000 != null && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-ink-muted">Rent vs land value</span>
+                    <span className={`font-semibold ${result.zonal.crossCheck.position === 'rich' ? 'text-nogo' : result.zonal.crossCheck.position === 'thin' ? 'text-caution' : 'text-go'}`}>
+                      ₱{result.zonal.crossCheck.rentPer1000} / ₱1k · {result.zonal.crossCheck.position}
+                    </span>
+                  </div>
+                )}
+                {result.zonal.indicativeRent?.lowPhpSqm != null && result.zonal.indicativeRent?.highPhpSqm != null && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-ink-muted">Indicative rent (zonal-implied)</span>
+                    <span className="flex items-center gap-2 font-semibold">
+                      ₱{result.zonal.indicativeRent.lowPhpSqm.toLocaleString()}–{result.zonal.indicativeRent.highPhpSqm.toLocaleString()}/sqm
+                      <TruthChip layer="projected" />
+                    </span>
+                  </div>
+                )}
+                <p className="rounded-lg bg-projected/10 px-3 py-2 text-[11px] text-ink-muted">
+                  {result.verdict === 'insufficient_data' && result.zonal.usedAsFallback
+                    ? 'Comps are thin here, so the indicative rent above is anchored on the Verified commercial zonal value (Projected — validate with a broker).'
+                    : 'BIR zonal is a government tax-reference floor, shown as an independent land-value cross-check — not a market price verdict.'}
+                </p>
+              </div>
+            )}
           </div>
         </div>
       )}

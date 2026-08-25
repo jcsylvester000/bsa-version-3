@@ -78,9 +78,9 @@ export async function loadZonal(rows: RawZonal[]): Promise<LoadReport> {
     if (seen.has(key)) { deduped++; continue; }
     seen.add(key);
     await prisma.zonalValue.upsert({
-      where: { zonal_natural_key: { region: n.region, cityMunicipality: n.cityMunicipality, rdo: n.rdo ?? '', classificationCode: n.classificationCode } },
+      where: { zonal_natural_key: { region: n.region, cityMunicipality: n.cityMunicipality, barangay: n.barangay, rdo: n.rdo, classificationCode: n.classificationCode } },
       update: { province: n.province, lowPhpSqm: n.lowPhpSqm, highPhpSqm: n.highPhpSqm, truthLayer: n.truthLayer, notes: n.notes },
-      create: { region: n.region, province: n.province, cityMunicipality: n.cityMunicipality, rdo: n.rdo ?? '', classificationCode: n.classificationCode, lowPhpSqm: n.lowPhpSqm, highPhpSqm: n.highPhpSqm, truthLayer: n.truthLayer, notes: n.notes },
+      create: { region: n.region, province: n.province, cityMunicipality: n.cityMunicipality, barangay: n.barangay, rdo: n.rdo, classificationCode: n.classificationCode, lowPhpSqm: n.lowPhpSqm, highPhpSqm: n.highPhpSqm, truthLayer: n.truthLayer, notes: n.notes },
     });
     loaded++;
   }
