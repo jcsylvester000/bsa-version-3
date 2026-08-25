@@ -282,16 +282,21 @@ export async function runLand(
 /**
  * White-Space = reverse Territory Guard across candidate AREAS.
  *
- * Instead of scoring the one candidate site, it scans every barangay we hold demographics for
- * and, for each, computes the SAME cannibalization Territory Guard computes for a site — the
- * max of an own-branch trade-area overlap proxy (Verified coords) and same-concept competitive
- * saturation (Projected, from the tier-weighted competitor count) — then returns the TOP 5 areas
- * whose cannibalization is at/below the threshold (40), each with its competitor mix, the actual
- * nearby businesses, and a verdict. Site-agnostic (the answer depends on the brand/concept +
- * network, not the specific candidate) but stored per candidate so the run view can render it.
+ * The user proposes ONE site; this finds the TOP 5 BETTER alternative areas they did NOT enter.
+ * It scores every candidate area with the SAME cannibalization Territory Guard computes for a site
+ * — the max of an own-branch trade-area overlap proxy (Verified coords) and same-concept
+ * competitive saturation (Projected, from the tier-weighted competitor count) — ranks them best-
+ * first, and returns the top 5 with each area's competitor mix, the actual nearby businesses, a
+ * verdict badge (open / workable / contested vs the 40 threshold), and whether it BEATS the site
+ * the user proposed. The ≤40 threshold is now a label, not a hard gate: the user always gets the
+ * best available alternatives, honestly badged, rather than an empty "nothing qualifies" screen.
+ *
+ * Candidate areas come from `demographic_cell` (barangay centroids + population). When that layer
+ * isn't loaded, it FALLS BACK to areas derived from the mapped businesses themselves (poi grouped
+ * by barangay/city) so the scan is never empty wherever there is location data.
  *
  * Works for EVERY vertical: conceptFor() maps all formats to a concept, and the scan reuses the
- * exact tiering + saturation path Territory Guard already uses — so no new data dependency.
+ * exact tiering + saturation path Territory Guard already uses.
  */
 export async function runWhiteSpace(
   runId: string,
@@ -305,53 +310,44 @@ export async function runWhiteSpace(
   // Score each area on the default outlet catchment, so an area's cannibalization reads on the
   // SAME trade-area scale Territory Guard uses per site.
   const catchmentM = catchmentRadius('default'); // 1000 m
-
-  // 1) Candidate areas: every barangay with demographics — centroid, population, and distance to
-  //    the operator's NEAREST OWN outlet (drives the own-branch self-cannibalization proxy).
-  const cells = await prisma.$queryRaw<Array<{
-    psgc: string; brgy: string | null; city: string | null; pop: number;
-    lat: number | null; lon: number | null; nearest_own: number | null;
-  }>>`
-    SELECT d.psgc_code AS psgc, d.barangay AS brgy, d.city AS city,
-           COALESCE(d.population,0)::int AS pop,
-           ST_Y(ST_Centroid(d.geom::geometry)) AS lat,
-           ST_X(ST_Centroid(d.geom::geometry)) AS lon,
-           (SELECT MIN(ST_Distance(d.geom, o.geom))
-              FROM outlet o
-             WHERE o.franchisor_id = ${franchisorId}::uuid AND o.status = 'open') AS nearest_own
-    FROM demographic_cell d
-    WHERE d.geom IS NOT NULL`;
-
   const concept = conceptFor(vertical ?? 'other', brandOrConcept);
 
-  if (cells.length === 0) {
-    await persist(runId, siteId, 'whitespace', null, {
-      recommendations: [], scanned: 0, threshold: WHITESPACE_CANNIBALIZATION_MAX,
-      catchmentM, concept: { key: concept.key, label: concept.label }, competitorSet: null,
-    }, 'projected', ['no_demographic_data']);
-    return;
-  }
+  // The site the user actually proposed — we recommend BETTER alternatives than this one.
+  const site = await prisma.candidateSite.findUniqueOrThrow({
+    where: { id: siteId }, select: { lat: true, lon: true, label: true, city: true },
+  });
 
-  // 2) All competitor establishments once (name + coords). Tiered in code against the concept,
-  //    exactly like Territory Guard, so the map and the counts can never disagree. The brand's
-  //    OWN branches are excluded — they are self-cannibalization, already in the own-branch proxy.
+  // Own outlets (coords). Nearest-own distance drives the self-cannibalization proxy, computed in
+  // code so it works for both demographic and POI-derived candidate areas.
+  const ownOutlets = await prisma.$queryRaw<Array<{ lat: number; lon: number }>>`
+    SELECT lat, lon FROM outlet
+    WHERE franchisor_id = ${franchisorId}::uuid AND status = 'open' AND geom IS NOT NULL`;
+  const nearestOwnDist = (lat: number, lon: number): number | null => {
+    if (ownOutlets.length === 0) return null;
+    let m = Infinity;
+    for (const o of ownOutlets) {
+      const d = haversineMeters({ lat, lon }, { lat: o.lat, lon: o.lon });
+      if (d < m) m = d;
+    }
+    return Number.isFinite(m) ? m : null;
+  };
+
+  // Competitor establishments once, tiered to the concept (drop the unrelated majority so the
+  // per-area scan stays cheap). The brand's OWN branches are excluded — that's self-cannibalization,
+  // already captured by the own-branch proxy.
   const pois = await prisma.$queryRaw<Array<{ name: string; lat: number; lon: number }>>`
     SELECT name, lat, lon FROM poi WHERE category = 'competitor' AND geom IS NOT NULL`;
   const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '');
   const ownNeedle = norm(ownBrandName ?? '');
   const isOwnBrand = (name: string) => ownNeedle.length >= 4 && norm(name).includes(ownNeedle);
-  // Only same-concept (direct) and adjacent-format POIs contest the trade area — pre-tier once
-  // and drop the unrelated majority so the per-area scan stays cheap.
   const relevantPois = pois
     .filter((p) => !isOwnBrand(p.name))
     .map((p) => ({ name: p.name, lat: p.lat, lon: p.lon, tier: tierFor({ name: p.name, primaryType: null }, concept) }))
     .filter((p) => p.tier !== 'unrelated');
 
-  // 3) Per area: count same-concept establishments in its catchment → competitive saturation;
-  //    combine with the own-branch overlap proxy → the area's cannibalization score.
-  const areas: WhiteSpaceArea[] = cells.map((c) => {
-    const lat = c.lat != null ? Number(c.lat) : null;
-    const lon = c.lon != null ? Number(c.lon) : null;
+  // Score one point as a candidate area: competitor mix + saturation in its catchment, combined
+  // with the own-branch overlap proxy → the area's cannibalization + the nearby business names.
+  const scoreAt = (lat: number | null, lon: number | null) => {
     let direct = 0, adjacent = 0;
     const hits: Array<{ name: string; tier: string; d: number }> = [];
     if (lat != null && lon != null) {
@@ -365,15 +361,11 @@ export async function runWhiteSpace(
     const mix: TierCounts = { direct, adjacent, unrelated: 0 };
     const weighted = weightedCompetitorCount(mix);
     const saturation = competitiveSaturationPct(weighted); // Projected
-    const nearestOwnM = c.nearest_own != null ? Number(c.nearest_own) : null;
-    // Own-branch overlap proxy: two ~1 km catchments fully overlap at distance 0 and are
-    // disjoint at ~2× catchment. Linear between. Keeps an area the brand already sits on from
-    // being recommended (that would be self-cannibalization). Projected.
-    const ownOverlapProxy = nearestOwnM == null
-      ? 0
-      : Math.max(0, Math.min(100, Math.round((1 - nearestOwnM / (2 * catchmentM)) * 100)));
+    const own = lat != null && lon != null ? nearestOwnDist(lat, lon) : null;
+    // Own-branch overlap proxy: two ~1 km catchments fully overlap at distance 0 and are disjoint
+    // at ~2× catchment. Keeps an area the brand already sits on from being recommended. Projected.
+    const ownOverlapProxy = own == null ? 0 : Math.max(0, Math.min(100, Math.round((1 - own / (2 * catchmentM)) * 100)));
     const cannibalizationPct = Math.max(saturation, ownOverlapProxy);
-    // Actual nearby businesses for the UI: direct first, then adjacent, nearest first, deduped.
     hits.sort((a, b) => (a.tier === b.tier ? a.d - b.d : a.tier === 'direct' ? -1 : 1));
     const seen = new Set<string>();
     const nearbyBusinesses: string[] = [];
@@ -384,28 +376,88 @@ export async function runWhiteSpace(
       nearbyBusinesses.push(h.name);
       if (nearbyBusinesses.length >= 10) break;
     }
-    return {
-      psgcCode: c.psgc, barangay: c.brgy, city: c.city, population: c.pop, lat, lon,
-      cannibalizationPct, competitorMix: mix, weightedCompetitorCount: weighted,
-      nearestOwnM, nearbyBusinesses,
-    };
-  });
+    return { mix, weighted, saturation, cannibalizationPct, nearestOwn: own, nearbyBusinesses };
+  };
 
-  const recommendations = rankWhiteSpaceRecommendations(areas, {
-    threshold: WHITESPACE_CANNIBALIZATION_MAX, limit: 5,
-  });
+  // Candidate areas — demographic_cell (barangay centroids + population) first.
+  type Raw = { psgc: string; brgy: string | null; city: string | null; pop: number; lat: number | null; lon: number | null };
+  let source: 'demographic_cell' | 'poi_fallback' = 'demographic_cell';
+  let raw: Raw[] = (await prisma.$queryRaw<Array<{ psgc: string; brgy: string | null; city: string | null; pop: number; lat: number | null; lon: number | null }>>`
+    SELECT d.psgc_code AS psgc, d.barangay AS brgy, d.city AS city,
+           COALESCE(d.population,0)::int AS pop,
+           ST_Y(ST_Centroid(d.geom::geometry)) AS lat,
+           ST_X(ST_Centroid(d.geom::geometry)) AS lon
+    FROM demographic_cell d
+    WHERE d.geom IS NOT NULL`).map((c) => ({
+      psgc: c.psgc, brgy: c.brgy, city: c.city, pop: Number(c.pop) || 0,
+      lat: c.lat != null ? Number(c.lat) : null, lon: c.lon != null ? Number(c.lon) : null,
+    }));
 
-  // Name the competitor set for the concept (WHO they compete with) — same Cannibalization-Map
-  // source Territory Guard uses, so both modules name the same rivals.
+  // Fallback: derive candidate areas from the mapped businesses themselves when the demographic
+  // layer isn't loaded, so the scan is never empty wherever there is any location data. Population
+  // is unknown for these (0) — the ranking then leans on low cannibalization.
+  if (raw.length === 0) {
+    source = 'poi_fallback';
+    const clusters = await prisma.$queryRaw<Array<{ area: string | null; city: string | null; lat: number; lon: number; cnt: number }>>`
+      SELECT COALESCE(NULLIF(TRIM(barangay), ''), city) AS area, city,
+             AVG(lat)::float8 AS lat, AVG(lon)::float8 AS lon, COUNT(*)::int AS cnt
+      FROM poi
+      WHERE lat IS NOT NULL AND lon IS NOT NULL AND (barangay IS NOT NULL OR city IS NOT NULL)
+      GROUP BY COALESCE(NULLIF(TRIM(barangay), ''), city), city
+      HAVING COUNT(*) >= 3`;
+    raw = clusters.map((r) => ({
+      psgc: `${r.area ?? r.city ?? 'area'}|${r.city ?? ''}`,
+      brgy: r.area, city: r.city, pop: 0,
+      lat: r.lat != null ? Number(r.lat) : null, lon: r.lon != null ? Number(r.lon) : null,
+    }));
+  }
+
   const competitorSetRaw = await lookupCompetitorSet(vertical, brandOrConcept);
   const competitorSet = competitorSetRaw
     ? { ...competitorSetRaw, subjectBrand: (ownBrandName ?? '').trim() || null }
     : null;
 
+  // No geographic data anywhere → honest empty state (tells the user to load data).
+  if (raw.length === 0) {
+    await persist(runId, siteId, 'whitespace', null, {
+      recommendations: [], scanned: 0, threshold: WHITESPACE_CANNIBALIZATION_MAX, catchmentM,
+      concept: { key: concept.key, label: concept.label }, competitorSet, proposed: null, source,
+    }, 'projected', ['no_area_data']);
+    return;
+  }
+
+  // Score the proposed site, so we can rank alternatives as better/worse than it.
+  const ps = scoreAt(site.lat, site.lon);
+  const proposed = {
+    label: site.label, city: site.city,
+    cannibalizationPct: ps.cannibalizationPct, competitorMix: ps.mix, nearbyBusinesses: ps.nearbyBusinesses,
+  };
+
+  // Build & score candidate areas, EXCLUDING the area the user proposed (anything within 0.75×
+  // catchment of the site IS the proposed spot — we want the OTHER locations).
+  const areas: WhiteSpaceArea[] = [];
+  for (const c of raw) {
+    if (c.lat != null && c.lon != null &&
+        haversineMeters({ lat: site.lat, lon: site.lon }, { lat: c.lat, lon: c.lon }) <= catchmentM * 0.75) {
+      continue;
+    }
+    const s = scoreAt(c.lat, c.lon);
+    areas.push({
+      psgcCode: c.psgc, barangay: c.brgy, city: c.city, population: c.pop, lat: c.lat, lon: c.lon,
+      cannibalizationPct: s.cannibalizationPct, competitorMix: s.mix, weightedCompetitorCount: s.weighted,
+      nearestOwnM: s.nearestOwn, nearbyBusinesses: s.nearbyBusinesses,
+    });
+  }
+
+  const recommendations = rankWhiteSpaceRecommendations(areas, {
+    threshold: WHITESPACE_CANNIBALIZATION_MAX, limit: 5, proposedCannibalizationPct: proposed.cannibalizationPct,
+  });
+
   const flags: string[] = [];
-  if (recommendations.length === 0) flags.push('no_low_cannibalization_areas');
-  // Score = the top recommendation's score (higher = better), so the whitespace pillar keeps the
-  // same higher-is-better direction it had before for the site composite.
+  if (recommendations.length === 0) flags.push('no_area_data');
+  if (source === 'poi_fallback') flags.push('poi_derived_areas');
+  // Score = the top recommendation's score (higher = better), keeping the whitespace pillar's
+  // higher-is-better direction for the site composite.
   const topScore = recommendations[0]?.recommendationScore ?? null;
 
   // Competitor coords Verified; saturation + overlap proxy Projected → row Projected.
@@ -416,5 +468,7 @@ export async function runWhiteSpace(
     catchmentM,
     concept: { key: concept.key, label: concept.label },
     competitorSet,
+    proposed,
+    source,
   }, 'projected', flags);
 }

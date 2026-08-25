@@ -42,21 +42,26 @@ describe('whiteSpaceVerdict', () => {
     expect(whiteSpaceVerdict(WHITESPACE_CANNIBALIZATION_MAX)).toBe('contested');
     expect(whiteSpaceVerdict(80)).toBe('contested');
   });
+  it('accepts a custom threshold for the badge boundary', () => {
+    expect(whiteSpaceVerdict(30, 25)).toBe('contested');
+    expect(whiteSpaceVerdict(20, 25)).toBe('workable');
+  });
 });
 
 describe('rankWhiteSpaceRecommendations', () => {
-  it('keeps only areas at/below the cannibalization threshold (40)', () => {
+  it('ALWAYS returns the top alternatives, even when every area is above the threshold', () => {
+    // The whole point of the enhancement: never dead-end. Best-available still comes back,
+    // honestly badged, ranked by the blended score (cannibalization + demand).
     const recs = rankWhiteSpaceRecommendations([
-      area('A', 10, 5000),
-      area('B', 40, 9000),
-      area('C', 41, 10000),
-      area('D', 80, 20000),
+      area('A', 55, 5000),
+      area('B', 70, 9000),
+      area('C', 90, 10000),
     ]);
-    expect(recs.map((r) => r.barangay)).toContain('A');
-    expect(recs.map((r) => r.barangay)).toContain('B'); // exactly 40 is allowed
-    expect(recs.map((r) => r.barangay)).not.toContain('C');
-    expect(recs.map((r) => r.barangay)).not.toContain('D');
-    expect(recs.every((r) => r.cannibalizationPct <= 40)).toBe(true);
+    expect(recs.length).toBe(3);
+    expect(recs.every((r) => r.verdict === 'contested')).toBe(true);
+    for (let i = 1; i < recs.length; i++) {
+      expect(recs[i - 1].recommendationScore).toBeGreaterThanOrEqual(recs[i].recommendationScore);
+    }
   });
 
   it('assigns contiguous ranks sorted by descending recommendation score', () => {
@@ -79,13 +84,38 @@ describe('rankWhiteSpaceRecommendations', () => {
     expect(top.barangay).toBe('Open');
   });
 
-  it('dedupes by barangay, keeping the higher-scoring instance', () => {
+  it('marks whether each area beats the proposed site', () => {
+    const recs = rankWhiteSpaceRecommendations(
+      [area('Better', 20, 5000), area('Worse', 60, 5000)],
+      { proposedCannibalizationPct: 45 },
+    );
+    const better = recs.find((r) => r.barangay === 'Better')!;
+    const worse = recs.find((r) => r.barangay === 'Worse')!;
+    expect(better.beatsProposed).toBe(true);   // 20 < 45
+    expect(worse.beatsProposed).toBe(false);   // 60 > 45
+  });
+
+  it('leaves beatsProposed null when no proposed baseline is given', () => {
+    const [rec] = rankWhiteSpaceRecommendations([area('A', 10, 1000)]);
+    expect(rec.beatsProposed).toBeNull();
+  });
+
+  it('ranks on cannibalization alone when population is unknown (0) — the POI-fallback case', () => {
+    const recs = rankWhiteSpaceRecommendations([
+      area('Low', 10, 0),
+      area('High', 50, 0),
+    ]);
+    expect(recs[0].barangay).toBe('Low');
+  });
+
+  it('dedupes by barangay, keeping the lower-cannibalization instance', () => {
     const recs = rankWhiteSpaceRecommendations([
       area('X', 30, 1000),
       area('X', 5, 9000),
       area('Y', 20, 5000),
     ]);
     expect(recs.filter((r) => r.barangay === 'X')).toHaveLength(1);
+    expect(recs.find((r) => r.barangay === 'X')!.cannibalizationPct).toBe(5);
   });
 
   it('applies the limit', () => {
@@ -99,8 +129,8 @@ describe('rankWhiteSpaceRecommendations', () => {
     expect(recs).toHaveLength(5);
   });
 
-  it('returns nothing when every area is contested above the threshold', () => {
-    expect(rankWhiteSpaceRecommendations([area('P', 55, 100), area('Q', 99, 100)])).toEqual([]);
+  it('returns nothing only when there are no candidate areas at all', () => {
+    expect(rankWhiteSpaceRecommendations([])).toEqual([]);
   });
 
   it('carries the verdict and a human reason through onto each recommendation', () => {

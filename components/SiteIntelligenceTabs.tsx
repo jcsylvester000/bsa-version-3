@@ -42,7 +42,7 @@ export interface SiteModulePayloads {
     } | null;
   } | null;
   whitespace: {
-    /** New shape: top recommended expansion areas (cannibalization ≤ threshold). */
+    /** New shape: top recommended alternative areas, best-first (always up to `limit`). */
     recommendations?: Array<{
       rank: number;
       barangay: string | null;
@@ -57,6 +57,7 @@ export interface SiteModulePayloads {
       nearbyBusinesses: string[];
       recommendationScore: number;
       verdict: 'open' | 'workable' | 'contested';
+      beatsProposed?: boolean | null;
       reason: string;
     }>;
     scanned?: number;
@@ -64,6 +65,16 @@ export interface SiteModulePayloads {
     catchmentM?: number;
     concept?: { key: string; label: string } | null;
     competitorSet?: { anchorBrand: string; competitors: string[]; truthLayer: string; subjectBrand?: string | null } | null;
+    /** The site the user proposed — recommendations are the best alternatives that beat it. */
+    proposed?: {
+      label: string;
+      city: string | null;
+      cannibalizationPct: number;
+      competitorMix: { direct: number; adjacent: number; unrelated: number };
+      nearbyBusinesses: string[];
+    } | null;
+    /** Where candidate areas came from — demographic barangays, or business-derived when that layer is empty. */
+    source?: 'demographic_cell' | 'poi_fallback';
     /** Legacy shape (runs made before the recommendations rebuild) — triggers a re-run prompt. */
     gaps?: Array<{ barangay: string | null; opportunityScore: number; reason?: string; lat?: number | null; lon?: number | null }>;
   } | null;
@@ -527,14 +538,14 @@ const WS_VERDICT = {
 };
 
 /**
- * White-Space = reverse Territory Guard. Instead of scoring the one candidate site, it scans
- * every barangay we hold data for and recommends the TOP areas where same-concept cannibalization
- * is low enough to enter (≤ threshold, default 40) while demand is high — each shown with the
- * actual businesses in the area, a verdict, and the same data Territory Guard displays.
+ * White-Space = reverse Territory Guard. The user proposes ONE site; this recommends the TOP 5
+ * BETTER alternative areas they did NOT enter — scored the same way Territory Guard scores a site,
+ * ranked best-first, each shown with its verdict, the real businesses there, and how much lower its
+ * cannibalization is than the proposed site. The ≤40 rule is an honest badge, not a hard gate, so
+ * the user always gets the best available alternatives.
  *
- * States: (1) no stored result → older run, prompt a re-run; (2) legacy `gaps` payload → prompt a
- * re-run so the recommendations recompute; (3) ran but no area ≤ threshold → honest "all contested"
- * note; (4) recommendations → map + ranked recommendation cards.
+ * States: (1) no stored result / legacy `gaps` payload → prompt a re-run; (2) no candidate areas at
+ * all (no demographic or business data) → honest "load data" note; (3) recommendations → map + cards.
  */
 function WhiteSpaceTab({ p }: { p: SiteModulePayloads['whitespace']; primary?: boolean }) {
   if (!p) return <RerunNote module="White-Space" />;
@@ -542,10 +553,12 @@ function WhiteSpaceTab({ p }: { p: SiteModulePayloads['whitespace']; primary?: b
   if (p.recommendations == null) return <RerunNote module="White-Space" />;
 
   const recs = p.recommendations;
-  const threshold = p.threshold ?? 40;
   const conceptLabel = p.concept?.label ?? 'this concept';
   const brand = p.competitorSet?.subjectBrand?.trim();
   const scanned = p.scanned ?? 0;
+  const proposed = p.proposed ?? null;
+  const proposedPct = proposed ? Math.round(proposed.cannibalizationPct) : null;
+  const fallback = p.source === 'poi_fallback';
 
   if (recs.length === 0) {
     return (
@@ -553,16 +566,14 @@ function WhiteSpaceTab({ p }: { p: SiteModulePayloads['whitespace']; primary?: b
         <div className="flex items-start gap-3">
           <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full bg-caution/15 text-caution" aria-hidden>!</span>
           <div>
-            <p className="text-sm font-semibold text-ink-text">No low-cannibalization areas in current coverage</p>
+            <p className="text-sm font-semibold text-ink-text">No candidate areas to compare yet</p>
             <p className="mt-1 text-sm leading-relaxed text-ink-muted">
-              White-Space scanned {scanned.toLocaleString()} barangay{scanned === 1 ? '' : 's'} for {conceptLabel} and
-              found none with a cannibalization score at or below {threshold} — every area we hold data for is already
-              contested by same-concept rivals or sits on top of one of your branches. That itself is a finding: this
-              network&apos;s territory is saturated for this concept at the current data coverage.
+              White-Space needs a set of areas to rank against your proposed site, and none are loaded for {conceptLabel}
+              {' '}right now — neither a demographic (barangay) layer nor enough mapped businesses to derive areas from.
             </p>
             <p className="mt-3 text-xs text-ink-muted">
-              To surface fresh openings, widen coverage to barangays and corridors outside the mapped area, or relax the
-              cannibalization threshold.
+              Load the demographic layer (<code>npm run db:populate:ncr</code>) or ingest more area POIs, then re-run this
+              analysis and the top alternative locations will appear here.
             </p>
           </div>
         </div>
@@ -583,17 +594,35 @@ function WhiteSpaceTab({ p }: { p: SiteModulePayloads['whitespace']; primary?: b
 
   return (
     <div className="space-y-4">
-      {/* Header — what this tab now answers. */}
+      {/* Header — reframed against the site the user actually proposed. */}
       <div className="card p-5">
-        <p className="text-xs uppercase tracking-wide text-ink-muted">Recommended locations</p>
+        <p className="text-xs uppercase tracking-wide text-ink-muted">Better alternative locations</p>
         <p className="mt-1 text-lg font-bold text-ink-text">
-          Top {recs.length} area{recs.length === 1 ? '' : 's'} to open{brand ? ` a ${brand} branch` : ''}
+          Top {recs.length} area{recs.length === 1 ? '' : 's'} to open{brand ? ` ${brand}` : ''} instead of your proposed site
         </p>
-        <p className="mt-1 text-sm text-ink-muted">
-          Areas with a cannibalization score of {threshold} or less for {conceptLabel} — low same-concept overlap and
-          real demand. Scored the same way as Territory Guard, across {scanned.toLocaleString()} barangay
-          {scanned === 1 ? '' : 's'}. Cannibalization is Projected.
+        {proposed ? (
+          <p className="mt-1 text-sm text-ink-muted">
+            You proposed <span className="font-medium text-ink-text">{proposed.label}</span>
+            {proposed.city ? `, ${proposed.city}` : ''} — cannibalization <span className="font-medium text-ink-text">{proposedPct}%</span>{' '}
+            for {conceptLabel}. Below are the best areas we scanned that you did <em>not</em> enter, ranked by lower
+            cannibalization and demand (same scoring as Territory Guard). Cannibalization is Projected.
+          </p>
+        ) : (
+          <p className="mt-1 text-sm text-ink-muted">
+            The best areas to open {conceptLabel}, ranked by low same-concept cannibalization and demand. Cannibalization
+            is Projected.
+          </p>
+        )}
+        <p className="mt-2 text-[11px] text-ink-muted">
+          Scanned {scanned.toLocaleString()} area{scanned === 1 ? '' : 's'} · {conceptLabel}
+          {' · '}the badge marks how contested each area is (open ≤15, workable &lt;{p.threshold ?? 40}, contested ≥{p.threshold ?? 40}).
         </p>
+        {fallback && (
+          <p className="mt-2 rounded-md border-l-2 border-projected bg-projected/10 px-3 py-1.5 text-[11px] text-ink-muted">
+            Demographic (barangay) layer not loaded — areas were derived from mapped businesses, so population isn&apos;t
+            weighted. Run <code>npm run db:populate:ncr</code> for population-aware, barangay-level results.
+          </p>
+        )}
       </div>
 
       {/* Overview map: every recommended area pinned by its rank. */}
@@ -603,7 +632,7 @@ function WhiteSpaceTab({ p }: { p: SiteModulePayloads['whitespace']; primary?: b
           <GapsMap gaps={mapPoints} />
         ) : (
           <div className="rounded-lg border border-dashed border-ink-border p-4 text-center text-xs text-ink-muted">
-            Re-run this analysis to attach barangay coordinates — the recommended areas will then plot on a map here.
+            Re-run this analysis to attach area coordinates — the recommended areas will then plot on a map here.
           </div>
         )}
       </div>
@@ -629,6 +658,9 @@ function WhiteSpaceTab({ p }: { p: SiteModulePayloads['whitespace']; primary?: b
       <div className="space-y-3">
         {recs.map((r) => {
           const v = WS_VERDICT[r.verdict] ?? WS_VERDICT.workable;
+          // How much better than the proposed site (positive = lower cannibalization = better).
+          const delta = proposedPct == null ? null : proposedPct - Math.round(r.cannibalizationPct);
+          const hasPop = r.population > 0;
           return (
             <div key={`${r.barangay}-${r.rank}`} className="card p-5">
               <div className="flex flex-wrap items-center gap-3">
@@ -637,6 +669,11 @@ function WhiteSpaceTab({ p }: { p: SiteModulePayloads['whitespace']; primary?: b
                   <p className="truncate text-base font-semibold text-ink-text">{r.barangay ?? 'Unnamed area'}</p>
                   {r.city && <p className="truncate text-xs text-ink-muted">{r.city}</p>}
                 </div>
+                {delta != null && (
+                  <Chip tone={delta > 0 ? 'go' : delta < 0 ? 'caution' : 'muted'}>
+                    {delta > 0 ? `${delta}% lower than your site` : delta < 0 ? `${Math.abs(delta)}% higher than your site` : 'same as your site'}
+                  </Chip>
+                )}
                 <Chip tone={v.tone}>{v.label}</Chip>
               </div>
 
@@ -648,7 +685,11 @@ function WhiteSpaceTab({ p }: { p: SiteModulePayloads['whitespace']; primary?: b
                   value={`${r.competitorMix.direct} direct`}
                   sub={`+ ${r.competitorMix.adjacent} adjacent in catchment`}
                 />
-                <Stat label="Population" value={r.population.toLocaleString()} sub="catchment residents (Verified)" />
+                <Stat
+                  label="Population"
+                  value={hasPop ? r.population.toLocaleString() : '—'}
+                  sub={hasPop ? 'catchment residents (Verified)' : 'demographic layer not loaded'}
+                />
                 <Stat
                   label="Nearest own branch"
                   value={r.nearestOwnM == null ? 'None nearby' : `${Math.round(r.nearestOwnM).toLocaleString()} m`}

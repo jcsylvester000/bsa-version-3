@@ -370,60 +370,73 @@ export interface WhiteSpaceRecommendation extends WhiteSpaceArea {
   /** 0–100: rewards low cannibalization and high demand. Ranking key only. */
   recommendationScore: number;
   verdict: WhiteSpaceVerdict;
+  /** True when this area's cannibalization is lower than the site the user proposed (null = no proposed baseline). */
+  beatsProposed: boolean | null;
   reason: string;
 }
 
-/** Threshold at/below which an area's cannibalization is low enough to recommend. */
+/** Cannibalization at/below which an area reads as a low-cannibalization ("recommended") location. */
 export const WHITESPACE_CANNIBALIZATION_MAX = 40;
 
 /**
- * Verdict band for a recommended area, aligned with Territory Guard's own overlap bands
- * (verdictFromOverlap): < 15 → 'open' (adds — open territory), 15–<40 → 'workable'
- * (mixed — light overlap), ≥ 40 → 'contested' (redistributes — excluded from recommendations).
+ * Verdict band for a recommended area, aligned with Territory Guard's overlap bands
+ * (verdictFromOverlap): < 15 → 'open' (open territory), 15–<threshold → 'workable' (light overlap),
+ * ≥ threshold → 'contested'. This is now a LABEL, not a gate — an area above the threshold can still
+ * be recommended (it may still be the best available alternative and beat the user's proposed site);
+ * the badge just tells the truth about how contested it is.
  */
-export function whiteSpaceVerdict(cannibalizationPct: number): WhiteSpaceVerdict {
-  if (cannibalizationPct >= WHITESPACE_CANNIBALIZATION_MAX) return 'contested';
+export function whiteSpaceVerdict(cannibalizationPct: number, threshold: number = WHITESPACE_CANNIBALIZATION_MAX): WhiteSpaceVerdict {
+  if (cannibalizationPct >= threshold) return 'contested';
   if (cannibalizationPct >= 15) return 'workable';
   return 'open';
 }
 
 /**
- * Rank candidate areas into the top recommended locations for the concept. Keeps only areas
- * whose cannibalization is at/below `threshold` (default 40), scores each by low cannibalization
- * (60%) and demand/population (40%), dedupes by barangay, and returns the top `limit` ranked.
- * Pure and deterministic — the server module supplies the per-area cannibalization + mix.
+ * Rank candidate areas into the TOP recommended locations for the concept — the best alternatives
+ * to the site the user proposed. Scores each by low cannibalization (60%) and demand/population
+ * (40%), dedupes by barangay, and ALWAYS returns the top `limit` ranked best-first (no hard
+ * threshold gate — the user wants the best available alternatives even when every area is somewhat
+ * contested; the per-area verdict badge and `beatsProposed` flag carry the honesty). When
+ * `proposedCannibalizationPct` is given, each recommendation is marked as beating the proposed site
+ * or not. Pure and deterministic — the server module supplies the per-area cannibalization + mix.
  */
 export function rankWhiteSpaceRecommendations(
   areas: WhiteSpaceArea[],
-  opts: { threshold?: number; limit?: number } = {},
+  opts: { threshold?: number; limit?: number; proposedCannibalizationPct?: number | null } = {},
 ): WhiteSpaceRecommendation[] {
   const threshold = opts.threshold ?? WHITESPACE_CANNIBALIZATION_MAX;
   const limit = opts.limit ?? 5;
-  const eligible = areas.filter((a) => a.cannibalizationPct <= threshold);
-  if (eligible.length === 0) return [];
-  const maxPop = Math.max(1, ...eligible.map((a) => a.population));
+  const proposed = opts.proposedCannibalizationPct ?? null;
+  if (areas.length === 0) return [];
 
-  const scored: WhiteSpaceRecommendation[] = eligible.map((a) => {
+  // Dedupe by barangay first (overlapping ingests can produce >1 cell per barangay) — keep the
+  // lowest-cannibalization instance, since that is the best representation of the area.
+  const byName = new Map<string, WhiteSpaceArea>();
+  for (const a of areas) {
+    const key = (a.barangay ?? a.psgcCode).toLowerCase();
+    const prev = byName.get(key);
+    if (!prev || a.cannibalizationPct < prev.cannibalizationPct) byName.set(key, a);
+  }
+  const deduped = [...byName.values()];
+  const maxPop = Math.max(1, ...deduped.map((a) => a.population));
+
+  const scored: WhiteSpaceRecommendation[] = deduped.map((a) => {
     const headroom = Math.max(0, 100 - a.cannibalizationPct); // low cannibalization is good
-    const demand = (a.population / maxPop) * 100;             // high demand is good
+    const demand = (a.population / maxPop) * 100;             // high demand is good (0 for all when no pop data → ranks on headroom)
     const recommendationScore = Math.round((headroom * 0.6 + demand * 0.4) * 10) / 10;
-    const verdict = whiteSpaceVerdict(a.cannibalizationPct);
+    const verdict = whiteSpaceVerdict(a.cannibalizationPct, threshold);
+    const beatsProposed = proposed == null ? null : a.cannibalizationPct < proposed;
     const directWord = a.competitorMix.direct === 1 ? 'direct rival' : 'direct rivals';
     const reason =
       `${Math.round(a.cannibalizationPct)}% cannibalization · ${a.competitorMix.direct} ${directWord}` +
-      `, ${a.competitorMix.adjacent} adjacent in catchment · pop ${a.population.toLocaleString()}` +
+      `, ${a.competitorMix.adjacent} adjacent in catchment` +
+      `${a.population > 0 ? ` · pop ${a.population.toLocaleString()}` : ''}` +
       `${a.nearestOwnM == null ? ' · no own branch nearby' : ` · ${Math.round(a.nearestOwnM)} m to nearest own branch`}`;
-    return { ...a, rank: 0, recommendationScore, verdict, reason };
+    return { ...a, rank: 0, recommendationScore, verdict, beatsProposed, reason };
   });
 
-  // Dedupe by barangay (overlapping ingests can produce >1 cell per barangay) — keep the best.
-  const byName = new Map<string, WhiteSpaceRecommendation>();
-  for (const r of scored) {
-    const key = (r.barangay ?? r.psgcCode).toLowerCase();
-    const prev = byName.get(key);
-    if (!prev || r.recommendationScore > prev.recommendationScore) byName.set(key, r);
-  }
-  return [...byName.values()]
+  // Always return the top `limit` by score (best first). No hard threshold filter.
+  return scored
     .sort((a, b) => b.recommendationScore - a.recommendationScore)
     .slice(0, limit)
     .map((r, i) => ({ ...r, rank: i + 1 }));

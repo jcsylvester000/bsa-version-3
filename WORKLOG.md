@@ -5,6 +5,45 @@ The cross-thread state record. Read this (with the Master Instruction and the cu
 
 ---
 
+## 2026-08-25 (later) — White-Space v2: always top-5 BETTER alternatives vs the proposed site — COMPLETE
+
+Symptom: White-Space showed "scanned 0 barangays / no low-cannibalization areas." Root cause =
+`demographic_cell` is effectively empty on this machine (the dump didn't include it), so the scan
+had no candidate grid. Plus a design gap: the hard ≤40 gate dead-ended instead of showing the best
+available alternatives. User clarified the intent: **based on the proposed site, find the top 5
+OTHER (better) areas the user did not input.**
+
+Changes (all committed):
+- `lib/modules/p2p3Math.ts` — `rankWhiteSpaceRecommendations` no longer hard-filters by threshold;
+  it ALWAYS returns the top `limit` by blended score (60% low-cannibalization + 40% demand),
+  best-first. `WHITESPACE_CANNIBALIZATION_MAX`=40 is now a verdict LABEL only. Added
+  `beatsProposed` (vs the proposed site's cannibalization) and `proposedCannibalizationPct` opt;
+  `whiteSpaceVerdict(pct, threshold?)` takes an optional threshold. Dedupe keeps the
+  lowest-cannibalization instance. Handles population=0 (POI fallback) → ranks on cannibalization.
+- `lib/modules/p2p3Modules.ts` — `runWhiteSpace` rewritten: fetches the proposed site and scores it;
+  computes nearest-own distance in code from an outlets pull (works for any area source); scans
+  `demographic_cell` first, and FALLS BACK to POI-derived areas (poi grouped by barangay/city,
+  centroid = AVG, HAVING COUNT>=3) when the demographic layer is empty so it never scans zero;
+  EXCLUDES the proposed area (within 0.75×catchment of the site); ranks top 5 vs the proposed
+  cannibalization. Payload adds `proposed {label,city,cannibalizationPct,mix,nearbyBusinesses}` and
+  `source: 'demographic_cell'|'poi_fallback'`; flags `poi_derived_areas` / `no_area_data`.
+- `components/SiteIntelligenceTabs.tsx` — WhiteSpaceTab reframed: header "Top N areas to open
+  instead of your proposed site" with the proposed site's own cannibalization; per-card "X% lower
+  than your site" delta chip (from beatsProposed) + verdict badge; population shows "—" on fallback;
+  amber note when `source==='poi_fallback'` telling the user to run `db:populate:ncr`; empty state
+  only when there are truly zero candidate areas.
+- `tests/unit/whitespace.test.ts` — updated for always-top-5 + beatsProposed + population-0 ranking.
+  14 tests PASS (ran real vitest in cloud). Both the UI and server modules typecheck clean in cloud.
+
+**⚠️ ACTION REQUIRED (local): the real fix for "scanned 0" is to load demographic data.**
+1. Ensure Docker DB up (`docker compose up -d`), then `npm run db:populate:ncr` (loads NCR
+   barangays into demographic_cell). Optionally `npm run db:seed-all` for the full reference set.
+2. Re-run the analysis. With demographics loaded you get population-weighted, barangay-level
+   recommendations; without them the POI fallback now still yields city/area-level results.
+3. `npm run typecheck` and `npm run test` should both pass.
+
+---
+
 ## 2026-08-25 — White-Space rebuilt as "recommended locations" (reverse Territory Guard) — COMPLETE (needs local re-seed + re-run to populate)
 
 Reworked the White-Space module per user request: it no longer ranks "unserved gaps" (which
