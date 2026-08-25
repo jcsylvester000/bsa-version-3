@@ -165,7 +165,7 @@ type CSetRow = { anchorBrand: string; competitors: string[]; truthLayer: TruthLa
  * Returns null when nothing matches — the saturation COUNT still works; we just can't name
  * the specific brands.
  */
-async function lookupCompetitorSet(
+export async function lookupCompetitorSet(
   vertical: string | undefined,
   brandOrConcept: string | undefined,
 ): Promise<{ anchorBrand: string; competitors: string[]; truthLayer: TruthLayer } | null> {

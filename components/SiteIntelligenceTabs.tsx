@@ -42,6 +42,29 @@ export interface SiteModulePayloads {
     } | null;
   } | null;
   whitespace: {
+    /** New shape: top recommended expansion areas (cannibalization ≤ threshold). */
+    recommendations?: Array<{
+      rank: number;
+      barangay: string | null;
+      city: string | null;
+      population: number;
+      lat: number | null;
+      lon: number | null;
+      cannibalizationPct: number;
+      competitorMix: { direct: number; adjacent: number; unrelated: number };
+      weightedCompetitorCount: number;
+      nearestOwnM: number | null;
+      nearbyBusinesses: string[];
+      recommendationScore: number;
+      verdict: 'open' | 'workable' | 'contested';
+      reason: string;
+    }>;
+    scanned?: number;
+    threshold?: number;
+    catchmentM?: number;
+    concept?: { key: string; label: string } | null;
+    competitorSet?: { anchorBrand: string; competitors: string[]; truthLayer: string; subjectBrand?: string | null } | null;
+    /** Legacy shape (runs made before the recommendations rebuild) — triggers a re-run prompt. */
     gaps?: Array<{ barangay: string | null; opportunityScore: number; reason?: string; lat?: number | null; lon?: number | null }>;
   } | null;
 }
@@ -496,82 +519,159 @@ function DaypartTab({ p, primary = true }: { p: SiteModulePayloads['daypart']; p
 }
 
 /* ---- White-Space -------------------------------------------------------- */
-function WhiteSpaceTab({ p, primary = true }: { p: SiteModulePayloads['whitespace']; primary?: boolean }) {
-  // White-Space now runs on every analysis, so there are three states:
-  //   1. no stored result at all → an older run; prompt a re-run.
-  //   2. ran, but zero gaps → the brand's network already covers every area we hold data
-  //      for (saturation) — a real, positive result, not a failure.
-  //   3. ranked gaps → show the map + list (+ a contextual note when White-Space isn't the
-  //      primary lens for this format, so a single-store concept doesn't over-read it).
-  if (!p) return <RerunNote module="White-Space" />;
-  const gaps = p.gaps ?? [];
+// Verdict bands for a recommended area, aligned with Territory Guard's cannibalization bands.
+const WS_VERDICT = {
+  open: { label: 'Open territory', tone: 'go' as const },
+  workable: { label: 'Workable — light overlap', tone: 'caution' as const },
+  contested: { label: 'Contested', tone: 'nogo' as const },
+};
 
-  if (gaps.length === 0) {
+/**
+ * White-Space = reverse Territory Guard. Instead of scoring the one candidate site, it scans
+ * every barangay we hold data for and recommends the TOP areas where same-concept cannibalization
+ * is low enough to enter (≤ threshold, default 40) while demand is high — each shown with the
+ * actual businesses in the area, a verdict, and the same data Territory Guard displays.
+ *
+ * States: (1) no stored result → older run, prompt a re-run; (2) legacy `gaps` payload → prompt a
+ * re-run so the recommendations recompute; (3) ran but no area ≤ threshold → honest "all contested"
+ * note; (4) recommendations → map + ranked recommendation cards.
+ */
+function WhiteSpaceTab({ p }: { p: SiteModulePayloads['whitespace']; primary?: boolean }) {
+  if (!p) return <RerunNote module="White-Space" />;
+  // A run made before this rebuild has the old `gaps` shape and no `recommendations` key.
+  if (p.recommendations == null) return <RerunNote module="White-Space" />;
+
+  const recs = p.recommendations;
+  const threshold = p.threshold ?? 40;
+  const conceptLabel = p.concept?.label ?? 'this concept';
+  const brand = p.competitorSet?.subjectBrand?.trim();
+  const scanned = p.scanned ?? 0;
+
+  if (recs.length === 0) {
     return (
-      <div>
-        {!primary && <ContextualNote module="White-Space" />}
-        <div className="card p-6">
-          <div className="flex items-start gap-3">
-            <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full bg-go/15 text-go" aria-hidden>✓</span>
-            <div>
-              <p className="text-sm font-semibold text-ink-text">Your network already covers this territory</p>
-              <p className="mt-1 text-sm leading-relaxed text-ink-muted">
-                White-Space ranks unserved areas where you have no branch nearby. For this
-                network, every area we currently hold demographic data for already sits close to
-                one of your outlets — so there are no unserved gaps to rank here. For an
-                established brand that&apos;s a healthy sign of coverage, not a missing result.
-              </p>
-              <p className="mt-3 text-xs text-ink-muted">
-                To surface fresh expansion gaps, widen coverage to barangays and corridors outside
-                your served areas.
-              </p>
-            </div>
+      <div className="card p-6">
+        <div className="flex items-start gap-3">
+          <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full bg-caution/15 text-caution" aria-hidden>!</span>
+          <div>
+            <p className="text-sm font-semibold text-ink-text">No low-cannibalization areas in current coverage</p>
+            <p className="mt-1 text-sm leading-relaxed text-ink-muted">
+              White-Space scanned {scanned.toLocaleString()} barangay{scanned === 1 ? '' : 's'} for {conceptLabel} and
+              found none with a cannibalization score at or below {threshold} — every area we hold data for is already
+              contested by same-concept rivals or sits on top of one of your branches. That itself is a finding: this
+              network&apos;s territory is saturated for this concept at the current data coverage.
+            </p>
+            <p className="mt-3 text-xs text-ink-muted">
+              To surface fresh openings, widen coverage to barangays and corridors outside the mapped area, or relax the
+              cannibalization threshold.
+            </p>
           </div>
         </div>
       </div>
     );
   }
-  const top = gaps.slice(0, 10);
-  const mapPoints = top
-    .map((g, i) => ({
-      rank: i + 1,
-      label: g.barangay ?? 'Unnamed cell',
-      lat: g.lat ?? NaN,
-      lon: g.lon ?? NaN,
-      score: g.opportunityScore,
-      reason: g.reason,
+
+  const mapPoints = recs
+    .map((r) => ({
+      rank: r.rank,
+      label: [r.barangay ?? 'Unnamed area', r.city].filter(Boolean).join(', '),
+      lat: r.lat ?? NaN,
+      lon: r.lon ?? NaN,
+      score: r.recommendationScore,
+      reason: r.reason,
     }))
     .filter((g) => Number.isFinite(g.lat) && Number.isFinite(g.lon));
 
   return (
     <div className="space-y-4">
-      {!primary && <ContextualNote module="White-Space" />}
-      {/* Single overview map: every ranked gap pinned by its rank number. */}
+      {/* Header — what this tab now answers. */}
       <div className="card p-5">
-        <p className="mb-3 text-sm font-medium text-ink-text">Gap locations · OpenStreetMap</p>
+        <p className="text-xs uppercase tracking-wide text-ink-muted">Recommended locations</p>
+        <p className="mt-1 text-lg font-bold text-ink-text">
+          Top {recs.length} area{recs.length === 1 ? '' : 's'} to open{brand ? ` a ${brand} branch` : ''}
+        </p>
+        <p className="mt-1 text-sm text-ink-muted">
+          Areas with a cannibalization score of {threshold} or less for {conceptLabel} — low same-concept overlap and
+          real demand. Scored the same way as Territory Guard, across {scanned.toLocaleString()} barangay
+          {scanned === 1 ? '' : 's'}. Cannibalization is Projected.
+        </p>
+      </div>
+
+      {/* Overview map: every recommended area pinned by its rank. */}
+      <div className="card p-5">
+        <p className="mb-3 text-sm font-medium text-ink-text">Recommended areas · OpenStreetMap</p>
         {mapPoints.length > 0 ? (
           <GapsMap gaps={mapPoints} />
         ) : (
           <div className="rounded-lg border border-dashed border-ink-border p-4 text-center text-xs text-ink-muted">
-            Re-run this analysis to attach barangay coordinates — the gap locations will then plot on a map here.
+            Re-run this analysis to attach barangay coordinates — the recommended areas will then plot on a map here.
           </div>
         )}
       </div>
 
-      <div className="card p-5">
-        <p className="mb-3 text-sm font-medium text-ink-text">Top unserved gaps in the network</p>
-        <ol className="space-y-2">
-          {top.map((g, i) => (
-            <li key={`${g.barangay}-${i}`} className="card-inset flex items-center gap-3 p-3">
-              <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-accent text-xs font-bold text-ink-bg">{i + 1}</span>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm text-ink-text">{g.barangay ?? 'Unnamed cell'}</p>
-                {g.reason && <p className="truncate text-xs text-ink-muted">{g.reason}</p>}
+      {/* Named competitor set — WHO these areas would compete with (same source as Territory Guard). */}
+      {p.competitorSet && p.competitorSet.competitors.length > 0 && (
+        <div className="card p-5">
+          <p className="mb-1 text-sm font-medium text-ink-text">Competes with</p>
+          <p className="mb-2 text-[11px] text-ink-muted">
+            {brand
+              ? `Competitor set for ${brand} — ${p.competitorSet.anchorBrand}-class rivals (${p.competitorSet.truthLayer})`
+              : `Reference competitor set — ${p.competitorSet.anchorBrand}-class (${p.competitorSet.truthLayer})`}
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {p.competitorSet.competitors.slice(0, 12).map((c, i) => (
+              <span key={`${c}-${i}`} className="rounded-full bg-ink-panel-2 px-2 py-0.5 text-[11px] text-ink-muted">{c}</span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Ranked recommendation cards — Territory-Guard-style verdict + data + the real businesses there. */}
+      <div className="space-y-3">
+        {recs.map((r) => {
+          const v = WS_VERDICT[r.verdict] ?? WS_VERDICT.workable;
+          return (
+            <div key={`${r.barangay}-${r.rank}`} className="card p-5">
+              <div className="flex flex-wrap items-center gap-3">
+                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-accent text-sm font-bold text-ink-bg">{r.rank}</span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-base font-semibold text-ink-text">{r.barangay ?? 'Unnamed area'}</p>
+                  {r.city && <p className="truncate text-xs text-ink-muted">{r.city}</p>}
+                </div>
+                <Chip tone={v.tone}>{v.label}</Chip>
               </div>
-              <span className="text-lg font-bold text-ink-text">{Math.round(g.opportunityScore)}</span>
-            </li>
-          ))}
-        </ol>
+
+              {/* Data row — same fields Territory Guard shows, per area. */}
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <Stat label="Cannibalization" value={`${Math.round(r.cannibalizationPct)}%`} sub="lower is better (Projected)" />
+                <Stat
+                  label="Same-concept nearby"
+                  value={`${r.competitorMix.direct} direct`}
+                  sub={`+ ${r.competitorMix.adjacent} adjacent in catchment`}
+                />
+                <Stat label="Population" value={r.population.toLocaleString()} sub="catchment residents (Verified)" />
+                <Stat
+                  label="Nearest own branch"
+                  value={r.nearestOwnM == null ? 'None nearby' : `${Math.round(r.nearestOwnM).toLocaleString()} m`}
+                  sub={r.nearestOwnM == null ? 'no self-cannibalization' : 'from your closest outlet'}
+                />
+              </div>
+
+              {/* The actual businesses in the area — the "exact or similar businesses" to weigh. */}
+              <div className="mt-4">
+                <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-ink-muted">Businesses in the area</p>
+                {r.nearbyBusinesses.length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    {r.nearbyBusinesses.map((b, i) => (
+                      <span key={`${b}-${i}`} className="rounded-full bg-ink-panel-2 px-2 py-0.5 text-[11px] text-ink-text">{b}</span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-ink-muted">Open ground — no same-concept or adjacent businesses found in the catchment.</p>
+                )}
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

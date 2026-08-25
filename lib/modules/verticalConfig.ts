@@ -22,23 +22,27 @@ export const CORE_MODULES: ModuleKind[] = ['site_fit', 'territory', 'lease', 'da
 
 /**
  * The verticals for which each "always-on but format-sensitive" module is a PRIMARY
- * (decision-grade) read rather than a contextual one. Territory and Lease are primary for
- * every format (cannibalization and rent apply universally). Daypart and White-Space are
- * primary only where the format's economics actually turn on them.
+ * (decision-grade) read rather than a contextual one. Territory, Lease and White-Space are
+ * primary for every format (cannibalization, rent, and expansion-area screening apply
+ * universally). Daypart is primary only where the format's economics actually turn on it.
+ *
+ * White-Space is now a full decision-grade read for EVERY vertical: it no longer ranks
+ * "unserved gaps" (which only made sense for a scaling network) but recommends the top areas
+ * with low same-concept cannibalization — a question that applies to any operator, new or
+ * established, in any industry. So it is always primary and never carries the contextual badge.
  */
 const PRIMARY_VERTICALS: Partial<Record<ModuleKind, Vertical[]>> = {
   daypart: ['fnb_qsr', 'fnb_cafe', 'fnb_bakery', 'services_fitness', 'convenience', 'education'],
-  whitespace: ['convenience', 'remittance'],
 };
 
 /**
  * Is this module a PRIMARY (decision-grade) read for the given vertical, or a secondary/
- * contextual one? territory + lease are always primary; daypart + whitespace depend on the
+ * contextual one? territory + lease + whitespace are always primary; daypart depends on the
  * format (see PRIMARY_VERTICALS). Any other module is primary only when the vertical config
  * explicitly activates it. The UI uses this to badge contextual reads honestly.
  */
 export function isPrimaryModule(vertical: Vertical, module: ModuleKind): boolean {
-  if (module === 'territory' || module === 'lease' || module === 'site_fit') return true;
+  if (module === 'territory' || module === 'lease' || module === 'site_fit' || module === 'whitespace') return true;
   const primaryList = PRIMARY_VERTICALS[module];
   if (primaryList) return primaryList.includes(vertical);
   return (EXTRA_BY_VERTICAL[vertical] ?? []).includes(module);

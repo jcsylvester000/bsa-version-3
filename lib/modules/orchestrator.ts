@@ -170,7 +170,7 @@ export async function runPipeline(runId: string): Promise<RunResult> {
       }
       if (modules.includes('healthcare')) { await runHealthcare(runId, site.id); allLayers.push('projected'); }
       if (modules.includes('mall')) { await runMall(runId, site.id, targetMallTier); allLayers.push('assumed'); }
-      if (modules.includes('whitespace')) { await runWhiteSpace(runId, site.id, run.franchisorId); allLayers.push('projected'); }
+      if (modules.includes('whitespace')) { await runWhiteSpace(runId, site.id, run.franchisorId, run.vertical, conceptText, run.franchisor?.brandName ?? undefined); allLayers.push('projected'); }
       if (modules.includes('land')) { await runLand(runId, site.id, run.vertical, parcel); allLayers.push('assumed'); }
 
       // --- Reconcile the stored site composite with ALL modules --------------

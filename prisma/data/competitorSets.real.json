@@ -1309,5 +1309,186 @@
     "conceptKey": "fitness",
     "truthLayer": "projected",
     "notes": "Mid-market neighborhood gym; competes on price + proximity."
+  },
+  {
+    "category": "C06 Health, Wellness & Beauty",
+    "anchorBrand": "Nuat Thai",
+    "parentOperator": "Nuat Thai Foot & Body Massage",
+    "subSegment": "Massage & foot spa",
+    "formatTier": "Inline/mall",
+    "competitors": [
+      "Mont Albo Massage Hut",
+      "Ace Water Spa",
+      "Blue Water Day Spa",
+      "Karada",
+      "The Spa",
+      "Nurture Wellness"
+    ],
+    "conceptKey": "spa",
+    "truthLayer": "assumed",
+    "notes": "Largest mass-market foot/body spa chain; competes with every neighborhood massage & wellness spa."
+  },
+  {
+    "category": "C06 Health, Wellness & Beauty",
+    "anchorBrand": "Ace Water Spa",
+    "parentOperator": "Ace Water Spa",
+    "subSegment": "Hydro/day spa",
+    "formatTier": "Standalone",
+    "competitors": [
+      "Nuat Thai",
+      "Mont Albo Massage Hut",
+      "Blue Water Day Spa",
+      "Karada",
+      "The Farm-tier day spas"
+    ],
+    "conceptKey": "spa",
+    "truthLayer": "assumed",
+    "notes": "Premium hydro-spa tier; overlaps day-spa and massage chains on the wellness occasion."
+  },
+  {
+    "category": "C13 Apparel & Fashion Retail",
+    "anchorBrand": "Bench",
+    "parentOperator": "Suyen Corporation",
+    "subSegment": "Fashion apparel retail",
+    "formatTier": "Mall/inline",
+    "competitors": [
+      "Penshoppe",
+      "Uniqlo",
+      "Regatta",
+      "Oxygen",
+      "Memo",
+      "Folded & Hung",
+      "Bayo"
+    ],
+    "conceptKey": "apparel",
+    "truthLayer": "assumed",
+    "notes": "Leading Filipino apparel brand; competes with all mall fashion retailers on the same shopper."
+  },
+  {
+    "category": "C13 Apparel & Fashion Retail",
+    "anchorBrand": "Penshoppe",
+    "parentOperator": "Golden ABC",
+    "subSegment": "Fashion apparel retail",
+    "formatTier": "Mall/inline",
+    "competitors": [
+      "Bench",
+      "Uniqlo",
+      "Oxygen",
+      "Regatta",
+      "ForMe",
+      "Memo"
+    ],
+    "conceptKey": "apparel",
+    "truthLayer": "assumed",
+    "notes": "Head-to-head with Bench in the mass fashion tier."
+  },
+  {
+    "category": "C06 Health, Wellness & Beauty",
+    "anchorBrand": "Hi-Precision Diagnostics",
+    "parentOperator": "Hi-Precision Diagnostics",
+    "subSegment": "Diagnostic laboratory",
+    "formatTier": "Standalone/inline",
+    "competitors": [
+      "Healthway",
+      "Kairos",
+      "The Doctors Laboratory",
+      "MetroLab",
+      "Marc 900",
+      "Basic Diagnostics"
+    ],
+    "conceptKey": "diagnostics",
+    "truthLayer": "assumed",
+    "notes": "Large multi-branch diagnostic lab; competes with clinics and lab chains on catchment testing demand."
+  },
+  {
+    "category": "C14 Fuel & Automotive",
+    "anchorBrand": "Petron",
+    "parentOperator": "Petron Corporation",
+    "subSegment": "Fuel station",
+    "formatTier": "Roadside/standalone",
+    "competitors": [
+      "Shell",
+      "Caltex",
+      "Seaoil",
+      "Phoenix",
+      "Unioil",
+      "Total",
+      "Cleanfuel"
+    ],
+    "conceptKey": "fuel",
+    "truthLayer": "verified",
+    "notes": "Largest fuel retailer; competes with every major and independent station on the corridor."
+  },
+  {
+    "category": "C14 Fuel & Automotive",
+    "anchorBrand": "Shell",
+    "parentOperator": "Pilipinas Shell",
+    "subSegment": "Fuel station",
+    "formatTier": "Roadside/standalone",
+    "competitors": [
+      "Petron",
+      "Caltex",
+      "Seaoil",
+      "Phoenix",
+      "Unioil",
+      "Total"
+    ],
+    "conceptKey": "fuel",
+    "truthLayer": "verified",
+    "notes": "Major fuel brand; head-to-head with Petron and independents."
+  },
+  {
+    "category": "C14 Fuel & Automotive",
+    "anchorBrand": "Rapide",
+    "parentOperator": "Rapide Total Vehicle Care",
+    "subSegment": "Auto service center",
+    "formatTier": "Standalone/service bay",
+    "competitors": [
+      "Checkpoint",
+      "Auto Plus",
+      "Ziebart",
+      "Evolab",
+      "Motolite Express",
+      "casa service centers"
+    ],
+    "conceptKey": "automotive",
+    "truthLayer": "assumed",
+    "notes": "Multi-branch auto service chain; competes with service bays and casa aftersales."
+  },
+  {
+    "category": "C15 Hotels & Lodging",
+    "anchorBrand": "Go Hotels",
+    "parentOperator": "Robinsons Land (RLC)",
+    "subSegment": "Budget/economy hotel",
+    "formatTier": "Standalone",
+    "competitors": [
+      "Red Planet",
+      "RedDoorz",
+      "OYO",
+      "Zen Rooms",
+      "Tune Hotel",
+      "Sogo",
+      "Eurotel"
+    ],
+    "conceptKey": "hotel",
+    "truthLayer": "assumed",
+    "notes": "Budget hotel chain; competes with economy and app-aggregated lodging on the same traveler."
+  },
+  {
+    "category": "C15 Hotels & Lodging",
+    "anchorBrand": "Red Planet",
+    "parentOperator": "Red Planet Hotels",
+    "subSegment": "Budget/economy hotel",
+    "formatTier": "Standalone",
+    "competitors": [
+      "Go Hotels",
+      "RedDoorz",
+      "OYO",
+      "Zen Rooms",
+      "Tune Hotel"
+    ],
+    "conceptKey": "hotel",
+    "truthLayer": "assumed",
+    "notes": "Direct rival to Go Hotels in the budget-hotel tier."
   }
 ]

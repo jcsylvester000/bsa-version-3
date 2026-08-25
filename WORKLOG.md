@@ -5,6 +5,62 @@ The cross-thread state record. Read this (with the Master Instruction and the cu
 
 ---
 
+## 2026-08-25 — White-Space rebuilt as "recommended locations" (reverse Territory Guard) — COMPLETE (needs local re-seed + re-run to populate)
+
+Reworked the White-Space module per user request: it no longer ranks "unserved gaps" (which
+returned nothing for established networks and was gated as a contextual read). It now answers a
+question that applies to EVERY operator and EVERY industry: **the top 5 areas to open, with a
+cannibalization score of 40 or less** — same scoring engine as Territory Guard, applied across
+areas instead of one site.
+
+**What changed**
+- `lib/modules/p2p3Math.ts` — added pure `WhiteSpaceArea`/`WhiteSpaceRecommendation` types +
+  `rankWhiteSpaceRecommendations()` (filter cannibalization ≤ `WHITESPACE_CANNIBALIZATION_MAX`=40,
+  score 60% low-cannibalization + 40% demand, dedupe by barangay, top 5) + `whiteSpaceVerdict()`
+  (open <15 / workable 15–<40 / contested ≥40, aligned to `verdictFromOverlap`). Old
+  `rankWhiteSpace` left in place (now unused) to avoid breaking anything.
+- `lib/modules/p2p3Modules.ts` — rewrote `runWhiteSpace(runId, siteId, franchisorId, vertical?,
+  brandOrConcept?, ownBrandName?)`: scans every `demographic_cell` barangay; for each, tiers nearby
+  `poi` (category='competitor') by concept with the SAME `conceptFor`/`tierFor`/`weightedCompetitorCount`
+  path Territory Guard uses → competitive saturation (`competitiveSaturationPct`); combines with an
+  own-branch overlap proxy (from nearest own-outlet distance) → per-area cannibalization; returns
+  top 5 ≤40 with competitor mix, the actual nearby business names, and a named competitor set.
+  Two SQL reads (barangays + all competitor POIs), tiering in code.
+- `lib/modules/territoryGuard.ts` — exported `lookupCompetitorSet` (was private) so White-Space
+  names the same rivals.
+- `lib/modules/orchestrator.ts` — `runWhiteSpace` call now passes vertical + conceptText + brandName.
+- `lib/modules/verticalConfig.ts` — White-Space is now PRIMARY for every vertical (removed the
+  `whitespace: ['convenience','remittance']` gate) → no more "Contextual read" banner on it.
+- `components/SiteIntelligenceTabs.tsx` — rebuilt `WhiteSpaceTab`: removed the "underserved
+  areas / your network already covers this territory" section; now renders a header, a map of the
+  top-5 recommended areas, the named competitor set, and per-area cards (verdict chip +
+  cannibalization %, direct/adjacent mix, population, nearest own branch, and the real "Businesses
+  in the area" chips). New payload shape `{ recommendations, scanned, threshold, concept,
+  competitorSet }`; a legacy `gaps` payload now shows the Re-run prompt.
+- `prisma/data/competitorSets.real.json` — added 10 rows so every industry resolves a named set:
+  spa (Nuat Thai, Ace Water Spa), apparel (Bench, Penshoppe), diagnostics (Hi-Precision), fuel
+  (Petron, Shell), automotive (Rapide), hotel (Go Hotels, Red Planet). 79 → 89 rows.
+- `tests/unit/whitespace.test.ts` — NEW: 10 vitest cases for the ranker (threshold filter, ranking,
+  dedupe, limit, verdict bands, reason text). Algorithm verified in cloud (13 assertions pass);
+  the pure module transpiles clean.
+
+**Data check (user asked to ensure all industries are covered):** no new data dependency — the
+per-area scan reuses exactly Territory Guard's path (POI tiering + `conceptFor`, which maps ALL
+verticals, + demographic_cell). Named competitor sets now cover every concept key.
+
+**⚠️ ACTION REQUIRED (local, user runs — cloud can't reach the Docker DB):**
+1. `npm run db:seed-cannibalization` — load the 10 new competitor_set rows.
+2. Re-run any analysis (New Intake → same inputs → Submit & run, or the run's re-run button) so
+   existing runs get the new whitespace payload. Runs made before this show the Re-run prompt on
+   the White-Space tab until then.
+3. `npm run test` (or vitest) — the new whitespace test should pass alongside the suite.
+
+Note: White-Space is site-agnostic (depends on brand/concept + network, not the specific
+candidate), so it recomputes per site in a multi-site run — fine for typical 1–3 site runs; a
+future optimization could compute once per run.
+
+---
+
 ## 2026-08-10 — Browser User-Journey QA (broker POV) + fixes — COMPLETE
 
 Ran a live Chrome journey QA as a Filipino broker: login → Franchise Screening → New Intake →

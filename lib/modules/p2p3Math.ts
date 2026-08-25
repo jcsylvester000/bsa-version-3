@@ -326,3 +326,105 @@ export function rankWhiteSpace(cells: WhiteSpaceCell[]): WhiteSpaceGap[] {
   }
   return [...byName.values()].sort((a, b) => b.opportunityScore - a.opportunityScore);
 }
+
+// ---- White-Space v2: reverse Territory Guard (recommended expansion areas) --
+//
+// v1 (rankWhiteSpace, above) ranked UNSERVED gaps — areas far from the brand's own outlets.
+// For an established network every area is "served", so it returned nothing. The product now
+// asks a different, always-answerable question: across the region, which areas are the best
+// places for THIS concept to open — where same-concept cannibalization is LOW enough to enter
+// (≤ threshold) while real demand (population) is high?
+//
+// This mirrors Territory Guard but applied to MANY candidate areas instead of one site. Each
+// area carries the SAME cannibalization score Territory Guard computes for a site — the max of
+// own-branch trade-area overlap and same-concept competitive saturation (Projected) — plus the
+// tiered competitor mix and the actual nearby business names, so the UI can show WHO is there.
+// The server module (runWhiteSpace) computes those per-area inputs using the exact tiering and
+// saturation functions Territory Guard uses; this pure function only filters, scores and ranks.
+
+/** One candidate area (barangay), already scored for cannibalization by the server module. */
+export interface WhiteSpaceArea {
+  psgcCode: string;
+  barangay: string | null;
+  city: string | null;
+  population: number;
+  lat: number | null;
+  lon: number | null;
+  /** 0–100 cannibalization for this area: max(own-branch overlap, competitive saturation). Projected. */
+  cannibalizationPct: number;
+  /** Tier mix of establishments inside the area catchment (same tiering as Territory Guard). */
+  competitorMix: { direct: number; adjacent: number; unrelated: number };
+  /** Saturation-weighted competitor count fed to the cannibalization model. */
+  weightedCompetitorCount: number;
+  /** Distance to the operator's nearest own outlet, metres (null = none within the scan window). */
+  nearestOwnM: number | null;
+  /** Names of the actual same-concept / adjacent businesses found in the area (for the UI). */
+  nearbyBusinesses: string[];
+}
+
+export type WhiteSpaceVerdict = 'open' | 'workable' | 'contested';
+
+/** One recommended location returned to the UI, ranked. Extends the scored area. */
+export interface WhiteSpaceRecommendation extends WhiteSpaceArea {
+  rank: number;
+  /** 0–100: rewards low cannibalization and high demand. Ranking key only. */
+  recommendationScore: number;
+  verdict: WhiteSpaceVerdict;
+  reason: string;
+}
+
+/** Threshold at/below which an area's cannibalization is low enough to recommend. */
+export const WHITESPACE_CANNIBALIZATION_MAX = 40;
+
+/**
+ * Verdict band for a recommended area, aligned with Territory Guard's own overlap bands
+ * (verdictFromOverlap): < 15 → 'open' (adds — open territory), 15–<40 → 'workable'
+ * (mixed — light overlap), ≥ 40 → 'contested' (redistributes — excluded from recommendations).
+ */
+export function whiteSpaceVerdict(cannibalizationPct: number): WhiteSpaceVerdict {
+  if (cannibalizationPct >= WHITESPACE_CANNIBALIZATION_MAX) return 'contested';
+  if (cannibalizationPct >= 15) return 'workable';
+  return 'open';
+}
+
+/**
+ * Rank candidate areas into the top recommended locations for the concept. Keeps only areas
+ * whose cannibalization is at/below `threshold` (default 40), scores each by low cannibalization
+ * (60%) and demand/population (40%), dedupes by barangay, and returns the top `limit` ranked.
+ * Pure and deterministic — the server module supplies the per-area cannibalization + mix.
+ */
+export function rankWhiteSpaceRecommendations(
+  areas: WhiteSpaceArea[],
+  opts: { threshold?: number; limit?: number } = {},
+): WhiteSpaceRecommendation[] {
+  const threshold = opts.threshold ?? WHITESPACE_CANNIBALIZATION_MAX;
+  const limit = opts.limit ?? 5;
+  const eligible = areas.filter((a) => a.cannibalizationPct <= threshold);
+  if (eligible.length === 0) return [];
+  const maxPop = Math.max(1, ...eligible.map((a) => a.population));
+
+  const scored: WhiteSpaceRecommendation[] = eligible.map((a) => {
+    const headroom = Math.max(0, 100 - a.cannibalizationPct); // low cannibalization is good
+    const demand = (a.population / maxPop) * 100;             // high demand is good
+    const recommendationScore = Math.round((headroom * 0.6 + demand * 0.4) * 10) / 10;
+    const verdict = whiteSpaceVerdict(a.cannibalizationPct);
+    const directWord = a.competitorMix.direct === 1 ? 'direct rival' : 'direct rivals';
+    const reason =
+      `${Math.round(a.cannibalizationPct)}% cannibalization · ${a.competitorMix.direct} ${directWord}` +
+      `, ${a.competitorMix.adjacent} adjacent in catchment · pop ${a.population.toLocaleString()}` +
+      `${a.nearestOwnM == null ? ' · no own branch nearby' : ` · ${Math.round(a.nearestOwnM)} m to nearest own branch`}`;
+    return { ...a, rank: 0, recommendationScore, verdict, reason };
+  });
+
+  // Dedupe by barangay (overlapping ingests can produce >1 cell per barangay) — keep the best.
+  const byName = new Map<string, WhiteSpaceRecommendation>();
+  for (const r of scored) {
+    const key = (r.barangay ?? r.psgcCode).toLowerCase();
+    const prev = byName.get(key);
+    if (!prev || r.recommendationScore > prev.recommendationScore) byName.set(key, r);
+  }
+  return [...byName.values()]
+    .sort((a, b) => b.recommendationScore - a.recommendationScore)
+    .slice(0, limit)
+    .map((r, i) => ({ ...r, rank: i + 1 }));
+}

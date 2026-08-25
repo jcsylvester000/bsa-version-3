@@ -209,6 +209,16 @@ export function SteppedIntakeWizard({ franchisors, mockMode = false, mockRunId, 
     if (pendingRunId && animDone) router.push(`/runs?runId=${pendingRunId}`);
   }, [pendingRunId, animDone, router]);
 
+  // Safety net for the "stays on the intake page" issue: if the run is ready
+  // (pendingRunId set) but the overlay's onDone never fires — a backgrounded tab or an
+  // interrupted animation — force the animation-done flag after a short grace period so
+  // the navigation effect above always runs and the user is never stranded on intake.
+  useEffect(() => {
+    if (!pendingRunId || animDone) return;
+    const t = setTimeout(() => setAnimDone(true), 1500);
+    return () => clearTimeout(t);
+  }, [pendingRunId, animDone]);
+
   // When an independent picks a comparable brand, snap the vertical to that brand's
   // concept so the right modules + competitor discrimination activate. Uses the shared
   // brand→vertical map as the authoritative source (so e.g. Chatime always → fnb_cafe),
