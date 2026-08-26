@@ -789,6 +789,11 @@ function AnalysisTab({
     finally { setLoading(false); }
   }
 
+  function exportPdf() {
+    if (!runId) return;
+    window.open(`/api/analysis-report/pdf?runId=${encodeURIComponent(runId)}&siteId=${encodeURIComponent(siteId)}`, '_blank');
+  }
+
   const paras = report ? report.analysis.split(/\n{2,}/).map((x) => x.trim()).filter(Boolean) : [];
 
   const t = payloads.territory;
@@ -836,14 +841,26 @@ function AnalysisTab({
             </p>
           </div>
           <div className="flex shrink-0 flex-wrap gap-2">
-            <button
-              onClick={() => run(report != null)}
-              disabled={loading}
-              className={`rounded-lg px-4 py-2 text-sm font-medium transition ${loading ? 'bg-ink-panel-2 text-ink-muted' : 'bg-accent text-ink-bg hover:opacity-90'}`}
-            >
-              {loading ? 'Analysing…' : report != null ? 'Regenerate' : 'Generate analysis'}
-            </button>
-            {/* Export PDF button lands with the branded PDF route (next commit). */}
+            {/* Generate shows ONLY until a report exists; once generated it's hidden
+                (reports are pre-generated at intake submission and cached). */}
+            {report == null && (
+              <button
+                onClick={() => run(false)}
+                disabled={loading}
+                className={`rounded-lg px-4 py-2 text-sm font-medium transition ${loading ? 'bg-ink-panel-2 text-ink-muted' : 'bg-accent text-ink-bg hover:opacity-90'}`}
+              >
+                {loading ? 'Analysing…' : 'Generate analysis'}
+              </button>
+            )}
+            {/* Export the branded professional PDF (server-generated) once a report exists. */}
+            {report != null && (
+              <button
+                onClick={exportPdf}
+                className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-ink-bg transition hover:opacity-90"
+              >
+                Export PDF
+              </button>
+            )}
           </div>
         </div>
 

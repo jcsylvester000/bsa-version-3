@@ -32,7 +32,8 @@ const GROUPS: Array<{ heading: string; items: Array<{ href: string; label: strin
   {
     heading: 'Output',
     items: [
-      { href: '/reports', label: 'Site Report', keepRun: true, tour: 'nav-reports' },
+      // 'Site Report' removed — the per-site report now lives on the Analysis tab
+      // (SiteIntelligenceTabs), exportable to a branded PDF from there.
       { href: '/scorecard', label: 'Scorecard', keepRun: true },
     ],
   },

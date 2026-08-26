@@ -36,6 +36,7 @@
     "@neondatabase/serverless": "^0.9.5",
     "@prisma/adapter-neon": "^5.22.0",
     "@prisma/client": "^5.22.0",
+    "@react-pdf/renderer": "^3.4.5",
     "bcryptjs": "^2.4.3",
     "dotenv": "^16.6.1",
     "jose": "^5.9.6",
