@@ -206,3 +206,130 @@ export function buildAnalysisContext(input: AnalysisInput): AnalysisContext {
 export function analysisContextToJsonText(ctx: AnalysisContext): string {
   return JSON.stringify(ctx, null, 2);
 }
+
+/* ---- Text schema (the AI reads this) ------------------------------------- */
+// A labeled, human-readable serialization of the AnalysisContext that mirrors the on-screen
+// Analysis page 1:1 — every row the operator sees, with its Truth Layer. This is the "schema
+// as text" the model reads and turns into prose. Because the page and the model both derive
+// from the same AnalysisContext, they can never disagree.
+
+const rd = (o: AnyRec, k: string): unknown => (o && typeof o === 'object' ? (o as Record<string, unknown>)[k] : undefined);
+const peso = (n: number | null): string => (n == null ? '—' : `PHP ${Math.round(n).toLocaleString()}`);
+const pct = (n: number | null): string => (n == null ? '—' : `${n}%`);
+const T = (l: string | null | undefined): string => (l === 'verified' ? 'Verified' : l === 'assumed' ? 'Assumed' : l === 'projected' ? 'Projected' : 'Projected');
+
+function line(label: string, value: string, truth?: string): string {
+  return `- ${label}: ${value}${truth ? ` (${truth})` : ''}`;
+}
+
+export function analysisSchemaText(ctx: AnalysisContext): string {
+  const m = ctx.meta;
+  const t = ctx.modules.territory as AnyRec & { ran?: boolean };
+  const l = ctx.modules.lease as AnyRec & { ran?: boolean };
+  const d = ctx.modules.daypart as AnyRec & { ran?: boolean };
+  const w = ctx.modules.whitespace as AnyRec & { ran?: boolean };
+  const ran = [t, l, d, w].filter((x) => x?.ran).length;
+
+  const out: string[] = [];
+  out.push('SITE ANALYSIS SCHEMA');
+  out.push(
+    `Site: ${m.siteLabel}` +
+      [m.brand, m.city, m.conceptLabel ?? m.vertical].filter(Boolean).map((x) => ` · ${x}`).join('') +
+      ` · ${ran} of 4 modules present`,
+  );
+  if (ctx.composite.verdict || ctx.composite.score != null) {
+    out.push(`Composite: ${ctx.composite.verdict ?? '—'}${ctx.composite.score != null ? ` (score ${ctx.composite.score})` : ''}`);
+  }
+  out.push(`Overall confidence: ${m.overallConfidence}`);
+  out.push(`Truth Layer mix: ${ctx.truthLayerSummary.verified} Verified · ${ctx.truthLayerSummary.assumed} Assumed · ${ctx.truthLayerSummary.projected} Projected`);
+  out.push('');
+
+  // Territory Guard
+  out.push('[TERRITORY GUARD]' + (t?.ran ? '' : '  (not run for this site)'));
+  if (t?.ran) {
+    out.push(`verdict: ${verdictLabel('territory', rd(t, 'verdict') as string)}`);
+    if (rd(t, 'headlineSource') === 'competitive') out.push('note: driven by competitive saturation, not own branches');
+    out.push(line('Own-branch overlap', pct((num(rd(t, 'ownOutletOverlapPct')) ?? num(rd(t, 'maxOverlapPct'))) ?? 0), 'Verified'));
+    const mix = rd(t, 'competitorMix') as AnyRec;
+    out.push(line('Competitive saturation', `${pct(num(rd(t, 'competitiveSaturationPct')) ?? 0)}${mix ? ` — ${num(rd(mix, 'direct')) ?? 0} direct + ${num(rd(mix, 'adjacent')) ?? 0} adjacent` : ''}`, 'Projected'));
+    out.push(line('Est. monthly cannibalization', peso(num(rd(t, 'totalCannibalizedPhp')) ?? 0), 'Projected'));
+    const cset = rd(t, 'competitorSet') as AnyRec;
+    const comps = cset ? (arr(rd(cset, 'competitors')).map(String)) : [];
+    if (comps.length) out.push(line('Competes with', comps.slice(0, 5).join(', ')));
+    const affected = num(rd(t, 'affectedOutletCount')) ?? 0;
+    out.push(line('Affected own outlets', affected === 0 ? 'None in this catchment' : String(affected), 'Verified'));
+  }
+  out.push('');
+
+  // Lease Benchmark
+  out.push('[LEASE BENCHMARK]' + (l?.ran ? '' : '  (not run for this site)'));
+  if (l?.ran) {
+    out.push(`verdict: ${verdictLabel('lease', rd(l, 'verdict') as string)}`);
+    out.push(line('Corridor', str(rd(l, 'corridor')) ?? '—'));
+    out.push(line('Comparable leases', String(num(rd(l, 'sampleSize')) ?? 0), 'Verified'));
+    const perc = num(rd(l, 'baseRentPercentile'));
+    out.push(line('Base-rent percentile', perc != null ? ordinalText(perc) : '—', 'Assumed'));
+    const nrm = num(rd(l, 'negotiatingRoomPhpSqm'));
+    if (nrm != null) out.push(line('Negotiating room to median', `${peso(Math.abs(nrm))}/sqm${num(rd(l, 'negotiatingRoomPct')) != null ? ` (${Math.abs(num(rd(l, 'negotiatingRoomPct'))!)}% ${nrm > 0 ? 'above' : 'below'})` : ''}`, 'Assumed'));
+    const z = rd(l, 'zonal') as AnyRec;
+    const band = z ? (rd(z, 'band') as AnyRec) : null;
+    if (band) {
+      out.push(line('BIR zonal band', `${str(rd(band, 'classification')) ?? 'CR'} · ${peso(num(rd(band, 'lowPhpSqm')))}–${peso(num(rd(band, 'highPhpSqm')))}/sqm${rd(z!, 'usedAsFallback') === true ? ' · used as fallback anchor' : ''}`, 'Verified'));
+    }
+  }
+  out.push('');
+
+  // Daypart Demand
+  out.push('[DAYPART DEMAND]' + (d?.ran ? '' : '  (not run for this site)'));
+  if (d?.ran) {
+    const noData = rd(d, 'noCatchmentData') === true;
+    const win = num(rd(d, 'windowMatchPct')) ?? 0;
+    out.push(`verdict: ${noData ? 'Catchment mix not derived' : win >= 60 ? 'Strong window match' : win >= 40 ? 'Partial window match' : 'Weak window match'}`);
+    out.push(line('Peak-hour demand captured', pct(win), 'Projected'));
+    const share = num(rd(d, 'daytimeShare'));
+    out.push(line('Catchment mix', noData || share == null ? 'Not derived (demographic layer not loaded)' : `${Math.round(share * 10) / 10}% daytime · ${Math.round((100 - share) * 10) / 10}% residential`, 'Projected'));
+    if (!noData && share != null) out.push(line('Peak window', share >= 50 ? '11:00–14:00 (office-led)' : '17:00–20:00 (residential)', 'Projected'));
+    const seas = rd(d, 'seasonality') as AnyRec;
+    if (seas && str(rd(seas, 'peakSeason'))) out.push(line('Seasonal peak', str(rd(seas, 'peakSeason'))!, 'Projected'));
+    if (seas && str(rd(seas, 'troughSeason'))) out.push(line('Seasonal trough', str(rd(seas, 'troughSeason'))!, 'Projected'));
+  }
+  out.push('');
+
+  // White-Space
+  out.push('[WHITE-SPACE]' + (w?.ran ? '' : '  (not run for this site)'));
+  if (w?.ran) {
+    const recs = arr(rd(w, 'recommendations')) as AnyRec[];
+    out.push(`verdict: ${recs.length ? `${recs.length} recommended area(s)` : 'No open areas in current coverage'}`);
+    out.push(line('Barangays scanned', String(num(rd(w, 'scanned')) ?? 0), 'Verified'));
+    out.push(line('Cannibalization threshold', `<= ${num(rd(w, 'threshold')) ?? 40}`, 'Projected'));
+    const prop = rd(w, 'proposed') as AnyRec;
+    if (prop && num(rd(prop, 'cannibalizationPct')) != null) out.push(line("This site's cannibalization", `${Math.round(num(rd(prop, 'cannibalizationPct'))!)}%`, 'Projected'));
+    recs.slice(0, 3).forEach((r, i) => {
+      const name = [str(rd(r, 'barangay')) ?? 'Unnamed area', str(rd(r, 'city'))].filter(Boolean).join(', ');
+      out.push(line(`Alternative #${i + 1} ${name}`, `${Math.round(num(rd(r, 'cannibalizationPct')) ?? 0)}% cannibalization${rd(r, 'beatsProposed') === true ? ' — beats this site' : ''}`, 'Projected'));
+    });
+  }
+  out.push('');
+
+  if (ctx.flags.length) out.push(`FLAGS: ${ctx.flags.join(', ')}`);
+  out.push('GUARDRAILS: broker-supplementation; no price verdict; BIR zonal is a tax-reference floor only.');
+
+  return out.join('\n');
+}
+
+/** Verdict → human label, matching the on-screen chips. */
+function verdictLabel(module: 'territory' | 'lease', v: string | null | undefined): string {
+  if (module === 'territory') {
+    return v === 'adds' ? 'Adds sales' : v === 'redistributes' ? 'Redistributes existing sales' : 'Mixed — some redistribution';
+  }
+  return v === 'below_market' ? 'Below market — favourable'
+    : v === 'above_market' ? 'Above market — likely overpaying'
+    : v === 'at_market' ? 'At market'
+    : v === 'corridor_benchmark' ? 'Corridor market benchmark'
+    : 'Insufficient comparable data';
+}
+
+function ordinalText(n: number): string {
+  const s = ['th', 'st', 'nd', 'rd'], v = n % 100;
+  return n + (s[(v - 20) % 10] ?? s[v] ?? s[0]) + ' percentile';
+}

@@ -16,12 +16,15 @@ import { retrieve } from './retrieveThenGenerate';
 import { TRUTH_META } from '@/lib/truth/truthLayer';
 import { rollUpConfidence, type TruthLayer, type Confidence } from '@/lib/truth/truthLayer';
 import { isPrimaryModule } from '@/lib/modules/verticalConfig';
-import { buildAnalysisContext, analysisContextToJsonText, type AnalysisInput, type AnalysisModuleInput } from '@/lib/modules/analysisContext';
+import { buildAnalysisContext, analysisContextToJsonText, analysisSchemaText, type AnalysisInput, type AnalysisModuleInput } from '@/lib/modules/analysisContext';
 import { humanizeVertical } from '@/lib/modules/verticalConfig';
 import { conceptFor } from '@/lib/places/competitorRelevance';
+import { composeMockAnalysis } from './mockAnalysis';
 
 export interface AnalysisReportResult {
   analysis: string;
+  /** The labeled text schema the model read (mirrors the on-screen page). */
+  schemaText: string;
   contextJson: unknown;
   model: string;
   confidence: Confidence;
@@ -61,8 +64,9 @@ export async function generateAnalysisReport(
     if (p && typeof p.analysis === 'string') {
       return {
         analysis: p.analysis as string,
+        schemaText: (p.schemaText as string) ?? '',
         contextJson: p.contextJson ?? null,
-        model: (p.model as string) ?? 'stub-grounded-v1',
+        model: (p.model as string) ?? 'mock-analysis-v1',
         confidence: (p.confidence as Confidence) ?? 'med',
         generatedAt: (p.generatedAt as string) ?? new Date().toISOString(),
         cached: true,
@@ -123,6 +127,9 @@ export async function generateAnalysisReport(
   };
 
   const ctx = buildAnalysisContext(input);
+  // The schema text the model reads — a labeled serialization that mirrors the page 1:1.
+  const schemaText = analysisSchemaText(ctx);
+  // JSON kept too, for the collapsible "data the AI read" and provenance.
   const jsonText = analysisContextToJsonText(ctx);
 
   // Retrieve interpretation reference (how to read each field), grounded with Truth Layer.
@@ -130,16 +137,34 @@ export async function generateAnalysisReport(
   const chunkText = chunks.map((c) => `- [${TRUTH_META[c.truthLayer].label}] ${c.content}`).join('\n');
 
   const context = [
-    'SITE ANALYSIS DATA — strict JSON. This is the ONLY set of figures you may use; do not invent or alter any number:',
-    jsonText,
+    'SITE ANALYSIS SCHEMA — the ONLY figures you may use; do not invent or alter any number:',
+    schemaText,
     '',
     'INTERPRETATION REFERENCE — how to read the fields above (each line carries its Truth Layer; preserve the labels):',
     chunkText || '- (none retrieved)',
   ].join('\n');
 
-  const { ANALYSIS_SYSTEM_PROMPT, ANALYSIS_TASK_INSTRUCTIONS } = await import('./analysisPrompts');
-  const provider = getAiProvider();
-  const gen = await provider.generate({ system: ANALYSIS_SYSTEM_PROMPT, context, task: ANALYSIS_TASK_INSTRUCTIONS });
+  // Mock path (AI_PROVIDER=stub, the default) composes the narrative deterministically from the
+  // same context; the real model drops in behind the same schema + prompts when configured.
+  const useMock = (process.env.AI_PROVIDER ?? 'stub') === 'stub';
+  let narrative: string;
+  let model: string;
+  let inputTokens: number | undefined;
+  let outputTokens: number | undefined;
+  if (useMock) {
+    narrative = composeMockAnalysis(ctx);
+    model = 'mock-analysis-v1';
+    inputTokens = Math.ceil((context.length + jsonText.length) / 4);
+    outputTokens = Math.ceil(narrative.length / 4);
+  } else {
+    const { ANALYSIS_SYSTEM_PROMPT, ANALYSIS_TASK_INSTRUCTIONS } = await import('./analysisPrompts');
+    const provider = getAiProvider();
+    const gen = await provider.generate({ system: ANALYSIS_SYSTEM_PROMPT, context, task: ANALYSIS_TASK_INSTRUCTIONS });
+    narrative = gen.text;
+    model = gen.model;
+    inputTokens = gen.inputTokens;
+    outputTokens = gen.outputTokens;
+  }
 
   const generatedAt = new Date().toISOString();
 
@@ -149,20 +174,20 @@ export async function generateAnalysisReport(
       pipelineRunId: runId,
       purpose: 'summary',
       retrievedChunkIds: chunks.map((c) => c.id),
-      model: gen.model,
-      inputTokens: gen.inputTokens,
-      outputTokens: gen.outputTokens,
-      output: gen.text,
+      model,
+      inputTokens,
+      outputTokens,
+      output: narrative,
     },
   });
 
   // Persist the analysis per-site (the cache + what the tab reads).
-  const payload = { analysis: gen.text, contextJson: ctx, model: gen.model, confidence, generatedAt };
+  const payload = { analysis: narrative, schemaText, contextJson: ctx, model, confidence, generatedAt };
   await prisma.moduleResult.upsert({
     where: { site_module_key: { candidateSiteId: siteId, module: 'analysis' as ModuleKind } },
     update: { payload: payload as object, truthLayer: 'projected', flags: [] },
     create: { candidateSiteId: siteId, pipelineRunId: runId, module: 'analysis' as ModuleKind, payload: payload as object, truthLayer: 'projected', flags: [] },
   });
 
-  return { analysis: gen.text, contextJson: ctx, model: gen.model, confidence, generatedAt, cached: false };
+  return { analysis: narrative, schemaText, contextJson: ctx, model, confidence, generatedAt, cached: false };
 }

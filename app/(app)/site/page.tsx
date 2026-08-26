@@ -79,6 +79,7 @@ export default async function SiteReportPage({ searchParams }: { searchParams: {
         outlets={outlets.map((o) => ({ id: o.id, name: o.outletName, lat: o.lat, lon: o.lon, format: o.format }))}
         payloads={payloads}
         vertical={run.vertical}
+        runId={runId}
       />
     </div>
   );

@@ -70,6 +70,7 @@ export interface SiteModulePayloads {
   /** AI Analysis Report — the retrieve-then-generate capstone, persisted per site. */
   analysis: {
     analysis?: string;
+    schemaText?: string;
     model?: string;
     confidence?: 'high' | 'med' | 'low';
     generatedAt?: string;
@@ -155,11 +156,13 @@ export function SiteIntelligenceTabs({
   outlets,
   payloads,
   vertical,
+  runId,
 }: {
   site: { id: string; label: string; lat: number; lon: number; siteType: string | null };
   outlets: Array<{ id: string; name: string; lat: number; lon: number; format: string | null }>;
   payloads: SiteModulePayloads;
   vertical?: Vertical | null;
+  runId?: string;
 }) {
   const [tab, setTab] = useState<TabKey>('territory');
 
@@ -193,7 +196,7 @@ export function SiteIntelligenceTabs({
       {tab === 'lease' && <LeaseTab p={payloads.lease} primary={primary('lease')} />}
       {tab === 'daypart' && <DaypartTab p={payloads.daypart} primary={primary('daypart')} />}
       {tab === 'whitespace' && <WhiteSpaceTab p={payloads.whitespace} primary={primary('whitespace')} />}
-      {tab === 'analysis' && <AnalysisTab payloads={payloads} primary={primary} siteLabel={site.label} />}
+      {tab === 'analysis' && <AnalysisTab payloads={payloads} primary={primary} siteLabel={site.label} runId={runId} siteId={site.id} />}
     </div>
   );
 }
@@ -751,12 +754,43 @@ type LeaseZonal = {
 } | null;
 
 function AnalysisTab({
-  payloads, primary, siteLabel,
+  payloads, primary, siteLabel, runId, siteId,
 }: {
   payloads: SiteModulePayloads;
   primary: (m: ModuleKind) => boolean;
   siteLabel: string;
+  runId?: string;
+  siteId: string;
 }) {
+  const cached = payloads.analysis;
+  const [report, setReport] = useState<{ analysis: string; schemaText?: string; model?: string; confidence?: string; generatedAt?: string } | null>(
+    cached && typeof cached.analysis === 'string'
+      ? { analysis: cached.analysis, schemaText: cached.schemaText, model: cached.model, confidence: cached.confidence, generatedAt: cached.generatedAt }
+      : null,
+  );
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [showSchema, setShowSchema] = useState(false);
+
+  async function run(regen: boolean) {
+    if (!runId) { setError('Open this site from the Ranked Site Shortlist to generate its report.'); return; }
+    setLoading(true); setError(null);
+    try {
+      const res = await fetch('/api/analysis-report', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ runId, siteId, force: regen }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) { setError(json?.error?.message ?? `Could not generate the report (HTTP ${res.status}).`); return; }
+      const dta = json.data;
+      setReport({ analysis: dta.analysis, schemaText: dta.schemaText, model: dta.model, confidence: dta.confidence, generatedAt: dta.generatedAt });
+      setShowSchema(false);
+    } catch { setError('The request failed — check your connection and try again.'); }
+    finally { setLoading(false); }
+  }
+
+  const paras = report ? report.analysis.split(/\n{2,}/).map((x) => x.trim()).filter(Boolean) : [];
+
   const t = payloads.territory;
   const l = payloads.lease;
   const d = payloads.daypart;
@@ -789,15 +823,63 @@ function AnalysisTab({
 
   return (
     <div className="space-y-4">
-      {/* Header */}
+      {/* Header + AI narrative (the FINAL REPORT card) */}
       <div className="card p-5">
-        <p className="text-xs uppercase tracking-wide text-ink-muted">Final report</p>
-        <p className="mt-1 text-lg font-bold text-ink-text">Combined site intelligence — {siteLabel}</p>
-        <p className="mt-1 max-w-2xl text-sm text-ink-muted">
-          Every module for this site in one view — Territory Guard, Lease Benchmark, Daypart Demand and White-Space.
-          Each figure is carried straight from its tab with its Truth Layer intact; nothing here is recomputed.
-          {' '}<span className="text-ink-text">{ranCount} of 4 modules</span> have a stored result for this site.
-        </p>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-xs uppercase tracking-wide text-ink-muted">Final report</p>
+            <p className="mt-1 text-lg font-bold text-ink-text">Combined site intelligence — {siteLabel}</p>
+            <p className="mt-1 max-w-2xl text-sm text-ink-muted">
+              Every module for this site in one view — Territory Guard, Lease Benchmark, Daypart Demand and White-Space.
+              Each figure is carried straight from its tab with its Truth Layer intact; nothing here is recomputed.
+              {' '}<span className="text-ink-text">{ranCount} of 4 modules</span> have a stored result for this site.
+            </p>
+          </div>
+          <div className="flex shrink-0 flex-wrap gap-2">
+            <button
+              onClick={() => run(report != null)}
+              disabled={loading}
+              className={`rounded-lg px-4 py-2 text-sm font-medium transition ${loading ? 'bg-ink-panel-2 text-ink-muted' : 'bg-accent text-ink-bg hover:opacity-90'}`}
+            >
+              {loading ? 'Analysing…' : report != null ? 'Regenerate' : 'Generate analysis'}
+            </button>
+            {/* Export PDF button lands with the branded PDF route (next commit). */}
+          </div>
+        </div>
+
+        {/* The written analysis */}
+        <div className="mt-4 border-t border-ink-border pt-4">
+          {error && <div className="mb-3 rounded-lg border-l-4 border-nogo bg-nogo/10 px-4 py-2.5 text-sm text-ink-text">{error}</div>}
+
+          {report ? (
+            <>
+              <div className="space-y-3 text-[15px] leading-relaxed text-ink-text">
+                {paras.length ? paras.map((para, i) => <p key={i}>{para}</p>) : <p>{report.analysis}</p>}
+              </div>
+              <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-ink-muted">
+                {report.confidence && <Chip tone={report.confidence === 'high' ? 'go' : report.confidence === 'low' ? 'muted' : 'caution'}>Confidence: {report.confidence}</Chip>}
+                <span>{report.model === 'mock-analysis-v1' ? 'Mock analysis (preview)' : report.model}</span>
+                {report.generatedAt && <span>· {new Date(report.generatedAt).toLocaleString()}</span>}
+              </div>
+              {report.schemaText && (
+                <div className="mt-3">
+                  <button onClick={() => setShowSchema((v) => !v)} className="text-xs font-medium text-accent hover:underline">
+                    {showSchema ? '▾ Hide the data schema the AI read' : '▸ Show the data schema the AI read'}
+                  </button>
+                  {showSchema && (
+                    <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap rounded-lg bg-ink-panel-2 p-4 text-[11px] leading-relaxed text-ink-muted">{report.schemaText}</pre>
+                  )}
+                </div>
+              )}
+            </>
+          ) : (
+            <p className="text-sm text-ink-muted">
+              {loading
+                ? 'Reading the four modules and writing the analysis…'
+                : 'Click Generate analysis to turn the combined data below into a short written report. It reads only the figures on this page — nothing is invented.'}
+            </p>
+          )}
+        </div>
       </div>
 
       {/* Territory Guard */}
