@@ -5,6 +5,27 @@ The cross-thread state record. Read this (with the Master Instruction and the cu
 
 ---
 
+## 2026-08-25 (later 6) — Netlify build fixes (Confidence type + zonal schema restore)
+
+Pushing later-4/5 to GitHub surfaced two build breaks (Netlify runs `prisma generate && next build`,
+which typechecks the WHOLE project — dormant files included):
+
+1. **Confidence type.** `lib/ai/analysisReport.ts` used `'high'|'medium'|'low'`; the real
+   `@/lib/truth/truthLayer` `Confidence` is `'high'|'med'|'low'`. Fixed by importing the real
+   `Confidence` type (analysisReport) and typing `AnalysisInput.meta.overallConfidence` as `string`
+   (analysisContext, pure). Commit `8002874`.
+
+2. **Zonal schema regression (my error).** The staged snapshot I edited was stale for the zonal files,
+   so committing the `analysis`-enum schema reverted `ZonalValue`'s `barangay` grain (barangay field +
+   `rdo` NOT NULL + widened `zonal_natural_key`), which `lib/ingest/loaders.ts` requires → build fail at
+   loaders.ts:81. Restored `ZonalValue` on-device to match `df22215` exactly (verified by diff) + kept
+   the `analysis` enum. `prisma validate` passes. Net schema diff vs df22215 is now only the enum.
+
+Lesson: the `/mnt/user-data/uploads` snapshot can lag the device; for shared files, edit the device's
+live file (or re-stage first) rather than committing a stale copy.
+
+---
+
 ## 2026-08-25 (later 5) — Analysis tab = DETERMINISTIC combined report FIRST (AI deferred)
 
 User pivot: do it one step at a time. Before any AI write-up, the 5th tab (now labelled just
