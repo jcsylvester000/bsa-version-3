@@ -20,6 +20,7 @@ import { buildAnalysisContext, analysisContextToJsonText, analysisSchemaText, ty
 import { humanizeVertical } from '@/lib/modules/verticalConfig';
 import { conceptFor } from '@/lib/places/competitorRelevance';
 import { composeMockAnalysis } from './mockAnalysis';
+import { generateViaVectorShift, parseCostValue } from './vectorshiftProvider';
 
 export interface AnalysisReportResult {
   analysis: string;
@@ -52,7 +53,7 @@ function mergeIntake(sections: Array<unknown>): Record<string, unknown> {
 export async function generateAnalysisReport(
   runId: string,
   siteId: string,
-  opts: { force?: boolean } = {},
+  opts: { force?: boolean; actorId?: string } = {},
 ): Promise<AnalysisReportResult> {
   // Cache: a persisted `analysis` module_result for this site.
   if (!opts.force) {
@@ -144,14 +145,25 @@ export async function generateAnalysisReport(
     chunkText || '- (none retrieved)',
   ].join('\n');
 
-  // Mock path (AI_PROVIDER=stub, the default) composes the narrative deterministically from the
-  // same context; the real model drops in behind the same schema + prompts when configured.
-  const useMock = (process.env.AI_PROVIDER ?? 'stub') === 'stub';
+  // Which generator:
+  //  - 'vectorshift' → live VectorShift pipeline (prompts live in the pipeline; we ship the schema).
+  //  - 'stub' (default) → deterministic mock narrative from the same context.
+  //  - anything else → the in-code provider path (retrieve-then-generate with the bundled prompts).
+  const which = process.env.AI_PROVIDER ?? 'stub';
   let narrative: string;
   let model: string;
   let inputTokens: number | undefined;
   let outputTokens: number | undefined;
-  if (useMock) {
+  let cost: string | null = null;
+  let vsRunId: string | null = null;
+
+  if (which === 'vectorshift') {
+    const vs = await generateViaVectorShift(schemaText);
+    narrative = vs.text;
+    model = 'vectorshift';
+    cost = vs.cost;
+    vsRunId = vs.vsRunId;
+  } else if (which === 'stub') {
     narrative = composeMockAnalysis(ctx);
     model = 'mock-analysis-v1';
     inputTokens = Math.ceil((context.length + jsonText.length) / 4);
@@ -168,18 +180,36 @@ export async function generateAnalysisReport(
 
   const generatedAt = new Date().toISOString();
 
-  // Provenance log.
-  await prisma.aiGeneration.create({
-    data: {
-      pipelineRunId: runId,
-      purpose: 'summary',
-      retrievedChunkIds: chunks.map((c) => c.id),
-      model,
-      inputTokens,
-      outputTokens,
-      output: narrative,
-    },
-  });
+  if (which === 'vectorshift') {
+    // Usage/cost log ONLY (admin monitor) — no response text stored here. The response text
+    // lives in the module_result below (so the page shows it and never re-runs).
+    await prisma.pipelineUsage.create({
+      data: {
+        userId: opts.actorId ?? null,
+        franchisorId: run.franchisorId ?? null,
+        pipelineRunId: runId,
+        candidateSiteId: siteId,
+        provider: 'vectorshift',
+        model,
+        vsRunId,
+        costRaw: cost,
+        costValue: parseCostValue(cost),
+      },
+    });
+  } else {
+    // Dev/provenance log for the mock + in-code provider paths.
+    await prisma.aiGeneration.create({
+      data: {
+        pipelineRunId: runId,
+        purpose: 'summary',
+        retrievedChunkIds: chunks.map((c) => c.id),
+        model,
+        inputTokens,
+        outputTokens,
+        output: narrative,
+      },
+    });
+  }
 
   // Persist the analysis per-site (the cache + what the tab reads).
   const payload = { analysis: narrative, schemaText, contextJson: ctx, model, confidence, generatedAt };

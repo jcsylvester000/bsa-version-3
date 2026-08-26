@@ -5,6 +5,7 @@ import { canAccessRun, canRunPipeline } from '@/lib/auth/auth';
 import { isUuid } from '@/lib/util/uuid';
 import { ok, errors } from '@/lib/api/respond';
 import { runPipeline } from '@/lib/modules/orchestrator';
+import { generateAnalysisReport } from '@/lib/ai/analysisReport';
 import { audit } from '@/lib/audit/audit';
 
 /**
@@ -23,6 +24,24 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
   if (!canAccessRun(session, run)) return errors.forbidden();
 
   const result = await runPipeline(run.id);
+
+  // When the run finalizes (every site's modules are computed), pre-generate the AI Analysis
+  // Report for EVERY candidate site so it's ready on the analysis page and never re-run. Blocks
+  // until done (product choice). Each site is an independent, brand-new AI run; a per-site failure
+  // is logged and skipped so one bad call can't fail the whole submission.
+  if (result.complete) {
+    const sites = await prisma.candidateSite.findMany({
+      where: { pipelineRunId: run.id },
+      select: { id: true },
+    });
+    await Promise.all(
+      sites.map((s) =>
+        generateAnalysisReport(run.id, s.id, { actorId: session.id }).catch((e) => {
+          console.error(`[analysis] generation failed for site ${s.id}:`, e instanceof Error ? e.message : e);
+        }),
+      ),
+    );
+  }
 
   await audit({
     actorId: session.id,

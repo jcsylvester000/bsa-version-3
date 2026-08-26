@@ -532,6 +532,29 @@ model AiGeneration {
   @@map("ai_generation")
 }
 
+/// External AI pipeline (VectorShift) usage + cost log — one row per live run.
+/// Admin-only: powers the pipeline usage/cost monitor. Stores NO response text —
+/// only cost, provider run id, and who/when, so we can count runs per user and total spend.
+/// Deliberately relation-less (plain id columns) so it is a pure append-only log.
+model PipelineUsage {
+  id              String   @id @default(uuid()) @db.Uuid
+  userId          String?  @map("user_id")            // session/actor id (not FK — may be mock)
+  franchisorId    String?  @map("franchisor_id") @db.Uuid
+  pipelineRunId   String?  @map("pipeline_run_id") @db.Uuid
+  candidateSiteId String?  @map("candidate_site_id") @db.Uuid
+  provider        String   @default("vectorshift")
+  model           String?
+  vsRunId         String?  @map("vs_run_id")          // VectorShift run_id
+  costRaw         String?  @map("cost_raw")           // raw cost string from the pipeline output
+  costValue       Decimal? @map("cost_value") @db.Decimal(14, 6) // parsed numeric, if any
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([userId])
+  @@index([franchisorId])
+  @@index([createdAt])
+  @@map("pipeline_usage")
+}
+
 // ============================================================================
 // GROUP 5 — OPS / GOVERNANCE
 // ============================================================================

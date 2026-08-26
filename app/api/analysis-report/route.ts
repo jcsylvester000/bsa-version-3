@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
   if (!site || site.pipelineRunId !== runId) return errors.notFound('Site');
 
   try {
-    const result = await generateAnalysisReport(runId, siteId, { force: body?.force === true });
+    const result = await generateAnalysisReport(runId, siteId, { force: body?.force === true, actorId: session.id });
     return ok(result);
   } catch (e) {
     return errors.server(`Could not generate the analysis: ${e instanceof Error ? e.message : String(e)}`);

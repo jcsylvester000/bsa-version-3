@@ -5,6 +5,40 @@ The cross-thread state record. Read this (with the Master Instruction and the cu
 
 ---
 
+## 2026-08-26 — AI Analysis via VectorShift pipeline (live provider) — CODE COMPLETE (needs env + migrate)
+
+Wired the Analysis Report to a VectorShift pipeline (Input → Anthropic → Output). Prompts live INSIDE
+the VS pipeline (System Instruction + Prompt, v3, in 3 - Skills/10 - AI Systems Engineer/); the app only
+ships the SCHEMA text and stores the response.
+
+- **Provider:** `lib/ai/vectorshiftProvider.ts` — POST https://api.vectorshift.ai/v1/pipeline/{id}/run,
+  Bearer key, JSON body `{inputs:{[INPUT_KEY]: schemaText}}`; reads `outputs.{OUTPUT_KEY}` (text) +
+  `outputs.cost`. Server-only; per-call timeout + abort. Every call = a fresh VS run (own run_id), so
+  concurrent user submissions are independent (no shared state). Form-data fallback documented inline.
+- **Generator branch:** `lib/ai/analysisReport.ts` now switches on `AI_PROVIDER`:
+  `vectorshift` (live) | `stub` (mock, default) | else in-code provider. Schema text is the model input.
+- **Generate at submission, block until ready:** `app/api/runs/[id]/run/route.ts` — when `runPipeline`
+  finalizes (`result.complete`), it generates the analysis for EVERY candidate site (Promise.all, per-site
+  catch so one failure can't sink the submit), then returns. So the report is ready on the analysis page
+  and never re-runs (cached in module_result). On-demand route stays as staff regenerate/fallback.
+- **Cost (hidden) + usage monitor:** new `PipelineUsage` model + migration
+  `20260826000002_pipeline_usage` — one append-only row per live VS run: userId, franchisorId,
+  pipelineRunId, candidateSiteId, provider, model, vsRunId, cost_raw, cost_value, createdAt. **No response
+  text stored here.** Cost is NEVER sent to the client (not in AnalysisReportResult). Response text lives in
+  module_result (for display). Admin usage panel = later; the table captures cost from day one.
+- **Env (.env.example):** AI_PROVIDER=vectorshift, VECTORSHIFT_API_KEY, VECTORSHIFT_PIPELINE_ID
+  (=6a8e89b52ac88a5957edcb26), VECTORSHIFT_INPUT_KEY (BSA_v3_analsysis_page_intake),
+  VECTORSHIFT_OUTPUT_KEY (Bsav3_Ai_analysis), VECTORSHIFT_TIMEOUT_MS. Default stays `stub` (safe).
+
+**Verified:** provider + generator + both routes typecheck (shims, DOM+node libs); `prisma validate` OK.
+
+**Operator (neon + Netlify):** `npx prisma migrate deploy` (applies analysis enum + pipeline_usage) →
+set Netlify env `VECTORSHIFT_API_KEY`, `VECTORSHIFT_PIPELINE_ID`, and `AI_PROVIDER=vectorshift` → redeploy.
+Until AI_PROVIDER=vectorshift, the mock pre-generates on submit (no cost). Pending: branded PDF export;
+admin usage panel.
+
+---
+
 ## 2026-08-25 (later 6) — Netlify build fixes (Confidence type + zonal schema restore)
 
 Pushing later-4/5 to GitHub surfaced two build breaks (Netlify runs `prisma generate && next build`,
