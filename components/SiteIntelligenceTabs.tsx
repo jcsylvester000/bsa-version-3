@@ -30,17 +30,6 @@ export interface SiteModulePayloads {
     medianPhpSqm?: number | null; p25PhpSqm?: number | null; p75PhpSqm?: number | null;
     verdict?: 'below_market' | 'at_market' | 'above_market' | 'insufficient_data' | 'corridor_benchmark';
     comps?: Array<{ baseRentPhpSqm: number | null }>;
-    /** BIR zonal-value context: Verified land-value band + Projected cross-check + fallback anchor. */
-    zonal?: {
-      band?: {
-        code?: string; classification?: string; lowPhpSqm?: number | null; highPhpSqm?: number | null;
-        midPhpSqm?: number | null; grain?: 'barangay' | 'city'; cityMunicipality?: string;
-        barangay?: string | null; truthLayer?: string;
-      } | null;
-      crossCheck?: { rentPer1000?: number | null; position?: 'rich' | 'inline' | 'thin' | 'unknown'; note?: string } | null;
-      indicativeRent?: { lowPhpSqm?: number | null; highPhpSqm?: number | null; midPhpSqm?: number | null } | null;
-      usedAsFallback?: boolean;
-    } | null;
   } | null;
   daypart: {
     daytimeShare?: number; windowMatchPct?: number; hourly?: number[]; peakHour?: number;
@@ -53,7 +42,7 @@ export interface SiteModulePayloads {
     } | null;
   } | null;
   whitespace: {
-    /** New shape: top recommended alternative areas, best-first (always up to `limit`). */
+    /** New shape: top recommended expansion areas (cannibalization ≤ threshold). */
     recommendations?: Array<{
       rank: number;
       barangay: string | null;
@@ -66,10 +55,8 @@ export interface SiteModulePayloads {
       weightedCompetitorCount: number;
       nearestOwnM: number | null;
       nearbyBusinesses: string[];
-      nearbyPoints?: Array<{ name: string; lat: number; lon: number; tier: 'direct' | 'adjacent' }>;
       recommendationScore: number;
       verdict: 'open' | 'workable' | 'contested';
-      beatsProposed?: boolean | null;
       reason: string;
     }>;
     scanned?: number;
@@ -77,18 +64,20 @@ export interface SiteModulePayloads {
     catchmentM?: number;
     concept?: { key: string; label: string } | null;
     competitorSet?: { anchorBrand: string; competitors: string[]; truthLayer: string; subjectBrand?: string | null } | null;
-    /** The site the user proposed — recommendations are the best alternatives that beat it. */
-    proposed?: {
-      label: string;
-      city: string | null;
-      cannibalizationPct: number;
-      competitorMix: { direct: number; adjacent: number; unrelated: number };
-      nearbyBusinesses: string[];
-    } | null;
-    /** Where candidate areas came from — demographic barangays, or business-derived when that layer is empty. */
-    source?: 'demographic_cell' | 'poi_fallback';
     /** Legacy shape (runs made before the recommendations rebuild) — triggers a re-run prompt. */
     gaps?: Array<{ barangay: string | null; opportunityScore: number; reason?: string; lat?: number | null; lon?: number | null }>;
+  } | null;
+  /** AI Analysis Report — the retrieve-then-generate capstone, persisted per site. */
+  analysis: {
+    analysis?: string;
+    model?: string;
+    confidence?: 'high' | 'medium' | 'low';
+    generatedAt?: string;
+    contextJson?: {
+      truthLayerSummary?: { verified: number; assumed: number; projected: number };
+      meta?: { overallConfidence?: string; generatedAt?: string; siteLabel?: string } & Record<string, unknown>;
+      [k: string]: unknown;
+    } | null;
   } | null;
 }
 
@@ -97,6 +86,7 @@ const TABS = [
   { key: 'lease', label: 'Lease Benchmark' },
   { key: 'daypart', label: 'Daypart Demand' },
   { key: 'whitespace', label: 'White-Space' },
+  { key: 'analysis', label: 'Analysis' },
 ] as const;
 
 type TabKey = (typeof TABS)[number]['key'];
@@ -203,6 +193,7 @@ export function SiteIntelligenceTabs({
       {tab === 'lease' && <LeaseTab p={payloads.lease} primary={primary('lease')} />}
       {tab === 'daypart' && <DaypartTab p={payloads.daypart} primary={primary('daypart')} />}
       {tab === 'whitespace' && <WhiteSpaceTab p={payloads.whitespace} primary={primary('whitespace')} />}
+      {tab === 'analysis' && <AnalysisTab payloads={payloads} primary={primary} siteLabel={site.label} />}
     </div>
   );
 }
@@ -355,17 +346,6 @@ function LeaseTab({ p, primary = true }: { p: SiteModulePayloads['lease']; prima
   // corridor distribution (bars + median line) so the benchmark is visible immediately.
   const chartAsking = askingValid ? asking : null;
 
-  // --- BIR zonal-value context (Verified band + Projected cross-check + fallback) ---
-  const zband = p.zonal?.band ?? null;
-  const zmid = zband?.midPhpSqm ?? null;
-  const indRent = p.zonal?.indicativeRent ?? null;
-  // Cross-check goes live with the user's typed asking rent; else the pipeline's stored value.
-  const liveAsking = askingValid ? asking : null;
-  const rentPer1000 =
-    zmid && liveAsking ? Math.round((liveAsking / zmid) * 1000 * 10) / 10 : (p.zonal?.crossCheck?.rentPer1000 ?? null);
-  const rentPos = rentPer1000 == null ? 'unknown' : rentPer1000 > 14 ? 'rich' : rentPer1000 < 6 ? 'thin' : 'inline';
-  const zonalHasIndicative = indRent?.lowPhpSqm != null && indRent?.highPhpSqm != null;
-
   return (
     <div className="space-y-4">
     {!primary && <ContextualNote module="Lease Benchmark" />}
@@ -375,7 +355,7 @@ function LeaseTab({ p, primary = true }: { p: SiteModulePayloads['lease']; prima
         <p className="mt-1 text-xl font-bold"><Chip tone={L_VERDICT[v].tone}>{L_VERDICT[v].label}</Chip></p>
         <p className="mt-2 text-sm text-ink-muted">
           {v === 'insufficient_data'
-            ? `Only ${n} comparable lease${n === 1 ? '' : 's'} in ${p.corridor ?? 'this corridor'}${zonalHasIndicative ? ' — so the read below is anchored on the Verified BIR commercial zonal value (indicative, Projected).' : ' — treat any range as indicative.'}`
+            ? `Only ${n} comparable lease${n === 1 ? '' : 's'} in ${p.corridor ?? 'this corridor'} — treat any range as indicative.`
             : v === 'corridor_benchmark'
               ? `This ran automatically with your analysis: the ${p.corridor ?? 'corridor'} benchmark from ${n} comparable lease${n === 1 ? '' : 's'}. Enter your asking rent below to see instantly where it lands in the spread (at / above / below market).`
               : `Asking rate sits ${p.baseRentPercentile != null ? `at the ${ordinal(p.baseRentPercentile)} percentile` : 'within the range'} of the ${p.corridor ?? 'corridor'} spread across ${n} comps.`}
@@ -425,64 +405,6 @@ function LeaseTab({ p, primary = true }: { p: SiteModulePayloads['lease']; prima
         />
       )}
     </div>
-
-    {/* BIR commercial zonal value — Verified land-value anchor + Projected cross-check + fallback.
-        Guardrail: a government tax-reference floor, never a market price verdict. */}
-    {zband && (
-      <div className="card p-5">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-sm font-medium text-ink-text">BIR commercial zonal value</p>
-          <Chip tone="muted">
-            {zband.grain === 'barangay' ? `${zband.barangay ?? 'barangay'} grain` : 'city grain'} · {zband.truthLayer ?? 'verified'}
-          </Chip>
-        </div>
-        <p className="mt-1 text-xs text-ink-muted">
-          Government tax-reference land value for {zband.barangay ?? zband.cityMunicipality} ({zband.classification ?? 'Commercial'}).
-          A floor reference, not a market price — used here to anchor and cross-check the rent read.
-        </p>
-        <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          <Stat
-            label="Commercial zonal band"
-            value={
-              zband.lowPhpSqm != null && zband.highPhpSqm != null
-                ? `₱${zband.lowPhpSqm.toLocaleString()}–${zband.highPhpSqm.toLocaleString()}`
-                : zband.midPhpSqm != null ? `₱${zband.midPhpSqm.toLocaleString()}` : '—'
-            }
-            sub={`${zband.classification ?? 'Commercial'} · /sqm land (Verified)`}
-          />
-          {rentPer1000 != null && (
-            <Stat
-              label="Rent vs land value"
-              value={`₱${rentPer1000} / ₱1k`}
-              sub={
-                rentPos === 'rich' ? 'above typical ₱6–14 band — rich vs land (Projected)'
-                : rentPos === 'thin' ? 'below typical band — cheap vs land (Projected)'
-                : 'in line with typical NCR corridors (Projected)'
-              }
-            />
-          )}
-          {zonalHasIndicative && (
-            <Stat
-              label="Indicative rent (zonal-implied)"
-              value={`₱${indRent!.lowPhpSqm!.toLocaleString()}–${indRent!.highPhpSqm!.toLocaleString()}`}
-              sub="Projected · /sqm/mo · validate with broker"
-            />
-          )}
-        </div>
-        {v === 'insufficient_data' && zonalHasIndicative && (
-          <p className="mt-3 rounded-md border-l-2 border-projected bg-projected/10 px-3 py-1.5 text-[11px] text-ink-muted">
-            Comps are thin in {p.corridor ?? 'this corridor'}, so this indicative rent band is derived from the Verified
-            commercial zonal value (₱{zband.midPhpSqm?.toLocaleString()}/sqm land midpoint × the calibrated NCR rent ratio).
-            Projected — treat as a starting range and validate with a broker.
-          </p>
-        )}
-        {rentPos === 'rich' && v !== 'insufficient_data' && (
-          <p className="mt-2 text-[11px] text-ink-muted">
-            The asking rent is rich relative to the underlying land value — a useful second lens alongside the corridor comps above.
-          </p>
-        )}
-      </div>
-    )}
 
     {/* Distribution chart — the corridor spread, shown automatically with the run.
         Reuses the same chart the standalone Lease Benchmark page uses. */}
@@ -619,14 +541,14 @@ const WS_VERDICT = {
 };
 
 /**
- * White-Space = reverse Territory Guard. The user proposes ONE site; this recommends the TOP 5
- * BETTER alternative areas they did NOT enter — scored the same way Territory Guard scores a site,
- * ranked best-first, each shown with its verdict, the real businesses there, and how much lower its
- * cannibalization is than the proposed site. The ≤40 rule is an honest badge, not a hard gate, so
- * the user always gets the best available alternatives.
+ * White-Space = reverse Territory Guard. Instead of scoring the one candidate site, it scans
+ * every barangay we hold data for and recommends the TOP areas where same-concept cannibalization
+ * is low enough to enter (≤ threshold, default 40) while demand is high — each shown with the
+ * actual businesses in the area, a verdict, and the same data Territory Guard displays.
  *
- * States: (1) no stored result / legacy `gaps` payload → prompt a re-run; (2) no candidate areas at
- * all (no demographic or business data) → honest "load data" note; (3) recommendations → map + cards.
+ * States: (1) no stored result → older run, prompt a re-run; (2) legacy `gaps` payload → prompt a
+ * re-run so the recommendations recompute; (3) ran but no area ≤ threshold → honest "all contested"
+ * note; (4) recommendations → map + ranked recommendation cards.
  */
 function WhiteSpaceTab({ p }: { p: SiteModulePayloads['whitespace']; primary?: boolean }) {
   if (!p) return <RerunNote module="White-Space" />;
@@ -634,12 +556,10 @@ function WhiteSpaceTab({ p }: { p: SiteModulePayloads['whitespace']; primary?: b
   if (p.recommendations == null) return <RerunNote module="White-Space" />;
 
   const recs = p.recommendations;
+  const threshold = p.threshold ?? 40;
   const conceptLabel = p.concept?.label ?? 'this concept';
   const brand = p.competitorSet?.subjectBrand?.trim();
   const scanned = p.scanned ?? 0;
-  const proposed = p.proposed ?? null;
-  const proposedPct = proposed ? Math.round(proposed.cannibalizationPct) : null;
-  const fallback = p.source === 'poi_fallback';
 
   if (recs.length === 0) {
     return (
@@ -647,14 +567,16 @@ function WhiteSpaceTab({ p }: { p: SiteModulePayloads['whitespace']; primary?: b
         <div className="flex items-start gap-3">
           <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full bg-caution/15 text-caution" aria-hidden>!</span>
           <div>
-            <p className="text-sm font-semibold text-ink-text">No candidate areas to compare yet</p>
+            <p className="text-sm font-semibold text-ink-text">No low-cannibalization areas in current coverage</p>
             <p className="mt-1 text-sm leading-relaxed text-ink-muted">
-              White-Space needs a set of areas to rank against your proposed site, and none are loaded for {conceptLabel}
-              {' '}right now — neither a demographic (barangay) layer nor enough mapped businesses to derive areas from.
+              White-Space scanned {scanned.toLocaleString()} barangay{scanned === 1 ? '' : 's'} for {conceptLabel} and
+              found none with a cannibalization score at or below {threshold} — every area we hold data for is already
+              contested by same-concept rivals or sits on top of one of your branches. That itself is a finding: this
+              network&apos;s territory is saturated for this concept at the current data coverage.
             </p>
             <p className="mt-3 text-xs text-ink-muted">
-              Load the demographic layer (<code>npm run db:populate:ncr</code>) or ingest more area POIs, then re-run this
-              analysis and the top alternative locations will appear here.
+              To surface fresh openings, widen coverage to barangays and corridors outside the mapped area, or relax the
+              cannibalization threshold.
             </p>
           </div>
         </div>
@@ -673,72 +595,29 @@ function WhiteSpaceTab({ p }: { p: SiteModulePayloads['whitespace']; primary?: b
     }))
     .filter((g) => Number.isFinite(g.lat) && Number.isFinite(g.lon));
 
-  // Actual businesses across ALL 5 areas, for the map dots: red = direct/exact, white = adjacent/similar.
-  const businessPoints = recs.flatMap((r) =>
-    (r.nearbyPoints ?? []).filter((b) => Number.isFinite(b.lat) && Number.isFinite(b.lon)),
-  );
-  const directCount = businessPoints.filter((b) => b.tier === 'direct').length;
-  const adjacentCount = businessPoints.filter((b) => b.tier === 'adjacent').length;
-
   return (
     <div className="space-y-4">
-      {/* Header — reframed against the site the user actually proposed. */}
+      {/* Header — what this tab now answers. */}
       <div className="card p-5">
-        <p className="text-xs uppercase tracking-wide text-ink-muted">Better alternative locations</p>
+        <p className="text-xs uppercase tracking-wide text-ink-muted">Recommended locations</p>
         <p className="mt-1 text-lg font-bold text-ink-text">
-          Top {recs.length} area{recs.length === 1 ? '' : 's'} to open{brand ? ` ${brand}` : ''} instead of your proposed site
+          Top {recs.length} area{recs.length === 1 ? '' : 's'} to open{brand ? ` a ${brand} branch` : ''}
         </p>
-        {proposed ? (
-          <p className="mt-1 text-sm text-ink-muted">
-            You proposed <span className="font-medium text-ink-text">{proposed.label}</span>
-            {proposed.city ? `, ${proposed.city}` : ''} — cannibalization <span className="font-medium text-ink-text">{proposedPct}%</span>{' '}
-            for {conceptLabel}. Below are the best areas we scanned that you did <em>not</em> enter, ranked by lower
-            cannibalization and demand (same scoring as Territory Guard). Cannibalization is Projected.
-          </p>
-        ) : (
-          <p className="mt-1 text-sm text-ink-muted">
-            The best areas to open {conceptLabel}, ranked by low same-concept cannibalization and demand. Cannibalization
-            is Projected.
-          </p>
-        )}
-        <p className="mt-2 text-[11px] text-ink-muted">
-          Scanned {scanned.toLocaleString()} area{scanned === 1 ? '' : 's'} · {conceptLabel}
-          {' · '}the badge marks how contested each area is (open ≤15, workable &lt;{p.threshold ?? 40}, contested ≥{p.threshold ?? 40}).
+        <p className="mt-1 text-sm text-ink-muted">
+          Areas with a cannibalization score of {threshold} or less for {conceptLabel} — low same-concept overlap and
+          real demand. Scored the same way as Territory Guard, across {scanned.toLocaleString()} barangay
+          {scanned === 1 ? '' : 's'}. Cannibalization is Projected.
         </p>
-        {fallback && (
-          <p className="mt-2 rounded-md border-l-2 border-projected bg-projected/10 px-3 py-1.5 text-[11px] text-ink-muted">
-            Demographic (barangay) layer not loaded — areas were derived from mapped businesses, so population isn&apos;t
-            weighted. Run <code>npm run db:populate:ncr</code> for population-aware, barangay-level results.
-          </p>
-        )}
       </div>
 
-      {/* Overview map: every recommended area pinned by its rank, with the actual businesses
-          plotted as red (exact/direct) and white (similar/adjacent) dots so the visual matches
-          the per-area data. */}
+      {/* Overview map: every recommended area pinned by its rank. */}
       <div className="card p-5">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <p className="text-sm font-medium text-ink-text">Recommended areas · OpenStreetMap</p>
-          <div className="flex items-center gap-3 text-[11px] text-ink-muted">
-            <span className="flex items-center gap-1.5">
-              <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: '#e5484d', border: '1.5px solid #0b1426' }} />
-              Exact / same concept{directCount ? ` (${directCount})` : ''}
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: '#e6ebf5', border: '1.5px solid #0b1426' }} />
-              Similar / adjacent{adjacentCount ? ` (${adjacentCount})` : ''}
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="grid h-4 w-4 place-items-center rounded-full bg-accent text-[9px] font-bold text-ink-bg">#</span>
-              Recommended area
-            </span>
-          </div>
-        </div>
+        <p className="mb-3 text-sm font-medium text-ink-text">Recommended areas · OpenStreetMap</p>
         {mapPoints.length > 0 ? (
-          <GapsMap gaps={mapPoints} businesses={businessPoints} />
+          <GapsMap gaps={mapPoints} />
         ) : (
           <div className="rounded-lg border border-dashed border-ink-border p-4 text-center text-xs text-ink-muted">
-            Re-run this analysis to attach area coordinates — the recommended areas will then plot on a map here.
+            Re-run this analysis to attach barangay coordinates — the recommended areas will then plot on a map here.
           </div>
         )}
       </div>
@@ -764,9 +643,6 @@ function WhiteSpaceTab({ p }: { p: SiteModulePayloads['whitespace']; primary?: b
       <div className="space-y-3">
         {recs.map((r) => {
           const v = WS_VERDICT[r.verdict] ?? WS_VERDICT.workable;
-          // How much better than the proposed site (positive = lower cannibalization = better).
-          const delta = proposedPct == null ? null : proposedPct - Math.round(r.cannibalizationPct);
-          const hasPop = r.population > 0;
           return (
             <div key={`${r.barangay}-${r.rank}`} className="card p-5">
               <div className="flex flex-wrap items-center gap-3">
@@ -775,11 +651,6 @@ function WhiteSpaceTab({ p }: { p: SiteModulePayloads['whitespace']; primary?: b
                   <p className="truncate text-base font-semibold text-ink-text">{r.barangay ?? 'Unnamed area'}</p>
                   {r.city && <p className="truncate text-xs text-ink-muted">{r.city}</p>}
                 </div>
-                {delta != null && (
-                  <Chip tone={delta > 0 ? 'go' : delta < 0 ? 'caution' : 'muted'}>
-                    {delta > 0 ? `${delta}% lower than your site` : delta < 0 ? `${Math.abs(delta)}% higher than your site` : 'same as your site'}
-                  </Chip>
-                )}
                 <Chip tone={v.tone}>{v.label}</Chip>
               </div>
 
@@ -791,11 +662,7 @@ function WhiteSpaceTab({ p }: { p: SiteModulePayloads['whitespace']; primary?: b
                   value={`${r.competitorMix.direct} direct`}
                   sub={`+ ${r.competitorMix.adjacent} adjacent in catchment`}
                 />
-                <Stat
-                  label="Population"
-                  value={hasPop ? r.population.toLocaleString() : '—'}
-                  sub={hasPop ? 'catchment residents (Verified)' : 'demographic layer not loaded'}
-                />
+                <Stat label="Population" value={r.population.toLocaleString()} sub="catchment residents (Verified)" />
                 <Stat
                   label="Nearest own branch"
                   value={r.nearestOwnM == null ? 'None nearby' : `${Math.round(r.nearestOwnM).toLocaleString()} m`}
@@ -820,6 +687,261 @@ function WhiteSpaceTab({ p }: { p: SiteModulePayloads['whitespace']; primary?: b
           );
         })}
       </div>
+    </div>
+  );
+}
+
+/* ---- Analysis (combined final report) ----------------------------------- */
+/**
+ * The Analysis tab is a deterministic FINAL REPORT: it folds every figure already shown on the
+ * Territory Guard, Lease Benchmark, Daypart Demand and White-Space tabs into one read-through
+ * view. Nothing is recomputed and nothing is invented — each value is carried straight from the
+ * persisted module_result payloads the other tabs render, with its Truth Layer kept in place.
+ * (The AI write-up is a later step; this is the data-combining foundation it will build on.)
+ */
+
+/** One compact label → value row inside a report section, with an optional Truth-Layer tag. */
+function ReportRow({ label, value, truth }: { label: string; value: React.ReactNode; truth?: 'Verified' | 'Assumed' | 'Projected' }) {
+  const truthCls = truth === 'Verified' ? 'text-verified' : truth === 'Assumed' ? 'text-assumed' : 'text-projected';
+  return (
+    <div className="flex items-baseline justify-between gap-4 border-b border-ink-border/40 py-1.5 last:border-0">
+      <span className="text-sm text-ink-muted">{label}</span>
+      <span className="text-right text-sm font-medium text-ink-text">
+        {value}
+        {truth && <span className={`ml-2 text-[10px] uppercase tracking-wide ${truthCls}`}>({truth})</span>}
+      </span>
+    </div>
+  );
+}
+
+/** A per-module section of the combined report: title, verdict chip, and its key figures. */
+function ReportSection({
+  title, tab, ran, verdict, verdictTone, contextual, children,
+}: {
+  title: string; tab: string; ran: boolean;
+  verdict?: string; verdictTone?: 'go' | 'caution' | 'nogo' | 'muted';
+  contextual?: boolean; children?: React.ReactNode;
+}) {
+  return (
+    <div className="card p-5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <p className="text-sm font-semibold text-ink-text">{title}</p>
+          <p className="text-[11px] uppercase tracking-wide text-ink-muted">{tab} tab</p>
+        </div>
+        {ran && verdict ? <Chip tone={verdictTone ?? 'muted'}>{verdict}</Chip> : !ran ? <Chip tone="muted">Not run</Chip> : null}
+      </div>
+      {contextual && ran && (
+        <p className="mt-1 text-[11px] text-projected">Contextual read for this format — carries lower weight in the decision.</p>
+      )}
+      {ran ? (
+        <div className="mt-3">{children}</div>
+      ) : (
+        <p className="mt-2 text-sm text-ink-muted">This module has no stored result for this site — re-run the analysis to populate it.</p>
+      )}
+    </div>
+  );
+}
+
+/** Lease payload may also carry a BIR zonal block (not in the base UI type) — read it loosely. */
+type LeaseZonal = {
+  band?: { classification?: string | null; lowPhpSqm?: number | null; highPhpSqm?: number | null; midPhpSqm?: number | null } | null;
+  crossCheck?: { position?: string | null } | null;
+  usedAsFallback?: boolean;
+} | null;
+
+function AnalysisTab({
+  payloads, primary, siteLabel,
+}: {
+  payloads: SiteModulePayloads;
+  primary: (m: ModuleKind) => boolean;
+  siteLabel: string;
+}) {
+  const t = payloads.territory;
+  const l = payloads.lease;
+  const d = payloads.daypart;
+  const w = payloads.whitespace;
+
+  const ranCount = [t, l, d, w].filter(Boolean).length;
+
+  // Territory read (carried from the Territory Guard tab).
+  const tVerdict = t?.verdict ?? 'mixed';
+  const tMix = t?.competitorMix;
+  const tOwn = t?.ownOutletOverlapPct ?? t?.maxOverlapPct ?? 0;
+
+  // Lease read (carried from the Lease Benchmark tab).
+  const lV = (l?.verdict ?? 'insufficient_data') as keyof typeof L_VERDICT;
+  const lZonal = (l as (SiteModulePayloads['lease'] & { zonal?: LeaseZonal }) | null)?.zonal ?? null;
+
+  // Daypart read (carried from the Daypart Demand tab). Verdict band from the already-computed
+  // window-match figure — a display threshold, not a new calculation.
+  const dNoData = d?.noCatchmentData === true;
+  const dWindow = d?.windowMatchPct ?? 0;
+  const dTone: 'go' | 'caution' | 'nogo' = dWindow >= 60 ? 'go' : dWindow >= 40 ? 'caution' : 'nogo';
+  const dLabel = dWindow >= 60 ? 'Strong window match' : dWindow >= 40 ? 'Partial window match' : 'Weak window match';
+  const dShare = d?.daytimeShare ?? 50;
+  const dOfficeLed = dShare >= 50;
+
+  // White-Space read (carried from the White-Space tab).
+  const wRecs = w?.recommendations ?? null;
+  const wTop = wRecs ? wRecs.slice(0, 3) : [];
+  const wProposed = (w as (SiteModulePayloads['whitespace'] & { proposed?: { cannibalizationPct?: number } }) | null)?.proposed;
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="card p-5">
+        <p className="text-xs uppercase tracking-wide text-ink-muted">Final report</p>
+        <p className="mt-1 text-lg font-bold text-ink-text">Combined site intelligence — {siteLabel}</p>
+        <p className="mt-1 max-w-2xl text-sm text-ink-muted">
+          Every module for this site in one view — Territory Guard, Lease Benchmark, Daypart Demand and White-Space.
+          Each figure is carried straight from its tab with its Truth Layer intact; nothing here is recomputed.
+          {' '}<span className="text-ink-text">{ranCount} of 4 modules</span> have a stored result for this site.
+        </p>
+      </div>
+
+      {/* Territory Guard */}
+      <ReportSection
+        title="Territory Guard"
+        tab="Territory Guard"
+        ran={t != null}
+        verdict={T_VERDICT[tVerdict].label}
+        verdictTone={T_VERDICT[tVerdict].tone}
+        contextual={!primary('territory')}
+      >
+        {t && (
+          <div>
+            {t.headlineSource === 'competitive' && (
+              <p className="mb-2 text-xs text-ink-muted">Driven by competitive saturation, not your own branches.</p>
+            )}
+            <ReportRow label="Own-branch overlap" value={`${tOwn}%`} truth="Verified" />
+            <ReportRow
+              label="Competitive saturation"
+              value={tMix ? `${t.competitiveSaturationPct ?? 0}% · ${tMix.direct} direct + ${tMix.adjacent} adjacent` : `${t.competitiveSaturationPct ?? 0}%`}
+              truth="Projected"
+            />
+            <ReportRow label="Est. monthly cannibalization" value={`₱${(t.totalCannibalizedPhp ?? 0).toLocaleString()}`} truth="Projected" />
+            {t.competitorSet?.competitors?.length ? (
+              <ReportRow label="Competes with" value={t.competitorSet.competitors.slice(0, 5).join(', ')} />
+            ) : null}
+            <ReportRow
+              label="Affected own outlets"
+              value={(t.affectedOutlets?.length ?? 0) === 0 ? 'None in this catchment' : `${t.affectedOutlets!.length}`}
+              truth="Verified"
+            />
+          </div>
+        )}
+      </ReportSection>
+
+      {/* Lease Benchmark */}
+      <ReportSection
+        title="Lease Benchmark"
+        tab="Lease Benchmark"
+        ran={l != null}
+        verdict={L_VERDICT[lV].label}
+        verdictTone={L_VERDICT[lV].tone}
+        contextual={!primary('lease')}
+      >
+        {l && (
+          <div>
+            <ReportRow label="Corridor" value={l.corridor ?? '—'} />
+            <ReportRow label="Comparable leases" value={`${l.sampleSize ?? l.comps?.length ?? 0}`} truth="Verified" />
+            <ReportRow
+              label="Base-rent percentile"
+              value={l.baseRentPercentile != null ? ordinal(l.baseRentPercentile) : '—'}
+              truth="Assumed"
+            />
+            {l.negotiatingRoomPhpSqm != null && (
+              <ReportRow
+                label="Negotiating room to median"
+                value={`₱${Math.abs(l.negotiatingRoomPhpSqm).toLocaleString()}/sqm${l.negotiatingRoomPct != null ? ` (${Math.abs(l.negotiatingRoomPct)}% ${l.negotiatingRoomPhpSqm > 0 ? 'above' : 'below'})` : ''}`}
+                truth="Assumed"
+              />
+            )}
+            {lZonal?.band && (
+              <ReportRow
+                label="BIR zonal band"
+                value={
+                  `${lZonal.band.classification ?? 'CR'} · ₱${(lZonal.band.lowPhpSqm ?? 0).toLocaleString()}–₱${(lZonal.band.highPhpSqm ?? 0).toLocaleString()}/sqm` +
+                  (lZonal.crossCheck?.position ? ` · ${lZonal.crossCheck.position.replace(/_/g, ' ')}` : '') +
+                  (lZonal.usedAsFallback ? ' · used as fallback anchor' : '')
+                }
+                truth="Verified"
+              />
+            )}
+          </div>
+        )}
+      </ReportSection>
+
+      {/* Daypart Demand */}
+      <ReportSection
+        title="Daypart Demand"
+        tab="Daypart Demand"
+        ran={d != null}
+        verdict={dNoData ? 'Catchment mix not derived' : dLabel}
+        verdictTone={dNoData ? 'muted' : dTone}
+        contextual={!primary('daypart')}
+      >
+        {d && (
+          <div>
+            <ReportRow label="Peak-hour demand captured" value={`${dWindow}%`} truth="Projected" />
+            <ReportRow
+              label="Catchment mix"
+              value={dNoData ? 'Not derived (demographic layer not loaded)' : `${Math.round(dShare * 10) / 10}% daytime · ${Math.round((100 - dShare) * 10) / 10}% residential`}
+              truth="Projected"
+            />
+            {!dNoData && (
+              <ReportRow label="Peak window" value={dOfficeLed ? '11:00–14:00 (office-led)' : '17:00–20:00 (residential)'} truth="Projected" />
+            )}
+            {d.seasonality?.peakSeason?.label && (
+              <ReportRow label="Seasonal peak" value={d.seasonality.peakSeason.label} truth="Projected" />
+            )}
+            {d.seasonality?.troughSeason?.label && (
+              <ReportRow label="Seasonal trough" value={d.seasonality.troughSeason.label} truth="Projected" />
+            )}
+          </div>
+        )}
+      </ReportSection>
+
+      {/* White-Space */}
+      <ReportSection
+        title="White-Space"
+        tab="White-Space"
+        ran={w != null && wRecs != null}
+        verdict={wRecs ? (wTop.length ? `${wRecs.length} recommended area${wRecs.length === 1 ? '' : 's'}` : 'No open areas in coverage') : undefined}
+        verdictTone={wRecs && wTop.length ? 'go' : 'muted'}
+        contextual={!primary('whitespace')}
+      >
+        {w && wRecs && (
+          <div>
+            <ReportRow label="Barangays scanned" value={(w.scanned ?? 0).toLocaleString()} truth="Verified" />
+            <ReportRow label="Cannibalization threshold" value={`≤ ${w.threshold ?? 40}`} truth="Projected" />
+            {wProposed?.cannibalizationPct != null && (
+              <ReportRow label="This site's cannibalization" value={`${Math.round(wProposed.cannibalizationPct)}%`} truth="Projected" />
+            )}
+            {wTop.length > 0 ? (
+              wTop.map((r, i) => (
+                <ReportRow
+                  key={`${r.barangay}-${i}`}
+                  label={`#${r.rank ?? i + 1} ${r.barangay ?? 'Unnamed area'}${r.city ? `, ${r.city}` : ''}`}
+                  value={`${Math.round(r.cannibalizationPct)}% cannibalization`}
+                  truth="Projected"
+                />
+              ))
+            ) : (
+              <p className="mt-2 text-sm text-ink-muted">No area in current coverage scored at or below the threshold — the network is saturated for this concept here.</p>
+            )}
+          </div>
+        )}
+        {w && wRecs == null && (
+          <p className="mt-2 text-sm text-ink-muted">This run predates the recommendations rebuild — re-run the analysis to compute White-Space areas.</p>
+        )}
+      </ReportSection>
+
+      <p className="px-1 text-[11px] text-ink-muted">
+        This is a straight consolidation of the four tabs above — a foundation for the written AI analysis to come.
+        BSA supplements the broker; it does not replace them.
+      </p>
     </div>
   );
 }

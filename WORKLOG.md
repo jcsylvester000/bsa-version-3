@@ -5,6 +5,95 @@ The cross-thread state record. Read this (with the Master Instruction and the cu
 
 ---
 
+## 2026-08-25 (later 5) — Analysis tab = DETERMINISTIC combined report FIRST (AI deferred)
+
+User pivot: do it one step at a time. Before any AI write-up, the 5th tab (now labelled just
+**"Analysis"**, not "Analysis Report") must be a plain **Final Report that combines all data from the
+four tabs** (Territory Guard, Lease Benchmark, Daypart Demand, White-Space) into one view.
+
+**Implemented (no AI, no fetch, no DB write):** `components/SiteIntelligenceTabs.tsx` — `AnalysisTab`
+rewritten to read the four persisted payloads it already receives via `payloads` and render a
+read-through report: a header (`Combined site intelligence — {site}`, N of 4 modules present), then a
+`ReportSection` per module with its verdict chip + key figures as `ReportRow`s, each tagged with its
+Truth Layer (Verified/Assumed/Projected). Territory: verdict, own-branch overlap, competitive
+saturation (direct+adjacent), est. cannibalization, competitor set, affected outlets. Lease: verdict,
+corridor, comps, base-rent percentile, negotiating room, BIR zonal band (read loosely off payload).
+Daypart: window-match band verdict, peak-hour captured, catchment mix, peak window, seasonality
+peak/trough. White-Space: scanned, threshold, this-site cannibalization, top-3 recommended areas.
+Missing/legacy modules show an honest "not run / re-run" note. Contextual (non-primary) modules are
+flagged. Removed the AI Generate/Regenerate button + `/api/analysis-report` fetch from the tab, and
+dropped the now-unused `runId` prop from `SiteIntelligenceTabs` + `site/page.tsx`.
+
+**Verified:** TSX typechecks clean (React shims). Only `strict:true` in tsconfig — no unused-var gate.
+
+**AI scaffolding is DORMANT, not deleted** (ready for the next step): `lib/ai/analysisPrompts.ts`,
+`lib/ai/analysisReport.ts`, `lib/modules/analysisContext.ts`, `app/api/analysis-report/route.ts`, the
+6 `analysis-*` chunks in `prisma/methodologyChunks.ts`, the `analysis` ModuleKind enum +
+`migrations/20260826000001_add_analysis_module`, and the 3 docs in `3 - Skills/10 - AI Systems
+Engineer/` all remain on disk. Nothing imports the route now, so it is inert. When we resume AI, the
+combined report becomes the data foundation the write-up reads. No action needed for this step; the
+enum migration is additive/harmless if already deployed.
+
+---
+
+## 2026-08-25 (later 4) — AI Analysis Report (5th site tab) — SUPERSEDED by (later 5) for now (scaffolding kept)
+
+Built the AI "Analysis Report" — a 5th tab after Territory Guard / Lease Benchmark / Daypart /
+White-Space. Retrieve-then-generate capstone: deterministic code assembles the four module results +
+intake into strict JSON, the AI reads that JSON as its ONLY context and writes ≤2 paragraphs. No
+figure is invented; every number is passed through with its Truth Layer. Runs on the stub provider
+today; swap `AI_PROVIDER` for a live model and nothing else changes. Approved options: on-demand
+generation, cached + regenerate; prompts in code + knowledge seeded to DB.
+
+**Two prompts (in code, authoritative):** `lib/ai/analysisPrompts.ts` — `ANALYSIS_SYSTEM_PROMPT`
+(identity + 6 hard rules: numbers only from JSON, preserve Truth Layer, broker-supplementation, no
+price/legal/financial advice, only intake+module results, stay in scope) and
+`ANALYSIS_TASK_INSTRUCTIONS` (≤2 paragraphs, 90–160 words; para 1 = composite verdict+score + the
+driving modules with specific fields; para 2 = trade-offs, White-Space alternatives, confidence + the
+one thing to verify on the ground). Human-readable mirrors + the in-depth knowledge doc live in
+`3 - Skills/10 - AI Systems Engineer/` (files 1_/2_/3_).
+
+**JSON assembler:** `lib/modules/analysisContext.ts` — pure, no AI, no server imports, unit-tested.
+`buildAnalysisContext(input)` folds the four persisted payloads + intake + composite into the strict
+JSON contract (each module a `{ran, isPrimary, truthLayer, …trimmed fields}` block), computes
+`truthLayerSummary`, aggregates+dedups flags, stamps guardrails (brokerSupplementation, noPriceVerdict,
+zonalIsTaxFloor). `analysisContextToJsonText` pretty-prints it — that text is the model's `context`.
+
+**Generator:** `lib/ai/analysisReport.ts` — `generateAnalysisReport(runId, siteId, {force})`. Cache =
+a persisted `module_result` (module='analysis'); `force` regenerates. Loads run+intake(A–F,H–J)+site+
+the 4 module_results → builds AnalysisInput → `buildAnalysisContext` → `retrieve` interpretation
+chunks → provider.generate({system: prompt#1, context: JSON+reference, task: prompt#2}) → logs to
+`ai_generation` (purpose 'summary', reused to avoid a 2nd enum) → upserts the `analysis` module_result
+(payload = {analysis, contextJson, model, confidence, generatedAt}).
+
+**API:** `app/api/analysis-report/route.ts` — POST {runId, siteId, force?}, session + canAccessRun +
+site-belongs-to-run guards, returns the report or the cache.
+
+**Knowledge seeded:** `prisma/methodologyChunks.ts` — appended 6 `analysis-*` chunks (overview + how to
+read Territory / Lease / Daypart / White-Space / composite+confidence). These ground the retrieve step
+so the model interprets each field correctly. Re-seed to load them into `doc_chunk`.
+
+**UI:** `components/SiteIntelligenceTabs.tsx` — added the `analysis` payload type, a 5th "Analysis
+Report" tab, and `AnalysisTab`: Generate/Regenerate button (POSTs the route), renders the ≤2-para
+report, a confidence chip + Verified/Assumed/Projected counts + generated-at/model, and a collapsible
+"Show the data the AI read (strict JSON)". `app/(app)/site/page.tsx` loads `byModule.analysis` and
+passes `runId`. `lib/modules/verticalConfig.ts` MODULE_LABELS gained `analysis: 'Analysis Report'`.
+
+**Schema:** `ModuleKind` enum gained `analysis`
+(`prisma/migrations/20260826000001_add_analysis_module/migration.sql`, additive + idempotent
+`ADD VALUE IF NOT EXISTS`).
+
+**Verified:** `analysisContext.ts` typechecks strict standalone; server files (generator+route) and the
+TSX component typecheck with shims; 9/9 new unit tests pass (`tests/unit/analysisContext.test.ts` —
+passthrough, truth-layer summary, missing-module gaps, rec cap, flag dedup, guardrails, JSON
+round-trip, empty run).
+
+**Operator runs (neon + docker):** `prisma generate` → `prisma migrate deploy` (applies the enum) →
+re-seed knowledge (`npm run db:seed`, or the methodology-chunk seed) → open a site → Analysis Report
+tab → Generate. Stub provider works out of the box; no key needed.
+
+---
+
 ## 2026-08-25 (later 3) — BIR zonal values → Lease Benchmark integration — CODE COMPLETE (needs migrate + seed on neon)
 
 Ingested the user's "NCR BIR Zonal Values" workbooks (19 files, 2 grains each) and wired zonal into

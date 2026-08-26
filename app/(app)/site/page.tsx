@@ -62,6 +62,7 @@ export default async function SiteReportPage({ searchParams }: { searchParams: {
     lease: (byModule.lease as SiteModulePayloads['lease']) ?? null,
     daypart: (byModule.daypart as SiteModulePayloads['daypart']) ?? null,
     whitespace: (byModule.whitespace as SiteModulePayloads['whitespace']) ?? null,
+    analysis: (byModule.analysis as SiteModulePayloads['analysis']) ?? null,
   };
 
   return (

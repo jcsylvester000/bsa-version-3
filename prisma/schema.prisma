@@ -125,6 +125,7 @@ enum ModuleKind {
   informal
   land
   scorecard
+  analysis
 }
 
 enum PoiCategory {
@@ -347,18 +348,15 @@ model ZonalValue {
   region             String
   province           String?
   cityMunicipality   String     @map("city_municipality")
-  /// Barangay grain. '' (empty) marks a CITY-level row; a name marks a barangay-level row.
-  barangay           String     @default("")
-  rdo                String     @default("")
+  rdo                String?
   classificationCode String     @map("classification_code")
   lowPhpSqm          Decimal?   @map("low_php_sqm") @db.Decimal(12, 2)
   highPhpSqm         Decimal?   @map("high_php_sqm") @db.Decimal(12, 2)
   truthLayer         TruthLayer @default(verified) @map("truth_layer")
   notes              String?
 
-  @@unique([region, cityMunicipality, barangay, rdo, classificationCode], name: "zonal_natural_key", map: "zonal_value_natural_key")
+  @@unique([region, cityMunicipality, rdo, classificationCode], name: "zonal_natural_key")
   @@index([region, cityMunicipality])
-  @@index([region, cityMunicipality, barangay], map: "zonal_value_city_barangay_idx")
   @@map("zonal_value")
 }
 

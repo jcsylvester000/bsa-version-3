@@ -80,6 +80,46 @@ export const METHODOLOGY_CHUNKS: Chunk[] = [
       'Data sourcing is honest by table. Establishment coordinates come from Google Places and are Verified. BIR zonal values come from published RDO schedules and are Verified where the full range is sourced, Assumed where only a band is inferred. PSA census populations are Verified; daytime-population projections are Assumed. Lease comps are Verified against source leases or published corridor bands, and Assumed where a broker estimate fills a gap. No figure is presented as Verified unless a real source backs it.',
     truth: 'verified',
   },
+
+  /* ---- Analysis Report interpretation reference -------------------------------
+     How the Analysis AI reads each field of the strict JSON. Retrieved by the
+     retrieve step so the model interprets figures correctly without recomputing. */
+  {
+    id: 'analysis-overview',
+    content:
+      'The Analysis Report is a written interpretation, not a new calculation. It reads one strict JSON block holding the operator intake, the composite verdict and score, and the four site modules — Territory Guard, Lease Benchmark, Daypart Demand and White-Space — each figure already computed and Truth-Layer tagged. The report cites only numbers present verbatim in that JSON, preserves each figure’s Truth Layer, and never invents, averages, or extrapolates. A module with ran:false or null is named as a gap, not filled in. The composite verdict and score are the headline; the modules explain why.',
+    truth: 'verified',
+  },
+  {
+    id: 'analysis-territory-read',
+    content:
+      'Reading Territory Guard in the analysis: territory.maxOverlapPct is the headline trade-area overlap (Verified from coordinates) and territory.headlineSource says whether it is driven by the operator’s own branch (own) or by competitive saturation (competitive). territory.verdict is adds / mixed / redistributes — adds means fresh catchment, redistributes means the site cannibalizes existing sales. territory.competitiveSaturationPct and competitorMix (direct/adjacent/unrelated) size the rivalry; territory.totalCannibalizedPhp is a Projected peso model, described as modelled, never as booked loss. A high overlap on a redistributes verdict is the strongest single reason to caution a site.',
+    truth: 'verified',
+  },
+  {
+    id: 'analysis-lease-read',
+    content:
+      'Reading Lease Benchmark in the analysis: lease.verdict places the asking rent versus the corridor — below_market, at_market, above_market, insufficient_data, or corridor_benchmark. lease.baseRentPercentile and lease.corridor locate it in the spread; a high percentile means room to negotiate down toward the median. lease.sampleSize and lease.lowSample gate confidence — a thin sample makes any range indicative, not a verdict. lease.zonal.crossCheck.position compares rent against the BIR zonal floor, and lease.zonal.usedAsFallback:true means the indicative band stood in for missing comps. Zonal is a tax-reference floor only; the analysis never states what rent to pay or whether to sign.',
+    truth: 'verified',
+  },
+  {
+    id: 'analysis-daypart-read',
+    content:
+      'Reading Daypart Demand in the analysis: daypart.windowMatchPct is the Projected share of modelled demand falling inside the format’s target window, and daypart.daytimeShare with daypart.peakHour say whether the catchment is office-led (midday peak) or residential (evening peak). daypart.seasonality gives the peak and trough seasons and any term-time note. Daypart is weighted only when daypart.isPrimary is true for the format; when it is not primary, or daypart.noCatchmentData is true, the analysis mentions it lightly and says so rather than leaning on it.',
+    truth: 'verified',
+  },
+  {
+    id: 'analysis-whitespace-read',
+    content:
+      'Reading White-Space in the analysis: whitespace.recommendations lists the top alternative areas the operator did not input, each with a Projected cannibalizationPct and a verdict (open / workable / contested). An entry with beatsProposed:true undercuts whitespace.proposed.cannibalizationPct — the cannibalization at the operator’s own chosen site — and is named as a better alternative with the size of the gap. White-Space guides where to look next; it never overrides the site-level Territory and Lease read on the specific address under review.',
+    truth: 'verified',
+  },
+  {
+    id: 'analysis-composite-confidence',
+    content:
+      'Reading the composite and confidence: composite.verdict and composite.score are the roll-up the analysis opens with. meta.overallConfidence (high / medium / low) reflects how much of the read rests on Verified versus Assumed or Projected inputs, and drops when a module is on-ground-flagged or comps are thin — truthLayerSummary counts the Verified, Assumed and Projected data points behind the report. The closing line pairs that confidence with the single most important thing to verify on the ground, drawn only from a flags entry or an Assumed/Projected field — never a new recommendation.',
+    truth: 'verified',
+  },
 ];
 
 /** Upsert the methodology corpus. Returns the number of chunks written. */
