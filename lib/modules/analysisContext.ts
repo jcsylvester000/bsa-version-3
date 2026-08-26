@@ -29,7 +29,7 @@ export interface AnalysisInput {
     brand: string | null;
     vertical: string | null;
     conceptLabel: string | null;
-    overallConfidence: 'high' | 'medium' | 'low';
+    overallConfidence: string;
     generatedAt: string;
   };
   /** The intake sections the operator actually submitted (already merged, PII-free). */

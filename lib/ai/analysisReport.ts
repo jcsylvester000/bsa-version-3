@@ -14,7 +14,7 @@ import type { ModuleKind } from '@prisma/client';
 import { getAiProvider } from './index';
 import { retrieve } from './retrieveThenGenerate';
 import { TRUTH_META } from '@/lib/truth/truthLayer';
-import { rollUpConfidence, type TruthLayer } from '@/lib/truth/truthLayer';
+import { rollUpConfidence, type TruthLayer, type Confidence } from '@/lib/truth/truthLayer';
 import { isPrimaryModule } from '@/lib/modules/verticalConfig';
 import { buildAnalysisContext, analysisContextToJsonText, type AnalysisInput, type AnalysisModuleInput } from '@/lib/modules/analysisContext';
 import { humanizeVertical } from '@/lib/modules/verticalConfig';
@@ -24,7 +24,7 @@ export interface AnalysisReportResult {
   analysis: string;
   contextJson: unknown;
   model: string;
-  confidence: 'high' | 'medium' | 'low';
+  confidence: Confidence;
   generatedAt: string;
   cached: boolean;
 }
@@ -63,7 +63,7 @@ export async function generateAnalysisReport(
         analysis: p.analysis as string,
         contextJson: p.contextJson ?? null,
         model: (p.model as string) ?? 'stub-grounded-v1',
-        confidence: (p.confidence as 'high' | 'medium' | 'low') ?? 'medium',
+        confidence: (p.confidence as Confidence) ?? 'med',
         generatedAt: (p.generatedAt as string) ?? new Date().toISOString(),
         cached: true,
       };

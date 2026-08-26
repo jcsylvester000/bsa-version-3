@@ -71,7 +71,7 @@ export interface SiteModulePayloads {
   analysis: {
     analysis?: string;
     model?: string;
-    confidence?: 'high' | 'medium' | 'low';
+    confidence?: 'high' | 'med' | 'low';
     generatedAt?: string;
     contextJson?: {
       truthLayerSummary?: { verified: number; assumed: number; projected: number };
