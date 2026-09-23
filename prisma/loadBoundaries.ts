@@ -15,7 +15,8 @@ import 'dotenv/config';
 import { readFileSync } from 'node:fs';
 import { prisma } from '@/lib/db/prisma';
 import { REGION_KEYS, type RegionKey } from '@/lib/geo/regions';
-import { boundaryFeatureToRow, type BoundaryLevel } from '@/lib/geo/boundaryFeature';
+import { type BoundaryLevel } from '@/lib/geo/boundaryFeature';
+import { upsertBoundaryFeature } from '@/lib/geo/boundaryUpsert';
 
 interface Args { region: RegionKey; level: BoundaryLevel; file: string; }
 
@@ -40,7 +41,15 @@ interface FeatureCollection { type: string; features?: Feature[] }
 
 async function main() {
   const { region, level, file } = parseArgs(process.argv.slice(2));
-  const raw = readFileSync(file, 'utf8');
+  let raw: string;
+  try {
+    raw = readFileSync(file, 'utf8');
+  } catch {
+    console.error(`File not found: ${file}`);
+    console.error('You need the GeoJSON first. Easiest: npm run db:fetch-boundaries -- --region=' + region +
+      ' (auto-downloads, no GDAL). Otherwise convert the PSGC shapefiles with ogr2ogr — see prisma/data/boundaries/README.md.');
+    process.exit(1);
+  }
   const fc = JSON.parse(raw) as FeatureCollection;
   const features = Array.isArray(fc.features) ? fc.features : [];
   console.log(`Boundaries — region=${region} level=${level} file=${file} (${features.length} features)`);
@@ -50,20 +59,8 @@ async function main() {
   const sampleKeys = features[0]?.properties ? Object.keys(features[0].properties) : [];
 
   for (const f of features) {
-    const props = f.properties ?? {};
-    const row = boundaryFeatureToRow(props, level);
-    if (!row || !f.geometry) { skipped++; continue; }
-    await prisma.adminBoundary.upsert({
-      where: { psgcCode: row.psgcCode },
-      update: { level: row.level, name: row.name, parentPsgc: row.parentPsgc, region },
-      create: { psgcCode: row.psgcCode, level: row.level, name: row.name, parentPsgc: row.parentPsgc, region },
-    });
-    const geomJson = JSON.stringify(f.geometry);
-    await prisma.$executeRaw`
-      UPDATE admin_boundary
-      SET geom = ST_Multi(ST_SetSRID(ST_GeomFromGeoJSON(${geomJson}), 4326))::geography
-      WHERE psgc_code = ${row.psgcCode}`;
-    loaded++;
+    const ok = await upsertBoundaryFeature(f, level, region);
+    if (ok) loaded++; else skipped++;
   }
 
   console.log(`Loaded ${loaded} boundaries (${skipped} skipped).`);

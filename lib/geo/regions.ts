@@ -49,6 +49,11 @@ export interface RegionDef {
   corridors: Corridor[];
   /** LGU canonicalisers, most-specific first (drives zonal lookup + region tagging). */
   cities: CityCanon[];
+  /** philippines-json-maps region-level file code (the provdists-region-<code> file). */
+  psgcRegionCode?: string;
+  /** philippines-json-maps province (adm2) codes to fetch for this region. Empty/undefined =
+   *  the auto-downloader has no mapping yet (use the ogr2ogr file path). */
+  psgcProvinces?: string[];
 }
 
 const NCR: RegionDef = {
@@ -149,6 +154,8 @@ const CAVITE: RegionDef = {
   // Corridors are added with comps in R-06. Until then a Cavite site uses the default
   // corridor (flagged Projected) rather than a wrong NCR match.
   corridors: [],
+  psgcRegionCode: '400000000', // CALABARZON (Region IV-A)
+  psgcProvinces: ['402100000'], // Cavite
   cities: [
     { canonical: 'Bacoor', tokens: /bacoor|molino|zapote/ },
     { canonical: 'Imus', tokens: /\bimus\b/ },
@@ -179,6 +186,8 @@ const BATANGAS: RegionDef = {
     { lat: 14.0863, lon: 121.1497, label: 'Tanauan' },
   ],
   corridors: [],
+  psgcRegionCode: '400000000', // CALABARZON (Region IV-A)
+  psgcProvinces: ['401000000'], // Batangas
   cities: [
     { canonical: 'Batangas City', tokens: /batangas city/ },
     { canonical: 'Lipa', tokens: /\blipa\b/ },

@@ -24,6 +24,7 @@
     "db:ingest:osm:cavite": "tsx --tsconfig tsconfig.scripts.json prisma/ingestOsm.ts --region=cavite",
     "db:ingest:osm:batangas": "tsx --tsconfig tsconfig.scripts.json prisma/ingestOsm.ts --region=batangas",
     "db:load-boundaries": "tsx --tsconfig tsconfig.scripts.json prisma/loadBoundaries.ts",
+    "db:fetch-boundaries": "tsx --tsconfig tsconfig.scripts.json prisma/fetchBoundaries.ts",
     "db:tag-boundaries": "tsx --tsconfig tsconfig.scripts.json prisma/tagByBoundary.ts",
     "db:validate": "tsx --tsconfig tsconfig.scripts.json scripts/validateData.ts",
     "db:fix-outliers": "tsx --tsconfig tsconfig.scripts.json scripts/findOutliers.ts",

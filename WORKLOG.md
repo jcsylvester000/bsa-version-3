@@ -27,10 +27,17 @@ Skills: 02 Database. Real barangay/city/province for every point, replacing the 
   `.geojson` git-ignored. DATA_DICTIONARY updated. Tests: `tests/unit/boundaryFeature.test.ts` (6 cases).
   **360/360 pass, typecheck clean.**
 
-**⚠️ ACTION REQUIRED:** (1) `npx prisma migrate deploy`. (2) Owner data load (see boundaries/README.md):
-clone the PSGC shapefiles, `ogr2ogr` Cavite/Batangas cities+barangays to GeoJSON, `npm run db:load-boundaries`
-(cities then barangays, per region), then `npm run db:tag-boundaries`. NCR/Davao boundaries can be loaded the
-same way to replace their bbox tags with true barangays.
+- **Auto-downloader (added after owner hit the missing-file error):** `prisma/fetchBoundaries.ts`
+  (`db:fetch-boundaries -- --region=cavite|batangas`) pulls ready-made GeoJSON (province → cities →
+  barangays) from faeldon/philippines-json-maps (MIT, PSGC Q4-2023) and loads it — NO GDAL, NO shapefile
+  clone. Verified the exact URL/property schema live (adm2/adm3/adm4_psgc, Cavite=402100000,
+  Batangas=401000000, region CALABARZON=400000000). Registry gained `psgcRegionCode` + `psgcProvinces`
+  (Cavite/Batangas). Shared upsert refactored to `lib/geo/boundaryUpsert.ts` (used by both the file loader
+  and the fetcher). `loadBoundaries` now prints a friendly "run db:fetch-boundaries" hint on a missing file.
+
+**⚠️ ACTION REQUIRED:** `npx prisma migrate deploy`, then the easy path:
+`npm run db:fetch-boundaries -- --region=cavite` · `--region=batangas` · `npm run db:tag-boundaries`.
+(Manual ogr2ogr path still documented for other vintages / regions without a PSGC mapping.)
 
 ---
 

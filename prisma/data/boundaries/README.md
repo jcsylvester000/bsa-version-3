@@ -1,7 +1,29 @@
 # Administrative boundaries (R-02)
 
 BSA tags every POI and candidate site with its real **barangay / city / province** by
-point-in-polygon against `admin_boundary`. This folder holds the GeoJSON the loader reads.
+point-in-polygon against `admin_boundary`.
+
+## Easiest: auto-download (no GDAL, no shapefiles) — recommended
+
+Pulls ready-made GeoJSON (province → cities → barangays) from
+[faeldon/philippines-json-maps](https://github.com/faeldon/philippines-json-maps) (MIT, PSGC
+Q4-2023) and loads it straight into Neon. Needs only network + Node 18+.
+
+```powershell
+npx prisma migrate deploy        # if not already applied
+npm run db:fetch-boundaries -- --region=cavite
+npm run db:fetch-boundaries -- --region=batangas
+npm run db:tag-boundaries        # backfill existing POIs/sites (new sites tag at intake)
+```
+
+That's it. Everything below is the manual alternative (only if you'd rather use your own
+shapefiles / a specific PSGC vintage). Auto-download supports regions that have `psgcRegionCode`
++ `psgcProvinces` in `lib/geo/regions.ts` (currently Cavite, Batangas; add codes for others).
+
+---
+
+## Manual alternative: shapefiles + ogr2ogr
+
 The `.geojson` files are **git-ignored** (large; provide them per environment).
 
 ## 1. Get the shapefiles (official PSGC)
