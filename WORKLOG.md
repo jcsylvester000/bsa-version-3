@@ -5,6 +5,28 @@ The cross-thread state record. Read this (with the Master Instruction and the cu
 
 ---
 
+## 2026-09-24 — R-03: Tiled Overpass sweep (no truncation) — CODE COMPLETE (no migrate; pure code)
+
+Skills: 02 Database, 06 Research. Fixes the silent truncation where one bbox query per vertical capped at
+`out center N` dropped establishments in dense areas — worse at province scale.
+
+- **Pure tiling** `lib/geo/tiling.ts`: `subdivide` (grid), `quadrants` (4-split), `bboxHeightDeg`,
+  `bboxCentre`, `bboxKey`. Unit-tested (`tests/unit/tiling.test.ts`, 6 cases).
+- **`osmService.establishmentsInTiles(vertical, bbox, opts)`** — splits the region into ~0.08° start-tiles;
+  any tile returning at the cap is split into quadrants and retried down to ~0.02°; dedups by osm_id.
+  DB-free: the caller drives persistence/resume via `shouldProcess(tile)` + `onStartTileDone(tile, places)`.
+- **`prisma/ingestOsm.ts`**: the DEFAULT competitor sweep now tiles (complete). Each start-tile is
+  checkpointed in `poi_coverage` (cellKey `bulk:<bbox>`, source='bulk'); an interrupted run resumes,
+  `--force` re-sweeps. `--quick` keeps the fast single-bbox smoke. Per-tile logging (tiles/splits/count).
+  Region + tiled examples in the header; brand pull unchanged.
+- **Verified (cloud):** typecheck clean, **366/366 tests**.
+
+**⚠️ ACTION REQUIRED:** none for deploy (no schema change). To populate provinces (any time):
+`npm run db:ingest:osm:cavite` / `:batangas` (complete tiled sweep; minutes, polite). After R-02 boundaries
+are loaded, run `npm run db:tag-boundaries` to attach barangays to the new POIs.
+
+---
+
 ## 2026-09-24 — R-02: Admin boundary polygons + point-in-polygon tagging — CODE COMPLETE (needs migrate + owner data load)
 
 Skills: 02 Database. Real barangay/city/province for every point, replacing the 600 m circles / bbox tags.

@@ -80,8 +80,10 @@ _Last updated: 2026-09-23 — after Fix Batch 5 (review programme complete)._
   Progress: **R-01 done** (region registry `lib/geo/regions.ts`; migration `20260923000004_region_columns`).
   **R-02 done** (code): `admin_boundary` polygons + psgc columns; `prisma/loadBoundaries.ts` +
   `prisma/tagByBoundary.ts`; runtime `lib/geo/adminBoundary.ts`; migration `20260923000005_admin_boundary`.
-  R-02 needs an OWNER DATA LOAD (PSGC shapefiles → GeoJSON via ogr2ogr → load-boundaries → tag-boundaries;
-  see `prisma/data/boundaries/README.md`). Next: R-03 (tiled Overpass sweep, no truncation).
+  R-02 easy data load: `npm run db:fetch-boundaries -- --region=cavite|batangas` (auto-download, no GDAL) →
+  `db:tag-boundaries`. **R-03 done** (code): adaptive tiled Overpass sweep `lib/geo/tiling.ts` +
+  `osmService.establishmentsInTiles`; `ingestOsm` tiles by default with a `poi_coverage` (source='bulk')
+  resume checkpoint (no migration). Next: R-04 (PSA demographics for Cavite/Batangas onto boundary polygons).
   Region model: `lib/geo/regions.ts` is the single source of truth (bbox, Overpass areas, warm centres,
   corridors, LGU canonicalisers); `inferCorridor`/`canonicalNcrCity` are registry-backed (behaviour
   unchanged for NCR/Davao). A site's region = LGU name first, else pinned coordinate.

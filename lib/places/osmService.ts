@@ -15,6 +15,7 @@
  * Output shape matches placesService.RealPlace so downstream ingest/normalize is identical.
  */
 import 'server-only';
+import { subdivide, quadrants, bboxHeightDeg, type BBox } from '@/lib/geo/tiling';
 
 /** Same shape placesService returns, so loaders/normalizers don't care about the source. */
 export interface OsmPlace {
@@ -223,6 +224,61 @@ export async function brandBranchesInBbox(
   const elements = await runOverpass(ql);
   await sleep(POLITE_DELAY_MS);
   return toPlaces(elements, null);
+}
+
+/**
+ * Complete establishment sweep of a vertical across a bbox by ADAPTIVE TILING (R-03).
+ *
+ * The region is split into ~`tileDeg` start-tiles. Each tile is queried; if it comes back at
+ * the cap (truncated), it's split into quadrants and retried, down to `minTileDeg`. So dense
+ * areas are covered fully instead of silently cut off at `out center N`.
+ *
+ * The caller drives DB persistence + resumability via callbacks (this module stays DB-free):
+ *   - `shouldProcess(tile)` → false skips an already-done start-tile (checkpoint).
+ *   - `onStartTileDone(tile, places, splits)` → the caller loads `places` and records coverage.
+ * Runs strictly sequentially with the module's polite delay between queries.
+ */
+export async function establishmentsInTiles(
+  vertical: string,
+  bbox: [number, number, number, number],
+  opts: {
+    max?: number;
+    tileDeg?: number;
+    minTileDeg?: number;
+    shouldProcess?: (tile: [number, number, number, number]) => Promise<boolean> | boolean;
+    onStartTileDone?: (tile: [number, number, number, number], places: OsmPlace[], splits: number) => Promise<void> | void;
+  } = {},
+): Promise<{ startTiles: number; processed: number; skipped: number; splits: number; total: number }> {
+  const cap = opts.max ?? 400;
+  const tileDeg = opts.tileDeg ?? 0.08;
+  const minTileDeg = opts.minTileDeg ?? 0.02;
+  const startTiles = subdivide(bbox as BBox, tileDeg);
+  let processed = 0, skipped = 0, splits = 0, total = 0;
+
+  /** Query one tile; if capped and still splittable, recurse into quadrants. Dedup by key. */
+  async function collect(tile: BBox, seen: Map<string, OsmPlace>): Promise<number> {
+    const places = await establishmentsInBbox(vertical, tile, { max: cap });
+    for (const p of places) {
+      const key = p.osmId != null ? `osm:${p.osmId}` : `nc:${p.name.toLowerCase()}:${p.lat.toFixed(4)}:${p.lon.toFixed(4)}`;
+      if (!seen.has(key)) seen.set(key, p);
+    }
+    if (places.length >= cap && bboxHeightDeg(tile) > minTileDeg) {
+      splits++;
+      for (const q of quadrants(tile)) await collect(q, seen);
+    }
+    return places.length;
+  }
+
+  for (const st of startTiles) {
+    if (opts.shouldProcess && !(await opts.shouldProcess(st))) { skipped++; continue; }
+    const seen = new Map<string, OsmPlace>();
+    await collect(st, seen);
+    const places = [...seen.values()];
+    total += places.length;
+    processed++;
+    if (opts.onStartTileDone) await opts.onStartTileDone(st, places, splits);
+  }
+  return { startTiles: startTiles.length, processed, skipped, splits, total };
 }
 
 /** Nearby establishments of a vertical around a point (radius metres). Builds a bbox

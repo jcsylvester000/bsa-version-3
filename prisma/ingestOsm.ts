@@ -1,26 +1,32 @@
 /**
- * OSM (Overpass) ingestion — Google-free NCR POI + brand-branch sweep.
+ * OSM (Overpass) ingestion — Google-free POI + brand-branch sweep, region-aware (R-01) and
+ * complete via adaptive tiling (R-03).
  *
- *   npm run db:ingest:osm                 # full NCR sweep (competitors + brand branches)
- *   npm run db:ingest:osm -- --quick      # 3 verticals, brands only — fast smoke test
- *   npm run db:ingest:osm -- --competitors # competitor sweep only
- *   npm run db:ingest:osm -- --brands     # brand-branch pull only
+ *   npm run db:ingest:osm                          # full NCR sweep (tiled competitors + brands)
+ *   npm run db:ingest:osm -- --region=cavite       # a whole province, complete (no truncation)
+ *   npm run db:ingest:osm:cavite / :batangas       # shortcuts
+ *   npm run db:ingest:osm -- --quick               # fast single-bbox smoke (may truncate)
+ *   npm run db:ingest:osm -- --competitors|--brands# one phase only
+ *   npm run db:ingest:osm -- --region=cavite --force# ignore the resumable checkpoint, re-sweep
  *
- * Sources real Metro Manila establishments from OpenStreetMap via the public Overpass
- * API — no key, no billing. Writes into the `poi` table through the existing loadPoi
- * loader (idempotent upsert on osm_id). Coordinates are Verified; category is mapped
- * from the OSM tag. This is the DB-only competitor + saturation dataset the app reads
- * at runtime.
+ * Sources real establishments from OpenStreetMap via the public Overpass API — no key, no billing.
+ * Writes into `poi` through loadPoi (idempotent upsert on osm_id); coordinates Verified, region
+ * tagged. The DEFAULT competitor sweep tiles the region and splits any tile that hits the query
+ * cap, so dense verticals are captured fully instead of cut off at `out center N`. Each start-tile
+ * is checkpointed in poi_coverage (source='bulk'), so an interrupted run resumes; --force re-sweeps.
  *
- * Politeness: Overpass is a shared free resource. The osmService already sleeps between
- * calls and rotates/retries endpoints; here we additionally run strictly sequentially.
+ * Politeness: Overpass is a shared free resource (guideline ~10k queries/day). osmService sleeps
+ * between calls and rotates endpoints; this script runs strictly sequentially with extra pauses.
  */
 import 'dotenv/config';
 import { loadPoi } from '../lib/ingest/loaders';
 import type { RawPoi } from '../lib/ingest/normalize';
 import { getRegion, type RegionKey, REGION_KEYS } from '../lib/geo/regions';
+import { prisma } from '@/lib/db/prisma';
+import { bboxKey, bboxCentre, type BBox } from '@/lib/geo/tiling';
 import {
   establishmentsInBbox,
+  establishmentsInTiles,
   brandBranchesInBbox,
   osmTagToPoiCategory,
   type OsmPlace,
@@ -76,14 +82,15 @@ const BRAND_PULL = [
   'Go Hotels', 'Red Planet', 'RedDoorz', 'Kumon',
 ];
 
-interface Args { quick: boolean; competitors: boolean; brands: boolean; region: RegionKey; }
+interface Args { quick: boolean; competitors: boolean; brands: boolean; region: RegionKey; force: boolean; }
 
 function parseArgs(argv: string[]): Args {
-  const a: Args = { quick: false, competitors: false, brands: false, region: 'ncr' };
+  const a: Args = { quick: false, competitors: false, brands: false, region: 'ncr', force: false };
   for (const x of argv) {
     if (x === '--quick') a.quick = true;
     else if (x === '--competitors') a.competitors = true;
     else if (x === '--brands') a.brands = true;
+    else if (x === '--force') a.force = true;
     else if (x.startsWith('--region=')) {
       const r = x.slice('--region='.length) as RegionKey;
       if (REGION_KEYS.includes(r)) a.region = r;
@@ -124,19 +131,49 @@ async function main() {
   // --- 1. Competitor density sweep, per vertical, across the NCR bbox ---------
   if (args.competitors) {
     const verticals = args.quick ? SWEEP_VERTICALS.slice(0, 3) : SWEEP_VERTICALS;
-    console.log(`[1] Competitor sweep — ${verticals.length} verticals across NCR…`);
-    for (const v of verticals) {
-      try {
-        const places = await establishmentsInBbox(v, REGION_BBOX, { max: args.quick ? 150 : 600 });
-        const rows = places.map((p) => toRawPoi(p, args.region, 'competitor'));
-        const rep = await loadPoi(rows);
-        totalLoaded += rep.loaded;
-        console.log(`   ${v}: ${places.length} found → ${rep.loaded} loaded (${rep.deduped} dedup, ${rep.skipped} skip)`);
-      } catch (e) {
-        failed.push(`vertical:${v}`);
-        console.log(`   ${v}: FAILED — ${e instanceof Error ? e.message : e}`);
+    if (args.quick) {
+      // Fast smoke: one capped bbox query per vertical (may truncate — that's fine for --quick).
+      console.log(`[1] Competitor sweep (quick, single-bbox) — ${verticals.length} verticals across ${region.name}…`);
+      for (const v of verticals) {
+        try {
+          const places = await establishmentsInBbox(v, REGION_BBOX, { max: 150 });
+          const rep = await loadPoi(places.map((p) => toRawPoi(p, args.region, 'competitor')));
+          totalLoaded += rep.loaded;
+          console.log(`   ${v}: ${places.length} found → ${rep.loaded} loaded`);
+        } catch (e) { failed.push(`vertical:${v}`); console.log(`   ${v}: FAILED — ${e instanceof Error ? e.message : e}`); }
+        await pause();
       }
-      await pause();
+    } else {
+      // Complete tiled sweep (R-03): adaptive quad-tiling, resumable per start-tile via poi_coverage
+      // (source='bulk'). No truncation — a dense tile splits until every establishment is captured.
+      console.log(`[1] Competitor sweep (tiled, complete) — ${verticals.length} verticals across ${region.name}…`);
+      for (const v of verticals) {
+        try {
+          const stats = await establishmentsInTiles(v, REGION_BBOX, {
+            max: 400,
+            shouldProcess: async (tile) => {
+              if (args.force) return true;
+              const cov = await prisma.poiCoverage.findUnique({
+                where: { coverage_cell_vertical: { cellKey: `bulk:${bboxKey(tile as BBox)}`, vertical: v } },
+                select: { source: true },
+              });
+              return !(cov && cov.source === 'bulk'); // skip start-tiles already bulk-covered
+            },
+            onStartTileDone: async (tile, places) => {
+              const rep = await loadPoi(places.map((p) => toRawPoi(p, args.region, 'competitor')));
+              totalLoaded += rep.loaded;
+              const c = bboxCentre(tile as BBox);
+              await prisma.poiCoverage.upsert({
+                where: { coverage_cell_vertical: { cellKey: `bulk:${bboxKey(tile as BBox)}`, vertical: v } },
+                update: { lat: c.lat, lon: c.lon, poiCount: places.length, fetchedAt: new Date(), source: 'bulk' },
+                create: { cellKey: `bulk:${bboxKey(tile as BBox)}`, vertical: v, lat: c.lat, lon: c.lon, poiCount: places.length, source: 'bulk' },
+              });
+            },
+          });
+          console.log(`   ${v}: ${stats.processed}/${stats.startTiles} tiles (${stats.skipped} skipped, ${stats.splits} splits) → ${stats.total} establishments`);
+        } catch (e) { failed.push(`vertical:${v}`); console.log(`   ${v}: FAILED — ${e instanceof Error ? e.message : e}`); }
+        await pause();
+      }
     }
   }
 
