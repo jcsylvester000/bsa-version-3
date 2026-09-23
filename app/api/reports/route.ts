@@ -6,16 +6,15 @@ import { canAccessRun, canRunPipeline } from '@/lib/auth/auth';
 import { isUuid } from '@/lib/util/uuid';
 import { ok, fail, failValidation, errors } from '@/lib/api/respond';
 import { composeReport } from '@/lib/modules/reportComposer';
-import { renderAndPersistReport } from '@/lib/modules/reportRender';
-import { getStorage } from '@/lib/storage';
+import { recordReport } from '@/lib/modules/reportRender';
 import { audit } from '@/lib/audit/audit';
 
 const genSchema = z.object({ runId: z.string().uuid() });
 
 /**
- * POST /api/reports — compose + store the 9-section Site Intelligence Report for a run.
- * Deterministic module data grounds it; the AI phrases each section. Returns the
- * report metadata and a signed download URL.
+ * POST /api/reports — compose the 9-section Run Report (all sites of a run) and record that it
+ * was generated. Built on demand from the database; the client-ready branded version is
+ * GET /api/reports/full (HTML → print to PDF). No file storage (Batch 5).
  */
 export async function POST(req: NextRequest) {
   const session = await getSession();
@@ -34,9 +33,7 @@ export async function POST(req: NextRequest) {
     const composed = await composeReport(run.id);
     // generatedAt stamped here at runtime (not inside any workflow script).
     const generatedAtISO = new Date().toISOString();
-    const persisted = await renderAndPersistReport(composed, generatedAtISO);
-
-    const downloadUrl = await getStorage().signedUrl(persisted.storageKey, { expiresInSeconds: 300, download: true });
+    const persisted = await recordReport(composed, generatedAtISO);
 
     await audit({
       actorId: session.id,
@@ -60,17 +57,16 @@ export async function POST(req: NextRequest) {
         metrics: s.metrics, // structured, AI-free data the UI renders as visuals
       })),
       onGroundCheckFlagged: composed.onGroundCheckFlagged,
-      downloadUrl,
+      fullReportPath: `/api/reports/full?runId=${run.id}`,
     });
   } catch (err) {
     console.error('[POST /api/reports] generate failed', err);
-    const message = err instanceof Error ? err.message : 'Failed to generate report.';
-    return errors.server(message);
+    return errors.server('The report could not be generated. Please try again.');
   }
 }
 
 /**
- * GET /api/reports?runId=... — fetch the stored report row + a fresh signed download URL.
+ * GET /api/reports?runId=... — whether a run report has been generated (confidence + when).
  */
 export async function GET(req: NextRequest) {
   const session = await getSession();
@@ -85,13 +81,11 @@ export async function GET(req: NextRequest) {
   if (!canAccessRun(session, run)) return errors.forbidden();
 
   const report = await prisma.report.findUnique({ where: { pipelineRunId: runId } });
-  if (!report || !report.storageKey) return errors.notFound('Report');
-
-  const downloadUrl = await getStorage().signedUrl(report.storageKey, { expiresInSeconds: 300, download: true });
+  if (!report) return errors.notFound('Report');
   return ok({
     reportId: report.id,
     confidence: report.confidence,
     generatedAt: report.generatedAt,
-    downloadUrl,
+    fullReportPath: `/api/reports/full?runId=${runId}`,
   });
 }

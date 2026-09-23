@@ -4,7 +4,6 @@ import { getSession } from '@/lib/auth/session';
 import { canAccessRun } from '@/lib/auth/auth';
 import { isMockUser } from '@/lib/auth/mockUsers';
 import { isUuid } from '@/lib/util/uuid';
-import { getStorage } from '@/lib/storage';
 import { resolveDefaultRunId } from '@/lib/modules/defaultRun';
 import { ReportView } from '@/components/ReportView';
 import { mockReport } from '@/lib/mock/mockCompute';
@@ -29,7 +28,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: { ru
           <h1 className="mt-2 text-2xl font-bold">Site Intelligence Report — Macao Imperial Tea</h1>
           <p className="text-sm text-ink-muted">
             Nine sections composed from the demo module results. <span className="text-muesli">Mock data</span> — connect
-            Postgres for a downloadable, signed report.
+            Postgres to generate a downloadable report.
           </p>
         </div>
         <>
@@ -49,11 +48,9 @@ export default async function ReportsPage({ searchParams }: { searchParams: { ru
     return <EmptyState message="You do not have access to this run." />;
   }
 
-  let existing: { downloadUrl: string; confidence: Confidence } | null = null;
-  if (run.report?.storageKey && run.report.confidence) {
-    const downloadUrl = await getStorage().signedUrl(run.report.storageKey, { expiresInSeconds: 300, download: true });
-    existing = { downloadUrl, confidence: run.report.confidence as Confidence };
-  }
+  // Reports are built on demand (no stored file) — the row only records that one was generated.
+  const existing: { confidence: Confidence } | null =
+    run.report?.confidence ? { confidence: run.report.confidence as Confidence } : null;
 
   return (
     <div>
@@ -61,10 +58,11 @@ export default async function ReportsPage({ searchParams }: { searchParams: { ru
         <Link href="/runs" className="text-sm text-accent hover:underline">
           ← Runs
         </Link>
-        <h1 className="mt-2 text-2xl font-bold">Site Intelligence Report — {run.franchisor.brandName}</h1>
+        <h1 className="mt-2 text-2xl font-bold">Run Report (all sites) — {run.franchisor.brandName}</h1>
         <p className="text-sm text-ink-muted">
-          Nine sections composed from this run’s module results under retrieve-then-generate. Every number keeps its
-          Truth Layer; the cover carries the honest confidence read.
+          Nine sections covering every candidate site in this run, composed from the module results. Every number keeps
+          its Truth Layer; the cover carries the confidence read. For one site&apos;s written analysis, open the site and
+          use Export site PDF on its Analysis tab.
         </p>
       </div>
       <>

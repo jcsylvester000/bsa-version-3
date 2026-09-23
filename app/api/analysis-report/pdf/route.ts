@@ -1,4 +1,5 @@
 import React from 'react';
+import { manilaLongStamp } from '@/lib/util/manilaTime';
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db/prisma';
 import { getSession } from '@/lib/auth/session';
@@ -51,7 +52,8 @@ export async function GET(req: NextRequest) {
     const siteLabel = String(meta.siteLabel ?? 'Site');
     const brand = meta.brand != null ? String(meta.brand) : null;
     const location = meta.city != null ? String(meta.city) : null;
-    const dateStr = new Date(result.generatedAt).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' });
+    // Manila time regardless of the server's zone (Netlify runs in UTC).
+    const dateStr = manilaLongStamp(new Date(result.generatedAt));
 
     const { renderToBuffer } = await import('@react-pdf/renderer');
     const element = React.createElement(AnalysisPdf, {

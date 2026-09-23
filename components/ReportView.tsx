@@ -30,7 +30,7 @@ interface ReportData {
   confidence: Confidence;
   truthLayerMix: Record<TruthLayer, number>;
   sections: Section[];
-  downloadUrl: string;
+  fullReportPath: string;
 }
 
 const CONF_META: Record<Confidence, { label: string; cls: string }> = {
@@ -57,7 +57,7 @@ function bandFor(score: number, higherIsBetter: boolean): 'go' | 'caution' | 'no
   return s >= 70 ? 'go' : s >= 45 ? 'caution' : 'nogo';
 }
 
-export function ReportView({ runId, existing }: { runId: string; existing: { downloadUrl: string; confidence: Confidence } | null }) {
+export function ReportView({ runId, existing }: { runId: string; existing: { confidence: Confidence } | null }) {
   const [report, setReport] = useState<ReportData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -98,14 +98,14 @@ export function ReportView({ runId, existing }: { runId: string; existing: { dow
 
       {!report && !existing && (
         <p className="rounded-lg border border-dashed border-ink-border p-8 text-center text-ink-muted">
-          Generate to compose the Site Intelligence Report from this run’s module results.
+          Generate to compose the Run Report (all sites) from this run’s latest module results.
         </p>
       )}
 
       {!report && existing && (
         <p className="rounded-lg card p-5 text-sm text-ink-muted">
-          A report already exists for this run (confidence {existing.confidence}). Use the download link above, or
-          regenerate to refresh it from the latest module results.
+          A report was generated for this run (confidence {existing.confidence}). Download the full report above — it is
+          rebuilt from the latest module results each time — or regenerate to view the sections here.
         </p>
       )}
 

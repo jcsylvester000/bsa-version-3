@@ -77,21 +77,25 @@ export async function POST(req: NextRequest) {
       `This site's analysis has been regenerated ${REGENERATE_CAP_PER_DAY} times in the last 24 hours. Please try again later.`,
     );
   } catch (e) {
-    // Details were already logged server-side by the generator.
-    if (e instanceof AiGenerationError && e.code.startsWith('config_')) {
-      return fail({ code: 'ai_not_configured', message: 'The AI analysis service is not configured. Please contact Grid support.' }, 503);
+    // Details were already logged server-side by the generator. The client gets a generic
+    // message plus a SHORT machine reason (e.g. timeout, http_401, db_migration_pending) —
+    // never the provider's response body — so operators can diagnose from the browser.
+    const reason = e instanceof AiGenerationError ? e.code : e instanceof Error && /AI_PROVIDER=/.test(e.message) ? 'config_ai_provider' : 'internal';
+    if (e instanceof Error && /AI_PROVIDER=/.test(e.message)) console.error('[analysis-report]', e.message);
+    const details = [{ path: 'reason', message: reason }];
+    if (reason.startsWith('config_')) {
+      return fail({ code: 'ai_not_configured', message: 'The AI analysis service is not configured. Please contact Grid support.', details }, 503);
     }
-    if (e instanceof Error && /AI_PROVIDER=/.test(e.message)) {
-      console.error('[analysis-report]', e.message);
-      return fail({ code: 'ai_not_configured', message: 'The AI analysis service is not configured. Please contact Grid support.' }, 503);
+    if (reason === 'db_migration_pending') {
+      return fail({ code: 'ai_unavailable', message: 'The analysis service needs a database update (prisma migrate deploy). Please contact Grid support.', details }, 503);
     }
-    const timeout = e instanceof AiGenerationError && e.code === 'timeout';
     return fail(
       {
         code: 'ai_unavailable',
-        message: timeout
+        message: reason === 'timeout'
           ? 'The AI analysis took too long to respond. Please try again in a minute.'
           : 'The AI analysis could not be generated right now. Please try again in a minute.',
+        details,
       },
       502,
     );

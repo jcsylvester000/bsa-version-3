@@ -1,11 +1,9 @@
 /**
- * Render a composed report to a Markdown document (the stored artifact) and persist
- * it: write to object storage behind a signed URL, save the report row + pointer +
- * confidence. Postgres holds the pointer, not the blob.
+ * Run-report helpers: a deterministic Markdown rendering (used by tests / future export) and
+ * the report-row recorder. Reports are generated on demand — nothing is written to storage.
  */
 import 'server-only';
 import { prisma } from '@/lib/db/prisma';
-import { getStorage } from '@/lib/storage';
 import { TRUTH_META, CONFIDENCE_META } from '@/lib/truth/truthLayer';
 import type { ComposedReport } from './reportComposer';
 
@@ -56,36 +54,24 @@ export function renderReportMarkdown(report: ComposedReport, generatedAtISO: str
   return lines.join('\n');
 }
 
-export interface PersistedReport {
+export interface RecordedReport {
   reportId: string;
-  storageKey: string;
   confidence: string;
-  markdown: string;
 }
 
-/** Render + store + save the report row. Returns the report id and storage key. */
-export async function renderAndPersistReport(report: ComposedReport, generatedAtISO: string): Promise<PersistedReport> {
-  const markdown = renderReportMarkdown(report, generatedAtISO);
-  const storageKey = `reports/${report.runId}/site-intelligence.md`;
-
-  await getStorage().put({ key: storageKey, body: markdown, contentType: 'text/markdown; charset=utf-8' });
-
-  // Upsert the report row (one report per run).
-  const existing = await prisma.report.findUnique({ where: { pipelineRunId: report.runId } });
-  const saved = existing
-    ? await prisma.report.update({
-        where: { pipelineRunId: report.runId },
-        data: { storageKey, format: 'pdf', confidence: report.confidence, generatedAt: new Date(generatedAtISO) },
-      })
-    : await prisma.report.create({
-        data: {
-          pipelineRunId: report.runId,
-          storageKey,
-          format: 'pdf',
-          confidence: report.confidence,
-          generatedAt: new Date(generatedAtISO),
-        },
-      });
-
-  return { reportId: saved.id, storageKey, confidence: report.confidence, markdown };
+/**
+ * Record that a run report was generated (one row per run: confidence + timestamp). The report
+ * itself is ALWAYS rebuilt on demand from the database (GET /api/reports/full renders the branded
+ * HTML; the Analysis PDF renders per site) — no file is written. Batch 5 decision: Netlify's
+ * serverless disk is temporary, so stored files + signed links broke; on-demand needs no bucket.
+ * `storage_key` stays NULL. lib/storage (+ /api/files) remains for a future S3/R2 adapter.
+ */
+export async function recordReport(report: ComposedReport, generatedAtISO: string): Promise<RecordedReport> {
+  const data = { storageKey: null, format: 'pdf' as const, confidence: report.confidence, generatedAt: new Date(generatedAtISO) };
+  const saved = await prisma.report.upsert({
+    where: { pipelineRunId: report.runId },
+    update: data,
+    create: { pipelineRunId: report.runId, ...data },
+  });
+  return { reportId: saved.id, confidence: report.confidence };
 }

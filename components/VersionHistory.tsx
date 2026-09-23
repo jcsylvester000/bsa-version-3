@@ -1,5 +1,6 @@
 'use client';
 
+import { manilaShortStamp } from '@/lib/util/manilaTime';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 
@@ -32,7 +33,7 @@ export function VersionHistory({ intakeId, currentRunId }: { intakeId: string; c
           const inner = (
             <span className={`inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs ${isCurrent ? 'bg-accent text-ink-bg' : 'bg-ink-panel-2 text-ink-muted hover:bg-ink-hover'}`}>
               <span className="font-semibold">v{v.version}</span>
-              <span>{new Date(v.createdAt).toLocaleString()}</span>
+              <span>{manilaShortStamp(new Date(v.createdAt))}</span>
               {isCurrent && <span className="rounded bg-ink-bg/20 px-1 text-[10px]">current</span>}
             </span>
           );

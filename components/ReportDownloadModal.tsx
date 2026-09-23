@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react';
  * Client-details modal for the downloadable report. Collects who the report is for and
  * who prepared it — so an agent/broker can hand a client-ready, personalised document to
  * their client. Details are remembered per browser (sessionStorage) so re-downloads reuse
- * them. On submit it opens the branded full-report HTML (which the user prints to PDF).
+ * them. On submit it POSTs them to the branded full-report HTML (opened in a new tab; the user prints to PDF).
  */
 export interface ReportClient {
   preparedFor: string;
@@ -46,13 +46,31 @@ export function ReportDownloadModal({ runId }: { runId: string }) {
     } catch {
       /* ignore */
     }
-    const params = new URLSearchParams({ runId });
-    if (c.preparedFor.trim()) params.set('preparedFor', c.preparedFor.trim());
-    if (c.ownerName.trim()) params.set('ownerName', c.ownerName.trim());
-    if (c.company.trim()) params.set('company', c.company.trim());
-    if (c.contactNumber.trim()) params.set('contactNumber', c.contactNumber.trim());
-    if (c.email.trim()) params.set('email', c.email.trim());
-    window.open(`/api/reports/full?${params.toString()}`, '_blank', 'noopener');
+    // POST the cover details in a form body (opened in a new tab) — keeps client names and
+    // phone numbers out of URLs, history and logs.
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = '/api/reports/full';
+    form.target = '_blank';
+    const fields: Record<string, string> = {
+      runId,
+      preparedFor: c.preparedFor.trim(),
+      ownerName: c.ownerName.trim(),
+      company: c.company.trim(),
+      contactNumber: c.contactNumber.trim(),
+      email: c.email.trim(),
+    };
+    for (const [name, value] of Object.entries(fields)) {
+      if (!value) continue;
+      const input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = name;
+      input.value = value;
+      form.appendChild(input);
+    }
+    document.body.appendChild(form);
+    form.submit();
+    form.remove();
     setOpen(false);
   }
 

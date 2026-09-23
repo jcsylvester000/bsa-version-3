@@ -47,6 +47,16 @@ export async function POST(req: NextRequest) {
     mallName: parsed.data.mallName ?? null,
     siteTerms: parsed.data.siteTerms,
   });
+  // Keep the proxy-corridor honesty flag if the pipeline had to fall back for this site.
+  const prevLease = await prisma.moduleResult.findUnique({
+    where: { site_module_key: { candidateSiteId: site.id, module: 'lease' } },
+    select: { flags: true, payload: true },
+  });
+  const prevCorridor = (prevLease?.payload as { corridor?: string } | null)?.corridor;
+  if (prevLease?.flags.includes('corridor_default_fallback') && prevCorridor === result.corridor) {
+    result.flags.push('corridor_default_fallback');
+    result.moduleTruthLayer = 'projected';
+  }
   await persistLeaseResult(site.run.id, result);
   // The asking rent changes the lease criterion → refresh the stored composite so the
   // dashboard, shortlist and scorecard agree immediately.

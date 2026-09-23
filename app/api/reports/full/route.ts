@@ -3,27 +3,45 @@ import { prisma } from '@/lib/db/prisma';
 import { getSession } from '@/lib/auth/session';
 import { canAccessRun } from '@/lib/auth/auth';
 import { isUuid } from '@/lib/util/uuid';
-import { errors } from '@/lib/api/respond';
 import { composeReport } from '@/lib/modules/reportComposer';
 import { buildScorecardsForRun } from '@/lib/modules/scorecardServer';
 import { renderReportHtml, type ReportClientDetails } from '@/lib/modules/reportHtml';
 import { audit } from '@/lib/audit/audit';
 
 /**
- * GET /api/reports/full?runId=…&ownerName=…&company=…&contactNumber=…&preparedFor=…&email=…
+ * The COMPLETE, self-contained, branded HTML Run Report (all sites) — cover page, the 9
+ * structured sections, per-site scorecards, and the Truth-Layer confidence read. Opened in a
+ * new tab; the user prints / saves to PDF. Built on demand from the database; nothing stored.
  *
- * Returns a COMPLETE, self-contained, branded HTML report for the run — cover page (with
- * the client details), the 9 structured sections, per-site scorecards, and the Truth-Layer
- * confidence read. The client opens it in a new tab and prints/saves to PDF. Client details
- * arrive as query params (collected by the modal); nothing is persisted server-side.
+ * POST (form-encoded: runId, ownerName, company, contactNumber, preparedFor, email) — the
+ *      download modal submits the cover details in the request BODY, so client names and
+ *      phone numbers never appear in URLs, browser history or server/CDN logs.
+ * GET  ?runId=… — the same report without cover details.
  *
  * Served as text/html (not JSON) so the browser renders it directly.
  */
 export async function GET(req: NextRequest) {
+  return renderFull(req.nextUrl.searchParams.get('runId'), {});
+}
+
+export async function POST(req: NextRequest) {
+  const form = await req.formData().catch(() => null);
+  const field = (k: string) => {
+    const v = form?.get(k);
+    return typeof v === 'string' && v.trim() ? v.trim().slice(0, 200) : undefined;
+  };
+  return renderFull(field('runId') ?? null, {
+    ownerName: field('ownerName'),
+    company: field('company'),
+    contactNumber: field('contactNumber'),
+    preparedFor: field('preparedFor'),
+    email: field('email'),
+  });
+}
+
+async function renderFull(runId: string | null, client: ReportClientDetails): Promise<Response> {
   const session = await getSession();
   if (!session) return new Response('Unauthorized', { status: 401 });
-
-  const runId = req.nextUrl.searchParams.get('runId');
   if (!runId || !isUuid(runId)) return new Response('Run not found', { status: 404 });
 
   const run = await prisma.pipelineRun.findUnique({
@@ -32,15 +50,6 @@ export async function GET(req: NextRequest) {
   });
   if (!run) return new Response('Run not found', { status: 404 });
   if (!canAccessRun(session, run)) return new Response('Forbidden', { status: 403 });
-
-  const q = req.nextUrl.searchParams;
-  const client: ReportClientDetails = {
-    ownerName: q.get('ownerName') ?? undefined,
-    company: q.get('company') ?? undefined,
-    contactNumber: q.get('contactNumber') ?? undefined,
-    preparedFor: q.get('preparedFor') ?? undefined,
-    email: q.get('email') ?? undefined,
-  };
 
   const [composed, scorecards] = await Promise.all([composeReport(run.id), buildScorecardsForRun(run.id)]);
 

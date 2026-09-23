@@ -132,9 +132,11 @@ export async function generateAnalysisReport(
   // Cost cap on user-forced regeneration (live provider only; the stub is free).
   if (opts.force && isReadyPayload(prev) && which === 'vectorshift') {
     const since = new Date(Date.now() - 24 * 60 * 60_000);
-    const n = await prisma.pipelineUsage.count({
-      where: { candidateSiteId: siteId, trigger: 'regenerate', createdAt: { gte: since } },
-    });
+    // Fails OPEN (logged) if the usage table can't be read — e.g. a pending migration —
+    // so a monitoring problem never blocks a broker's analysis.
+    const n = await prisma.pipelineUsage
+      .count({ where: { candidateSiteId: siteId, trigger: 'regenerate', createdAt: { gte: since } } })
+      .catch((e) => { console.error('[analysis] regenerate-cap count failed (migration pending?)', e); return 0; });
     if (n >= REGENERATE_CAP_PER_DAY) return { status: 'regenerate_limit', cap: REGENERATE_CAP_PER_DAY };
   }
 
@@ -168,7 +170,11 @@ export async function generateAnalysisReport(
     const result = await generateLocked(runId, siteId, which, { actorId: opts.actorId, trigger }, lockId);
     return { status: 'ready', result };
   } catch (err) {
-    const code = err instanceof AiGenerationError ? err.code : 'internal';
+    const prismaCode = (err as { code?: unknown })?.code;
+    const code = err instanceof AiGenerationError ? err.code
+      // P2021 table / P2022 column missing → the database is behind the code (migrate deploy).
+      : prismaCode === 'P2021' || prismaCode === 'P2022' ? 'db_migration_pending'
+      : 'internal';
     const detail = err instanceof AiGenerationError ? err.detail : err instanceof Error ? err.message : String(err);
     console.error(`[analysis] generation failed run=${runId} site=${siteId} code=${code}: ${detail}`);
     if (which === 'vectorshift') {
@@ -179,7 +185,7 @@ export async function generateAnalysisReport(
           provider: 'vectorshift', model: 'vectorshift', status: 'error', errorCode: code,
           latencyMs: Date.now() - t0, trigger,
         },
-      }).catch((e) => console.error('[analysis] usage log failed', e));
+      }).catch((e) => console.error('[analysis] usage log failed (migration pending?)', e));
     }
     // Release the lock: put the previous report back, or remove the placeholder.
     const mine = { path: ['lockId'], equals: lockId };
@@ -290,7 +296,9 @@ async function generateLocked(
     const vs = await generateViaVectorShift(sendReference ? context : schemaText);
     narrative = vs.text;
     model = 'vectorshift';
-    // Usage/cost log ONLY (admin monitor) — no response text stored here.
+    // Usage/cost log ONLY (admin monitor) — no response text stored here. NON-FATAL: VectorShift
+    // has already run (and billed) at this point, so a logging failure (e.g. a pending
+    // migration) must never throw away the finished write-up.
     await prisma.pipelineUsage.create({
       data: {
         userId: opts.actorId ?? null,
@@ -306,7 +314,7 @@ async function generateLocked(
         latencyMs: Date.now() - t0,
         trigger: opts.trigger,
       },
-    });
+    }).catch((e) => console.error('[analysis] usage log write failed (migration pending?)', e));
   } else {
     narrative = composeMockAnalysis(ctx);
     model = 'mock-analysis-v1';

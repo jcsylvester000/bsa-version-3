@@ -1,7 +1,9 @@
 'use client';
 
+import { manilaShortStamp } from '@/lib/util/manilaTime';
 import { LEASE_POSITION_LABEL, ZONAL_FLOOR_NOTE } from '@/lib/truth/guardrailCopy';
 import { useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { TerritoryMap, type MapOutlet } from '@/components/TerritoryMap';
 import { DaypartCurve, type DaypartData } from '@/components/DaypartCurve';
 import { LeaseDistributionChart } from '@/components/LeaseDistributionChart';
@@ -35,6 +37,7 @@ export interface SiteModulePayloads {
     comps?: Array<{ baseRentPhpSqm: number | null }>;
     truth?: { comps?: string; fairRange?: string; zonalBand?: string };
     flags?: string[];
+    format?: string;
   } | null;
   daypart: {
     daytimeShare?: number; windowMatchPct?: number; hourly?: number[]; peakHour?: number;
@@ -214,7 +217,7 @@ export function SiteIntelligenceTabs({
       </div>
 
       {tab === 'territory' && <TerritoryTab site={site} outlets={mapOutlets} p={payloads.territory} primary={primary('territory')} />}
-      {tab === 'lease' && <LeaseTab p={payloads.lease} primary={primary('lease')} />}
+      {tab === 'lease' && <LeaseTab p={payloads.lease} primary={primary('lease')} siteId={site.id} />}
       {tab === 'daypart' && <DaypartTab p={payloads.daypart} primary={primary('daypart')} />}
       {tab === 'whitespace' && <WhiteSpaceTab p={payloads.whitespace} primary={primary('whitespace')} />}
       {tab === 'analysis' && <AnalysisTab payloads={payloads} primary={primary} siteLabel={site.label} runId={runId} siteId={site.id} />}
@@ -353,8 +356,32 @@ const L_VERDICT = {
   insufficient_data: { label: LEASE_POSITION_LABEL.insufficient_data, tone: 'muted' as const },
   corridor_benchmark: { label: LEASE_POSITION_LABEL.corridor_benchmark, tone: 'caution' as const },
 };
-function LeaseTab({ p, primary = true }: { p: SiteModulePayloads['lease']; primary?: boolean }) {
+function LeaseTab({ p, primary = true, siteId }: { p: SiteModulePayloads['lease']; primary?: boolean; siteId: string }) {
+  const router = useRouter();
   const [askingRent, setAskingRent] = useState('');
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [saveMsg, setSaveMsg] = useState<string | null>(null);
+
+  /** Persist the asking rent: re-benchmarks the site server-side, stores the lease VALUE score and
+   *  recomputes the site composite (POST /api/lease-benchmark). Until this runs, Lease does not
+   *  count in the site score — the preview below is browser-only. */
+  async function useInScore() {
+    const rent = Number(askingRent);
+    if (!p || !Number.isFinite(rent) || rent <= 0 || !p.corridor) return;
+    setSaveState('saving'); setSaveMsg(null);
+    try {
+      const res = await fetch('/api/lease-benchmark', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ candidateSiteId: siteId, corridor: p.corridor, format: p.format ?? 'inline', siteTerms: { baseRentPhpSqm: rent } }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) { setSaveState('error'); setSaveMsg(json?.error?.message ?? 'Could not save the asking rent.'); return; }
+      setSaveState('saved');
+      setSaveMsg('Saved — the site score now includes this rent. Regenerate the Analysis tab to include it in the write-up.');
+      router.refresh();
+    } catch { setSaveState('error'); setSaveMsg('The request failed — check your connection and try again.'); }
+  }
   if (!p) return <RerunNote module="Lease Benchmark" />;
   const v = p.verdict ?? 'insufficient_data';
   const n = p.sampleSize ?? p.comps?.length ?? 0;
@@ -424,6 +451,19 @@ function LeaseTab({ p, primary = true }: { p: SiteModulePayloads['lease']; prima
                     : 'Right around the corridor median.'}
               </p>
             )}
+            {enteredPct != null && (
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <button
+                  onClick={useInScore}
+                  disabled={saveState === 'saving'}
+                  className="rounded-lg border border-ink-border px-3 py-1.5 text-xs font-medium text-ink-text hover:border-accent disabled:opacity-50"
+                  title="Store this asking rent so the Lease criterion counts in the site score"
+                >
+                  {saveState === 'saving' ? 'Saving…' : 'Use this rent in the site score'}
+                </button>
+                {saveMsg && <span className={`text-[11px] ${saveState === 'error' ? 'text-nogo' : 'text-ink-muted'}`}>{saveMsg}</span>}
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -432,7 +472,7 @@ function LeaseTab({ p, primary = true }: { p: SiteModulePayloads['lease']; prima
         value={p.corridor ?? '—'}
         sub={
           p.flags?.includes('corridor_default_fallback')
-            ? `No corridor matched this site's location — showing ${p.corridor ?? 'a reference'} comps as a proxy (Projected). Enter the local corridor on the Lease Benchmark tool.`
+            ? `No corridor matched this site's location — showing ${p.corridor ?? 'a reference'} comps as a proxy (Projected). Treat this benchmark as indicative only.`
             : `${n} comparable leases (${tl(p.truth?.comps, 'Assumed')})`
         }
       />
@@ -855,7 +895,14 @@ function AnalysisTab({
         body: JSON.stringify({ runId, siteId, force: regen }),
       });
       const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.ok) { setError(json?.error?.message ?? `Could not generate the report (HTTP ${res.status}).`); return; }
+      if (!res.ok || !json?.ok) {
+        // Show the short reason code (e.g. timeout, http_401, db_migration_pending) so the cause is
+        // visible without server logs. Netlify's own timeout page is not JSON → "function_timeout".
+        const reason = json?.error?.details?.find((d: { path: string }) => d.path === 'reason')?.message
+          ?? (json == null && (res.status === 502 || res.status === 504) ? 'function_timeout' : null);
+        setError(`${json?.error?.message ?? `Could not generate the report (HTTP ${res.status}).`}${reason ? ` [reason: ${reason}]` : ''}`);
+        return;
+      }
       if (json.data?.status === 'generating') { pollTries.current = 0; setWaiting(true); setPollTick((n) => n + 1); return; }
       if (json.data?.status === 'ready') applyReport(json.data.report);
     } catch { setError('The request failed — check your connection and try again.'); }
@@ -942,7 +989,7 @@ function AnalysisTab({
                 disabled={loading || waiting}
                 className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-ink-bg transition hover:opacity-90 disabled:opacity-50"
               >
-                Export PDF
+                Export site PDF
               </button>
             )}
           </div>
@@ -977,7 +1024,9 @@ function AnalysisTab({
               <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-ink-muted">
                 {report.confidence && <Chip tone={report.confidence === 'high' ? 'go' : report.confidence === 'low' ? 'muted' : 'caution'}>Confidence: {report.confidence}</Chip>}
                 <span>{report.model === 'mock-analysis-v1' ? 'Mock analysis (preview)' : report.model}</span>
-                {report.generatedAt && <span>· {new Date(report.generatedAt).toLocaleString()}</span>}
+                {/* Fixed Manila-time formatter: identical on the server and in the browser (toLocaleString
+                    differed — UTC on Netlify vs the viewer's zone — and broke hydration, React #418). */}
+                {report.generatedAt && <span>· {manilaShortStamp(new Date(report.generatedAt))}</span>}
               </div>
               {report.schemaText && (
                 <div className="mt-3">

@@ -271,67 +271,9 @@ export function scoreHealthcare(input: HealthcareInput): HealthcareResult {
   return { proximityScore, catchmentScore, composite, verdict, catchmentNote };
 }
 
-// ---- White-Space (P2) ------------------------------------------------------
-export interface WhiteSpaceCell {
-  psgcCode: string;
-  barangay: string | null;
-  population: number;
-  /** Distance to nearest own outlet, metres (null = none nearby). */
-  nearestOwnM: number | null;
-  competitorCount: number;
-  /** Barangay centroid, for plotting the gap on a map (optional). */
-  lat?: number | null;
-  lon?: number | null;
-}
-export interface WhiteSpaceGap {
-  psgcCode: string;
-  barangay: string | null;
-  population: number;
-  opportunityScore: number; // 0–100
-  reason: string;
-  /** Barangay centroid, carried through so the UI can pin the gap on a map. */
-  lat?: number | null;
-  lon?: number | null;
-}
-/**
- * Rank unserved high-density gaps. Opportunity rises with population and distance
- * from own network, falls with competitor density. Cells already well-served
- * (an own outlet within 800 m) are excluded.
- */
-export function rankWhiteSpace(cells: WhiteSpaceCell[]): WhiteSpaceGap[] {
-  const maxPop = Math.max(1, ...cells.map((c) => c.population));
-  const gaps: WhiteSpaceGap[] = [];
-  for (const c of cells) {
-    if (c.nearestOwnM != null && c.nearestOwnM < 800) continue; // already served
-    const popScore = (c.population / maxPop) * 60;
-    const distScore = c.nearestOwnM == null ? 25 : Math.min(25, (c.nearestOwnM / 3000) * 25);
-    const compPenalty = Math.min(30, c.competitorCount * 6);
-    const opportunityScore = Math.round(Math.max(0, popScore + distScore - compPenalty + 15) * 10) / 10;
-    gaps.push({
-      psgcCode: c.psgcCode,
-      barangay: c.barangay,
-      population: c.population,
-      opportunityScore,
-      reason: `pop ${c.population.toLocaleString()}, ${c.nearestOwnM == null ? 'no own store nearby' : `${Math.round(c.nearestOwnM)} m to nearest own store`}, ${c.competitorCount} competitor(s)`,
-      lat: c.lat ?? null,
-      lon: c.lon ?? null,
-    });
-  }
-  // Dedupe by barangay name (a barangay can have more than one demographic cell row from
-  // overlapping ingests) — keep the highest-scoring instance so the ranked list never
-  // shows the same barangay twice.
-  const byName = new Map<string, WhiteSpaceGap>();
-  for (const g of gaps) {
-    const key = (g.barangay ?? g.psgcCode).toLowerCase();
-    const prev = byName.get(key);
-    if (!prev || g.opportunityScore > prev.opportunityScore) byName.set(key, g);
-  }
-  return [...byName.values()].sort((a, b) => b.opportunityScore - a.opportunityScore);
-}
-
 // ---- White-Space v2: reverse Territory Guard (recommended expansion areas) --
 //
-// v1 (rankWhiteSpace, above) ranked UNSERVED gaps — areas far from the brand's own outlets.
+// v1 (rankWhiteSpace — removed in Batch 5) ranked UNSERVED gaps — areas far from the brand's own outlets.
 // For an established network every area is "served", so it returned nothing. The product now
 // asks a different, always-answerable question: across the region, which areas are the best
 // places for THIS concept to open — where same-concept cannibalization is LOW enough to enter

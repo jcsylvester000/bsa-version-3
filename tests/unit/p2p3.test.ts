@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { scoreDaypart, scoreInformal, scoreMall, scoreHealthcare, rankWhiteSpace, type WhiteSpaceCell } from '@/lib/modules/p2p3Math';
+import { scoreDaypart, scoreInformal, scoreMall, scoreHealthcare } from '@/lib/modules/p2p3Math';
 
 describe('scoreDaypart', () => {
   it('matches a daytime format to a daytime-heavy catchment', () => {
@@ -62,26 +62,6 @@ describe('scoreHealthcare', () => {
   });
   it('scores a far location as weak', () => {
     expect(scoreHealthcare({ nearestFacilityM: 2800, facilityCountWithin2km: 0 }).verdict).toBe('weak');
-  });
-});
-
-describe('rankWhiteSpace', () => {
-  const cells: WhiteSpaceCell[] = [
-    { psgcCode: 'a', barangay: 'A', population: 50000, nearestOwnM: 4000, competitorCount: 0 },  // high opportunity
-    { psgcCode: 'b', barangay: 'B', population: 10000, nearestOwnM: 300, competitorCount: 0 },   // already served → excluded
-    { psgcCode: 'c', barangay: 'C', population: 30000, nearestOwnM: 2000, competitorCount: 5 },  // mid, penalized
-  ];
-  it('excludes cells already served by an own outlet', () => {
-    const gaps = rankWhiteSpace(cells);
-    expect(gaps.find((g) => g.psgcCode === 'b')).toBeUndefined();
-  });
-  it('ranks the high-population unserved cell first', () => {
-    const gaps = rankWhiteSpace(cells);
-    expect(gaps[0].psgcCode).toBe('a');
-  });
-  it('explains why each gap qualifies', () => {
-    const gaps = rankWhiteSpace(cells);
-    expect(gaps[0].reason).toContain('pop');
   });
 });
 

@@ -5,6 +5,55 @@ The cross-thread state record. Read this (with the Master Instruction and the cu
 
 ---
 
+## 2026-09-23 — Fix Batch 5: Hygiene + handoff docs, and a live-site hotfix — CODE COMPLETE
+
+Skills loaded: 01 Senior Web, 09 Documentation, 04 Security, 10 AI Systems. Batch 4 confirmed pushed (`fb4e312`).
+Owner decisions (asked): keep BOTH reports (clearly labelled) · reports generated ON DEMAND (no storage) ·
+RETIRE the four hidden standalone pages.
+
+**Hotfix — owner-reported errors on the live site**
+- React #418/#423 (hydration mismatch) on the site page: `new Date(...).toLocaleString()` rendered UTC on
+  Netlify vs the viewer's zone in the browser. Now `manilaShortStamp` (fixed UTC+8, ICU-free) in
+  `SiteIntelligenceTabs` (Analysis "generated" line) and `VersionHistory`; the PDF date uses
+  `manilaLongStamp` (it printed UTC).
+- Repeated 502 from `/api/analysis-report`: most likely the Batch 2/4 migrations not yet applied on Neon —
+  the post-VectorShift usage-log insert hit the new columns, threw, and discarded a paid write-up. Usage-log
+  writes and the regenerate-cap count are now NON-FATAL; Prisma P2021/P2022 map to `db_migration_pending`;
+  the API returns a short safe reason code (`error.details[reason]`) and the Analysis tab shows it
+  (`function_timeout` when Netlify's own timeout page comes back). No provider bodies are exposed.
+- `/api/maptiles` 503 console noise: "Google disabled" now answers `200 { enabled:false }`; maps already fell
+  back to OSM/CARTO.
+
+**Reports (both kept, on demand)**
+- `POST /api/reports` composes + records the run report row only (`recordReport`, `storage_key` NULL) — no
+  file write, no signed URL. `/reports` page + `ReportView` updated; titled **"Run Report (all sites)"**;
+  dashboard button "Run report (all sites)"; Analysis tab button "Export site PDF".
+- `/api/reports/full` now accepts **POST** (form body) — client name/phone/email no longer in URLs/logs;
+  `ReportDownloadModal` submits a hidden form to a new tab. GET kept without cover details.
+
+**Retired → `_to_delete/retired_2026-09-23/`** (git-ignored; owner may delete the whole `_to_delete` folder):
+pages `/territory-guard`, `/lease-benchmark`, `/daypart`, `/whitespace`; components `IntakeWizard`,
+`TriangulationOverlay`, `TerritoryGuardView`, `LeaseBenchmarkView`, `WhiteSpaceGrid`; root scripts
+`repro_*`, `_x.mjs`, `_check_cset.mjs`, `verify_manila*.ts`, `prisma/seed.ts.bak`; local `bsa_dev.dump`.
+API routes `/api/territory-guard` + `/api/lease-benchmark` KEPT (auth-gated; lease is used below).
+- **Lease tab now saves the asking rent** ("Use this rent in the site score" → `POST /api/lease-benchmark`
+  → value score + composite recompute + page refresh). The retired page had been the only writer, so
+  without this Lease could never count in the composite. Proxy-corridor flag is preserved on save.
+- Removed White-Space v1 `rankWhiteSpace` + types + its 3 tests. Fixed the pre-existing TS cast in
+  `tests/unit/analysisContext.test.ts:117` → **typecheck fully clean (0 errors)**.
+
+**Docs:** README rewritten (current stack, run/deploy, scripts, safe-seed warning); NEW `docs/HANDOFF.md`
+(journey + run sequence diagrams, decisions table, prioritised limitations, pre-production checklist);
+`SECURITY_POSTURE.md` (hardening added + current open items); `API_REFERENCE.md` (reports, maptiles,
+analysis reason codes); 16 QA reports moved to `docs/qa-history/`.
+
+**Verified (cloud):** `tsc --noEmit` 0 errors · 331/331 tests · `next build` succeeds (all routes compile).
+
+**⚠️ ACTION REQUIRED:** `npx prisma migrate deploy` (if not yet done — fixes the 502s) → push → after deploy,
+retry the Analysis tab; if it still fails, the red box now shows `[reason: …]` — send it over.
+
+---
+
 ## 2026-09-23 — Fix Batch 4: Truth Layer honesty + Grid guardrails — CODE COMPLETE (needs migrate + methodology reseed + re-run)
 
 Skills loaded: 07 PH Broker (guardrail wording), 10 AI Systems, 02 Database. Batches 2+3 confirmed pushed (`c5ccfaf`).

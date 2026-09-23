@@ -114,7 +114,7 @@ describe('buildAnalysisContext', () => {
 
   it('caps white-space recommendations at five and preserves beatsProposed', () => {
     const ctx = buildAnalysisContext(fullInput());
-    const recs = (ctx.modules.whitespace as { recommendations: Array<{ beatsProposed: boolean | null }> }).recommendations;
+    const recs = (ctx.modules.whitespace as unknown as { recommendations: Array<{ beatsProposed: boolean | null }> }).recommendations;
     expect(recs).toHaveLength(5);
     expect(recs[0].beatsProposed).toBe(true);
     expect(recs[4].beatsProposed).toBe(false);

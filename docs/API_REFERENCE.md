@@ -126,19 +126,24 @@ Auth + access-scoped. Reads the stored lease `module_result`:
 
 ## POST /api/reports
 Auth required (`admin/analyst/franchisor/broker`); access-scoped to the run's franchisor.
-Body: `{ runId: uuid }`. Composes the 9-section Site Intelligence Report from the run's
-`module_result` rows via retrieve-then-generate, computes run confidence from the Truth
-Layer mix, renders Markdown, stores it behind a signed URL, and saves/updates the `report`
-row. Returns `{ reportId, runId, confidence, truthLayerMix{verified,assumed,projected},
-sections[{number,title,text,truthLayers,assessed}], downloadUrl }`.
+Body: `{ runId: uuid }`. Composes the 9-section **Run Report (all sites)** from the run's
+`module_result` rows and records that it was generated (`report` row: confidence + time; no file
+is stored — reports are rebuilt on demand). Returns `{ reportId, runId, confidence,
+truthLayerMix{verified,assumed,projected}, sections[{number,title,text,truthLayers,assessed,metrics}],
+onGroundCheckFlagged, fullReportPath }`.
 
 Sections with no supporting module data are returned with `assessed:false` and a
 "not assessed" note — never invented. Numbers come only from the module results; the AI
 phrases and preserves every Truth Layer label.
 
 ## GET /api/reports?runId=uuid
-Auth + access-scoped. Returns the stored report metadata and a fresh signed download URL:
-`{ reportId, confidence, generatedAt, downloadUrl }`.
+Auth + access-scoped. Whether a run report was generated: `{ reportId, confidence, generatedAt,
+fullReportPath }` (404 if never generated).
+
+## POST /api/reports/full  (and GET ?runId=uuid)
+The branded, self-contained HTML Run Report (cover, 9 sections, per-site scorecards) for print-to-PDF.
+POST takes a form body (`runId, preparedFor, ownerName, company, contactNumber, email`) so client
+details never appear in URLs or logs; GET renders without cover details. `text/html`, `no-store`.
 
 ## GET /api/files?key=...&exp=...&sig=...[&dl=1]
 Serves a stored object ONLY with a valid, unexpired HMAC-signed token (the local-fs
@@ -168,8 +173,10 @@ regenerates). ONE site per request — the client loops sites sequentially. The 
 - `200 { status:'ready', report }`
 - `202 { status:'generating', startedAt }` — another request holds the lock; poll the GET.
 - `429 rate_limited` — regenerate cap (3 per site per 24h on the live provider).
-- `502 ai_unavailable` / `503 ai_not_configured` — generic messages; provider details are
-  logged server-side only (and to `pipeline_usage.error_code`), never returned.
+- `502 ai_unavailable` / `503 ai_not_configured` — generic messages plus a short machine reason in
+  `error.details[{path:'reason'}]` (`timeout`, `http_<status>`, `empty_output`, `network`,
+  `db_migration_pending`, `config_*`, `internal`). Provider response bodies are logged server-side
+  only (and the code to `pipeline_usage.error_code`), never returned.
 `report` = `{ analysis, schemaText, contextJson, model, confidence, generatedAt, cached }`.
 
 ## GET /api/analysis-report/pdf?runId=uuid&siteId=uuid
@@ -211,7 +218,8 @@ GOOGLE_API_KEY is unset.
 
 ## GET /api/maptiles  and  GET /api/maptiles/[z]/[x]/[y]
 Mint a Google Map Tiles session and proxy tiles server-side so the basemap is Google
-Maps without exposing the key (see the map section).
+Maps without exposing the key. When Google is off (no `GOOGLE_API_KEY` or `PLACES_LIVE` unset) it
+answers `200 { enabled:false, tileUrlTemplate:null }` and the client uses the OSM/CARTO basemap.
 
 ---
 

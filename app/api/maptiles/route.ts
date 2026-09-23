@@ -16,7 +16,9 @@ export async function GET(_req: NextRequest) {
   // Google Map Tiles are billed per session + per tile. Gate on the live switch so the
   // map falls back to the free OpenStreetMap basemap unless PLACES_LIVE=1.
   const key = process.env.GOOGLE_API_KEY;
-  if (!key || !placesLiveEnabled()) return fail({ code: 'maps_unavailable', message: 'Google Maps basemap disabled (using OpenStreetMap).' }, 503);
+  // Disabled is a normal state, not an error: answer 200 with no template so the map quietly
+  // uses the free OSM/CARTO basemap (a 503 here showed as a console error on every map).
+  if (!key || !placesLiveEnabled()) return ok({ enabled: false, tileUrlTemplate: null });
 
   const res = await fetch(`https://tile.googleapis.com/v1/createSession?key=${key}`, {
     method: 'POST',

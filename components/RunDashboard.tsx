@@ -66,7 +66,7 @@ export function RunDashboard({
             <Link href={`/intake?edit=${intakeId}`} className="btn-ghost" title="Load these inputs, edit, and run a new version">✎ Edit & rerun</Link>
           )}
           {!mock && <RunPipelineButton runId={runId} />}
-          <Link href={`/reports?runId=${runId}`} className="btn-ghost">Site Report</Link>
+          <Link href={`/reports?runId=${runId}`} className="btn-ghost" title="The 9-section report covering every site in this run">Run report (all sites)</Link>
         </div>
       </div>
 
