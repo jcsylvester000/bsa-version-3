@@ -46,3 +46,9 @@ tsconfig.tsbuildinfo
 
 # PSGC boundary GeoJSON (large; owner-provided per R-02 README)
 prisma/data/boundaries/*.geojson
+
+# Census CSVs (owner-provided per R-04 README)
+prisma/data/demographics/*.csv
+
+# BIR zonal CSVs (owner-provided per R-05 README)
+prisma/data/zonal/*.csv

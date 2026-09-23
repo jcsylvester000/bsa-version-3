@@ -448,7 +448,9 @@ model DemographicCell {
   ageProfile   Json?      @map("age_profile")
   renterSharePct Decimal? @map("renter_share_pct") @db.Decimal(5, 2)
   daytimePop   Int?       @map("daytime_pop")
-  geom         Unsupported("geography(Polygon, 4326)")?
+  /// MultiPolygon (R-04): the barangay boundary from admin_boundary, or the legacy 600 m circle
+  /// (coerced to MultiPolygon). Catchment reads use ST_DWithin over this.
+  geom         Unsupported("geography(MultiPolygon, 4326)")?
   truthLayer   TruthLayer @default(verified) @map("truth_layer")
 
   @@map("demographic_cell")

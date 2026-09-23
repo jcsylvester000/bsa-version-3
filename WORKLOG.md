@@ -5,6 +5,60 @@ The cross-thread state record. Read this (with the Master Instruction and the cu
 
 ---
 
+## 2026-09-24 — R-05: BIR zonal values for Cavite/Batangas + region-aware zonal lookup — CODE COMPLETE (owner CSV)
+
+Skills: 02 Database, 07 Broker. Makes the Lease zonal cross-check and the Land zoning screen work
+provincially. Zonal stays a TAX-REFERENCE FLOOR only (guardrail unchanged).
+
+- **Region-aware lookup (wire-up):** `lib/modules/leaseBenchmark.ts` `resolveZonalBand` and
+  `lib/modules/p2p3Modules.ts` land-zoning now use `canonicalCity` + the region's PSA code
+  (`getRegion(...).psaRegion`) instead of hard-coded `canonicalNcrCity` / `region:'NCR'`. NCR behaviour
+  identical (ncr → 'NCR', same city strings); Cavite/Batangas → 'IV-A'.
+- **Loader:** `prisma/loadZonalCsv.ts` (`db:load-zonal -- --region --file|--url`) parses a BIR zonal CSV
+  → `RawZonal[]` → existing `loadZonal` (idempotent natural key). Pure tolerant mapper
+  `lib/geo/zonalRow.ts` (`zonalRowFrom`, `zonalRegionValue`): canonicalises the LGU to the registry, stamps
+  the PSA region, accepts single-value or low/high, strips ₱/commas. Unit-tested
+  (`tests/unit/zonalRow.test.ts`, 5 cases).
+- **Docs:** `prisma/data/zonal/README.md` (BIR RDO 54A/54B/58/59, CSV columns, load commands). CSVs
+  git-ignored. **378/378 tests, typecheck clean, `next build` compiles.**
+
+**⚠️ ACTION REQUIRED:** no migrate. Data load (any time): flatten the BIR schedules for Cavite (RDO 54A/54B)
+and Batangas (58/59) to a CSV (see the README) → `npm run db:load-zonal -- --region=cavite --file=…` (and
+batangas). Then a provincial Lease benchmark shows the zonal band + cross-check and Land zoning resolves.
+
+**Also this session:** made the R-03 tiled Overpass sweep resilient — a tile that 504s/times out now SPLITS
+and retries smaller; partial results are saved and only fully-clean start-tiles are checkpointed, so a
+re-run resumes and completes (the owner hit Overpass 504s on the free servers). `establishmentsInTiles` gains
+`failedTiles`; start-tiles default 0.05°.
+
+---
+
+## 2026-09-24 — R-04: PSA barangay demographics for Cavite/Batangas — CODE COMPLETE (needs migrate + owner CSV)
+
+Skills: 02 Database. Gives provincial sites a real population signal (Site Fit demand, Daypart, White-Space)
+so confidence stops defaulting to Low there. NO fabricated population (guardrail): only real census loads.
+
+- **Schema:** `demographic_cell.geom` widened Polygon → **MultiPolygon** so it can hold the real barangay
+  boundary (from admin_boundary). Migration `20260923000006_demographic_multipolygon` (ALTER … USING
+  ST_Multi, idempotent, re-creates GiST). Existing NCR loader (`lib/ingest/loaders.ts`) now ST_Multi's its
+  600 m circle to match.
+- **Loader:** `prisma/loadDemographics.ts` (`db:load-demographics -- --region --file|--url`) — parses a
+  barangay-population CSV, upserts `demographic_cell` on PSGC (population **Verified**; income/daytime
+  Assumed only when present), and copies each barangay's `geom` from admin_boundary. Reports rows with no
+  population column or no matching boundary. Tolerant column mapping (pure `lib/geo/demographicsRow.ts`) +
+  a dependency-free CSV parser (`lib/util/csv.ts`), both unit-tested (`tests/unit/demographicsRow.test.ts`,
+  7 cases). `--url` allows a one-command load from a direct CSV link.
+- **Docs:** `prisma/data/demographics/README.md` (HDX COD-PS `phl_admpop_adm4_2020.csv` + PSA FOI sources,
+  column table, load order). CSVs git-ignored. DATA_DICTIONARY updated.
+- **Verified (cloud):** typecheck clean, **373/373 tests**.
+
+**⚠️ ACTION REQUIRED:** `npx prisma migrate deploy`; load boundaries first (R-02 `db:fetch-boundaries`), then
+download a barangay-population CSV (HDX/PSA — see the README) and
+`npm run db:load-demographics -- --region=cavite --file=… | --url=…` (and batangas). HDX has no stable
+auto-URL, so this is a download step (the loader auto-detects the population/PSGC columns).
+
+---
+
 ## 2026-09-24 — R-03: Tiled Overpass sweep (no truncation) — CODE COMPLETE (no migrate; pure code)
 
 Skills: 02 Database, 06 Research. Fixes the silent truncation where one bbox query per vertical capped at

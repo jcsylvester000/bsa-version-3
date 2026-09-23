@@ -71,7 +71,7 @@ tier Verified, footfall Assumed.* Key columns: `mall_name`, `city`, `tier` (A/B/
 ### demographic_cell
 PSA demographics by barangay/grid cell — population, income, age, tenure, daytime pop. Powers
 catchment scoring, Daypart, White-Space. *Truth Layer: PSA Verified, projections Assumed.*
-Natural key: `psgc_code`. `geom` is a polygon for containment joins. Index: `GiST(geom)`.
+Natural key: `psgc_code`. `geom` is a MultiPolygon (R-04: the real barangay boundary from admin_boundary; legacy rows a 600 m circle) for catchment ST_DWithin. Index: `GiST(geom)`. Loaded via `db:load-demographics` (PSA census; population Verified).
 
 ### admin_boundary
 Official PSA administrative boundaries (region → province → city → barangay), loaded from the

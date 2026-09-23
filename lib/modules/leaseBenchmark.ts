@@ -13,9 +13,10 @@ import { leaseValueScore } from './scorecard';
 import 'server-only';
 import { prisma } from '@/lib/db/prisma';
 import type { TruthLayer } from '@/lib/truth/truthLayer';
+import { canonicalCity, getRegion } from '@/lib/geo/regions';
 import {
   benchmarkLease, type Comp, type SiteTerms, type LeaseBenchmarkOutput,
-  canonicalNcrCity, bandMid, zonalRentCrossCheck, indicativeRentFromZonal,
+  bandMid, zonalRentCrossCheck, indicativeRentFromZonal,
   type ZonalBand, type ZonalCrossCheck, type IndicativeRent,
 } from './leaseMath';
 
@@ -50,11 +51,15 @@ export interface LeaseBenchmarkResult extends LeaseBenchmarkOutput {
  * Resolve the commercial BIR-zonal band for a site: barangay grain first (most precise),
  * falling back to a city-level band (aggregated min-low / max-high across the city's rows).
  * Prefers Commercial Regular (CR); uses Commercial Condominium (CC) when CR is absent.
- * Returns null for a non-NCR / unmapped city. Verified from the BIR schedule.
+ * Returns null for an unmapped LGU. Verified from the BIR schedule. Region-aware (R-05).
  */
 async function resolveZonalBand(site: { city: string | null; barangay: string | null; label: string | null }): Promise<ZonalBand | null> {
-  const city = canonicalNcrCity(site.city, site.label);
-  if (!city) return null;
+  // Region-aware (R-05): resolve the LGU + its region, then query that region's zonal rows.
+  // NCR behaviour is unchanged (canon.region 'ncr' → psaRegion 'NCR', same city strings).
+  const canon = canonicalCity(site.city, site.label);
+  if (!canon) return null;
+  const city = canon.city;
+  const zregion = getRegion(canon.region)?.psaRegion ?? 'NCR';
 
   type Row = { classificationCode: string; lowPhpSqm: unknown; highPhpSqm: unknown; truthLayer: TruthLayer; barangay: string };
   const num = (v: unknown): number | null => (v == null ? null : Number(v));
@@ -87,7 +92,7 @@ async function resolveZonalBand(site: { city: string | null; barangay: string | 
   const brgy = site.barangay?.trim();
   if (brgy) {
     const brows = await prisma.zonalValue.findMany({
-      where: { region: 'NCR', cityMunicipality: city, barangay: { equals: brgy, mode: 'insensitive' }, classificationCode: { in: ['CR', 'CC'] } },
+      where: { region: zregion, cityMunicipality: city, barangay: { equals: brgy, mode: 'insensitive' }, classificationCode: { in: ['CR', 'CC'] } },
       select,
     });
     const b = pickBand(brows as Row[], 'barangay');
@@ -95,7 +100,7 @@ async function resolveZonalBand(site: { city: string | null; barangay: string | 
   }
   // 2) City-level fallback.
   const crows = await prisma.zonalValue.findMany({
-    where: { region: 'NCR', cityMunicipality: city, barangay: '', classificationCode: { in: ['CR', 'CC'] } },
+    where: { region: zregion, cityMunicipality: city, barangay: '', classificationCode: { in: ['CR', 'CC'] } },
     select,
   });
   return pickBand(crows as Row[], 'city');

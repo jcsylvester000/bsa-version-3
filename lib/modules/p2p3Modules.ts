@@ -22,7 +22,8 @@ import { catchmentRadius, competitiveSaturationPct } from './territoryMath';
 import { lookupCompetitorSet } from './territoryGuard';
 import { conceptFor, tierFor, weightedCompetitorCount, type TierCounts } from '@/lib/places/competitorRelevance';
 import { haversineMeters } from '@/lib/geo/geo';
-import { inferCorridor, canonicalNcrCity } from './leaseMath';
+import { inferCorridor } from './leaseMath';
+import { canonicalCity, getRegion } from '@/lib/geo/regions';
 
 async function persist(runId: string, candidateSiteId: string, module: ModuleKind, score: number | null, payload: unknown, truthLayer: TruthLayer, flags: string[]) {
   await prisma.moduleResult.upsert({
@@ -274,12 +275,14 @@ export async function runLand(
   // City names are canonicalised the same way the zonal ETL did ("City of Pasig" → "Pasig");
   // a city outside zonal coverage is UNKNOWN (null), not a failed zoning check — it used to
   // cap every non-matching site's land score at 25.
-  const zonalCity = canonicalNcrCity(site.city, null);
+  // Region-aware (R-05): resolve the LGU + its region, then check that region's zonal coverage.
+  const canon = canonicalCity(site.city, null);
   let zoningOk: boolean | null = null;
-  if (zonalCity) {
-    const covered = await prisma.zonalValue.findFirst({ where: { cityMunicipality: zonalCity }, select: { id: true } });
+  if (canon) {
+    const zregion = getRegion(canon.region)?.psaRegion ?? 'NCR';
+    const covered = await prisma.zonalValue.findFirst({ where: { region: zregion, cityMunicipality: canon.city }, select: { id: true } });
     if (covered) {
-      const commercial = await prisma.zonalValue.findFirst({ where: { cityMunicipality: zonalCity, classificationCode: { startsWith: 'C' } }, select: { id: true } });
+      const commercial = await prisma.zonalValue.findFirst({ where: { region: zregion, cityMunicipality: canon.city, classificationCode: { startsWith: 'C' } }, select: { id: true } });
       zoningOk = commercial != null;
     }
   }

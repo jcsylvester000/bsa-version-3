@@ -83,7 +83,14 @@ _Last updated: 2026-09-23 — after Fix Batch 5 (review programme complete)._
   R-02 easy data load: `npm run db:fetch-boundaries -- --region=cavite|batangas` (auto-download, no GDAL) →
   `db:tag-boundaries`. **R-03 done** (code): adaptive tiled Overpass sweep `lib/geo/tiling.ts` +
   `osmService.establishmentsInTiles`; `ingestOsm` tiles by default with a `poi_coverage` (source='bulk')
-  resume checkpoint (no migration). Next: R-04 (PSA demographics for Cavite/Batangas onto boundary polygons).
+  resume checkpoint (no migration). **R-04 done** (code): `demographic_cell.geom` widened to MultiPolygon
+  (migration `20260923000006`), `prisma/loadDemographics.ts` loads a barangay-population CSV (file or --url,
+  population Verified) tied to admin_boundary; `lib/util/csv.ts` + `lib/geo/demographicsRow.ts` (tolerant,
+  tested). R-04 needs a CSV download (HDX COD-PS admin4 / PSA — see `prisma/data/demographics/README.md`).
+  **R-05 done** (code): zonal lookup (lease + land zoning) now region-aware (`canonicalCity` + PSA region,
+  NCR unchanged); `prisma/loadZonalCsv.ts` + `lib/geo/zonalRow.ts` load a BIR zonal CSV (RDO 54A/54B/58/59;
+  see `prisma/data/zonal/README.md`). Also hardened R-03: tiled sweep splits+retries on Overpass 504/timeout,
+  resumable. Next: R-06 (provincial lease corridors + comps) — then R-07 (mall/traffic), R-08 (QA).
   Region model: `lib/geo/regions.ts` is the single source of truth (bbox, Overpass areas, warm centres,
   corridors, LGU canonicalisers); `inferCorridor`/`canonicalNcrCity` are registry-backed (behaviour
   unchanged for NCR/Davao). A site's region = LGU name first, else pinned coordinate.

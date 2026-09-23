@@ -216,11 +216,12 @@ export async function loadDemographics(rows: Array<RawDemo & { lat?: number; lon
       await prisma.demographicCell.create({ data: { psgcCode: n.psgcCode, ...data } });
     }
     // Set a small circular polygon geom around the cell centroid so containment/
-    // proximity joins work. (Real PSGC boundary polygons replace this later.)
+    // proximity joins work. (Real PSGC barangay polygons from R-02/R-04 replace this.)
+    // ST_Multi to match the MultiPolygon column (R-04 widened it from Polygon).
     if (r.lat != null && r.lon != null) {
       await prisma.$executeRaw`
         UPDATE demographic_cell
-        SET geom = ST_Buffer(ST_SetSRID(ST_MakePoint(${r.lon}, ${r.lat}), 4326)::geography, 600)::geography
+        SET geom = ST_Multi(ST_Buffer(ST_SetSRID(ST_MakePoint(${r.lon}, ${r.lat}), 4326)::geography, 600)::geometry)::geography
         WHERE psgc_code = ${n.psgcCode}
       `;
     }

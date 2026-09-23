@@ -159,9 +159,12 @@ async function main() {
               });
               return !(cov && cov.source === 'bulk'); // skip start-tiles already bulk-covered
             },
-            onStartTileDone: async (tile, places) => {
+            onStartTileDone: async (tile, places, info) => {
+              // Always load what we captured; only checkpoint the tile as done when it fully
+              // succeeded, so a tile with an Overpass failure inside is retried on the next run.
               const rep = await loadPoi(places.map((p) => toRawPoi(p, args.region, 'competitor')));
               totalLoaded += rep.loaded;
+              if (!info.complete) return;
               const c = bboxCentre(tile as BBox);
               await prisma.poiCoverage.upsert({
                 where: { coverage_cell_vertical: { cellKey: `bulk:${bboxKey(tile as BBox)}`, vertical: v } },
@@ -170,7 +173,8 @@ async function main() {
               });
             },
           });
-          console.log(`   ${v}: ${stats.processed}/${stats.startTiles} tiles (${stats.skipped} skipped, ${stats.splits} splits) → ${stats.total} establishments`);
+          const warn = stats.failedTiles > 0 ? ` — ${stats.failedTiles} tile(s) hit Overpass errors and will retry on the next run` : '';
+          console.log(`   ${v}: ${stats.processed}/${stats.startTiles} tiles (${stats.skipped} skipped, ${stats.splits} splits) → ${stats.total} establishments${warn}`);
         } catch (e) { failed.push(`vertical:${v}`); console.log(`   ${v}: FAILED — ${e instanceof Error ? e.message : e}`); }
         await pause();
       }

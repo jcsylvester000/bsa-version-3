@@ -246,39 +246,63 @@ export async function establishmentsInTiles(
     tileDeg?: number;
     minTileDeg?: number;
     shouldProcess?: (tile: [number, number, number, number]) => Promise<boolean> | boolean;
-    onStartTileDone?: (tile: [number, number, number, number], places: OsmPlace[], splits: number) => Promise<void> | void;
+    /** `complete` is false when some sub-tile still errored at min size (so the caller can load
+     *  what it got but NOT checkpoint the start-tile, leaving it to be retried on the next run). */
+    onStartTileDone?: (
+      tile: [number, number, number, number],
+      places: OsmPlace[],
+      info: { complete: boolean; splits: number },
+    ) => Promise<void> | void;
   } = {},
-): Promise<{ startTiles: number; processed: number; skipped: number; splits: number; total: number }> {
+): Promise<{ startTiles: number; processed: number; skipped: number; splits: number; total: number; failedTiles: number }> {
   const cap = opts.max ?? 400;
-  const tileDeg = opts.tileDeg ?? 0.08;
+  const tileDeg = opts.tileDeg ?? 0.05; // smaller start-tiles → lighter Overpass queries, fewer 504s
   const minTileDeg = opts.minTileDeg ?? 0.02;
   const startTiles = subdivide(bbox as BBox, tileDeg);
-  let processed = 0, skipped = 0, splits = 0, total = 0;
+  let processed = 0, skipped = 0, splits = 0, total = 0, failedTiles = 0;
 
-  /** Query one tile; if capped and still splittable, recurse into quadrants. Dedup by key. */
-  async function collect(tile: BBox, seen: Map<string, OsmPlace>): Promise<number> {
-    const places = await establishmentsInBbox(vertical, tile, { max: cap });
+  /**
+   * Query one tile, dedup into `seen`. Split into quadrants when the tile is CAPPED (truncated)
+   * OR the query ERRORS (a smaller tile is a lighter query and usually succeeds where a big one
+   * 504s / times out). A leaf tile that still errors at min size is counted in `failed` and
+   * skipped rather than aborting the whole vertical.
+   */
+  async function collect(tile: BBox, seen: Map<string, OsmPlace>, failed: { n: number }): Promise<void> {
+    let places: OsmPlace[] | null = null;
+    try {
+      places = await establishmentsInBbox(vertical, tile, { max: cap });
+    } catch (e) {
+      if (bboxHeightDeg(tile) > minTileDeg) {
+        splits++;
+        for (const q of quadrants(tile)) await collect(q, seen, failed);
+      } else {
+        failed.n++;
+        console.warn(`     tile ${tile.map((v) => v.toFixed(3)).join(',')} failed at min size — skipped (${e instanceof Error ? e.message : e})`);
+      }
+      return;
+    }
     for (const p of places) {
       const key = p.osmId != null ? `osm:${p.osmId}` : `nc:${p.name.toLowerCase()}:${p.lat.toFixed(4)}:${p.lon.toFixed(4)}`;
       if (!seen.has(key)) seen.set(key, p);
     }
     if (places.length >= cap && bboxHeightDeg(tile) > minTileDeg) {
       splits++;
-      for (const q of quadrants(tile)) await collect(q, seen);
+      for (const q of quadrants(tile)) await collect(q, seen, failed);
     }
-    return places.length;
   }
 
   for (const st of startTiles) {
     if (opts.shouldProcess && !(await opts.shouldProcess(st))) { skipped++; continue; }
     const seen = new Map<string, OsmPlace>();
-    await collect(st, seen);
+    const failed = { n: 0 };
+    await collect(st, seen, failed);
     const places = [...seen.values()];
     total += places.length;
     processed++;
-    if (opts.onStartTileDone) await opts.onStartTileDone(st, places, splits);
+    if (failed.n > 0) failedTiles++;
+    if (opts.onStartTileDone) await opts.onStartTileDone(st, places, { complete: failed.n === 0, splits });
   }
-  return { startTiles: startTiles.length, processed, skipped, splits, total };
+  return { startTiles: startTiles.length, processed, skipped, splits, total, failedTiles };
 }
 
 /** Nearby establishments of a vertical around a point (radius metres). Builds a bbox
