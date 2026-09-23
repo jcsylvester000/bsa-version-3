@@ -5,6 +5,20 @@ The cross-thread state record. Read this (with the Master Instruction and the cu
 
 ---
 
+## 2026-09-23 — Improvement backlog workbook (for owner approval) — DOC ONLY
+
+`docs/BSA_Improvement_Backlog.xlsx` — 36 open items (11 P1 / 19 P2 / 6 P3) across Regional expansion,
+Data & scoring, AI, Architecture, Operations, Security, UX; each with current state, how to improve,
+implementation needed, desired outcome, priority, effort, owner skill, dependency and an Approval column
+(Approve/Defer/Reject/Discuss). Plus a 12-step **Cavite–Batangas data plan** (Overpass tiled sweeps,
+PSGC boundaries, PSA 2020 population, BIR RDO 54A/54B/58/59, broker lease comps, DPWH AADT → Neon),
+Overpass QL templates, a data-coverage matrix and sources. Findings from code research: ingestOsm uses one
+NCR bbox per vertical capped at `out center 600` (truncation); POIs stored with city/barangay NULL;
+demographic geoms are 600 m circles; mobile layout has no navigation; Bacoor maps to the Las Piñas corridor.
+No application code changed. **Next:** owner marks Approval; approved P1s become the next batch.
+
+---
+
 ## 2026-09-23 — Agency: Skill 12 (Orchestration & Delivery Lead) written
 
 `3 - Skills/12 - Orchestration and Delivery Lead/SKILL.md` was an empty folder. Written in the house

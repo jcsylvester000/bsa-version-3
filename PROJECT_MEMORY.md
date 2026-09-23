@@ -76,6 +76,8 @@ _Last updated: 2026-09-23 — after Fix Batch 5 (review programme complete)._
 
 ## Workflow conventions
 
+- **Awaiting owner approval:** `docs/BSA_Improvement_Backlog.xlsx` (36 items, Approval column; includes the
+  Cavite–Batangas Overpass/Neon data plan). Build ONLY approved rows, in batches, P1 first.
 - Next (not started): see `docs/HANDOFF.md` §4 — pgvector hybrid retrieval, White-Space SQL-side tiering,
   API-first page data, nonce CSP, session revocation, S3/R2 only if uploads return. Skill 12
   (`3 - Skills/12 - Orchestration and Delivery Lead/SKILL.md`) now exists and encodes this workflow
