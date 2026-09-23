@@ -43,3 +43,6 @@ tsconfig.tsbuildinfo
 # Database dumps contain user password hashes + audit data — never commit.
 *.dump
 *.sql.gz
+
+# PSGC boundary GeoJSON (large; owner-provided per R-02 README)
+prisma/data/boundaries/*.geojson

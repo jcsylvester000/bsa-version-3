@@ -77,8 +77,11 @@ _Last updated: 2026-09-23 — after Fix Batch 5 (review programme complete)._
 ## Workflow conventions
 
 - **Backlog approved (all 36):** `docs/BSA_Improvement_Backlog.xlsx`. Building in dependency order, P1 first.
-  Progress: **R-01 done** (region registry `lib/geo/regions.ts` + region/province columns + region-aware
-  ingest; migration `20260923000004_region_columns`). Next: R-02 (PSGC boundary polygons → admin_boundary).
+  Progress: **R-01 done** (region registry `lib/geo/regions.ts`; migration `20260923000004_region_columns`).
+  **R-02 done** (code): `admin_boundary` polygons + psgc columns; `prisma/loadBoundaries.ts` +
+  `prisma/tagByBoundary.ts`; runtime `lib/geo/adminBoundary.ts`; migration `20260923000005_admin_boundary`.
+  R-02 needs an OWNER DATA LOAD (PSGC shapefiles → GeoJSON via ogr2ogr → load-boundaries → tag-boundaries;
+  see `prisma/data/boundaries/README.md`). Next: R-03 (tiled Overpass sweep, no truncation).
   Region model: `lib/geo/regions.ts` is the single source of truth (bbox, Overpass areas, warm centres,
   corridors, LGU canonicalisers); `inferCorridor`/`canonicalNcrCity` are registry-backed (behaviour
   unchanged for NCR/Davao). A site's region = LGU name first, else pinned coordinate.

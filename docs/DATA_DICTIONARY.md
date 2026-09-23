@@ -73,6 +73,16 @@ PSA demographics by barangay/grid cell — population, income, age, tenure, dayt
 catchment scoring, Daypart, White-Space. *Truth Layer: PSA Verified, projections Assumed.*
 Natural key: `psgc_code`. `geom` is a polygon for containment joins. Index: `GiST(geom)`.
 
+### admin_boundary
+Official PSA administrative boundaries (region → province → city → barangay), loaded from the
+PSGC shapefiles (R-02, `prisma/loadBoundaries.ts`). Point-in-polygon over `geom` assigns every POI
+and candidate site its real barangay/city/province + PSGC (`prisma/tagByBoundary.ts`; new sites at
+intake time). *Truth Layer: Verified (official).* Key columns: `psgc_code` (pk, text — leading
+zeros), `level` (region/province/city/barangay), `name`, `parent_psgc`, `region` (BSA region key),
+`geom` (geography MultiPolygon). Indexes: `GiST(geom)`, `btree(level)`, `(region, level)`, `parent_psgc`.
+Region/POI/site tagging columns: `poi.region/province/psgc_code`, `candidate_site.region/province/psgc_code`,
+`mall_property.region/province/psgc_code` (region from lib/geo/regions; barangay/city/province/psgc from admin_boundary).
+
 ## Group 3 — Run / Output
 
 ### pipeline_run

@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db/prisma';
 import { getSession } from '@/lib/auth/session';
 import { canSeeFranchisor } from '@/lib/auth/auth';
 import { regionForSite } from '@/lib/geo/regions';
+import { resolveAdminBoundary } from '@/lib/geo/adminBoundary';
 import { isMockUser } from '@/lib/auth/mockUsers';
 import { intakeSubmitSchema } from '@/lib/validation/schemas';
 import { computeCompleteness, REQUIRED_SECTIONS } from '@/lib/modules/completeness';
@@ -179,19 +180,24 @@ export async function POST(req: NextRequest) {
     });
 
     // 4) candidate sites — geom via trigger. Tag the region (LGU name first, else pinned
-    // coordinate) so region-scoped reference reads (lease corridor, zonal, mall) resolve.
+    // coordinate). When boundary polygons are loaded (R-02), also stamp the real barangay/city/
+    // province/PSGC from a point-in-polygon lookup; otherwise keep the user's values + coarse region.
     for (const c of input.candidateSites) {
+      const bnd = await resolveAdminBoundary(c.lat, c.lon);
+      const region = bnd?.region ?? regionForSite({ city: c.city, label: c.label, lat: c.lat, lon: c.lon });
       await prisma.candidateSite.create({
         data: {
           pipelineRunId: run.id,
           label: c.label,
           address: c.address,
-          barangay: c.barangay,
-          city: c.city,
+          barangay: c.barangay ?? bnd?.barangay ?? undefined,
+          city: c.city ?? bnd?.city ?? undefined,
           lat: c.lat,
           lon: c.lon,
           siteType: c.siteType,
-          region: regionForSite({ city: c.city, label: c.label, lat: c.lat, lon: c.lon }) ?? undefined,
+          region: region ?? undefined,
+          province: bnd?.province ?? undefined,
+          psgcCode: bnd?.psgcCode ?? undefined,
         },
       });
     }

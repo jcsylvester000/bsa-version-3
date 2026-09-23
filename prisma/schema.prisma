@@ -301,6 +301,8 @@ model CandidateSite {
   /// Region this site resolves to (LGU name first, else pinned coordinate). Drives region-scoped data.
   region         String?
   province       String?
+  /// PSGC barangay code from the boundary lookup (R-02); NULL until boundaries are loaded.
+  psgcCode       String?         @map("psgc_code")
   /// Set when the pipeline has FINISHED this site (every module attempted). NULL = still to do.
   /// The resumable pipeline processes sites where this is NULL — a module_result row alone
   /// no longer marks a site done (a killed invocation could leave it half-analysed).
@@ -427,6 +429,7 @@ model MallProperty {
   geom          Unsupported("geography(Point, 4326)")?
   region        String?
   province      String?
+  psgcCode      String?      @map("psgc_code")
   truthLayer    TruthLayer   @default(assumed) @map("truth_layer")
 
   @@index([tier])
@@ -449,6 +452,28 @@ model DemographicCell {
   truthLayer   TruthLayer @default(verified) @map("truth_layer")
 
   @@map("demographic_cell")
+}
+
+/// Official PSA administrative boundaries (region → province → city/municipality → barangay),
+/// loaded from the PSGC shapefiles (R-02). Point-in-polygon over `geom` assigns every POI and
+/// candidate site its real barangay/city/province + PSGC code. Truth Layer: Verified (official).
+model AdminBoundary {
+  /// PSA 10-digit PSGC code (kept as text to preserve leading zeros).
+  psgcCode   String  @id @map("psgc_code")
+  /// 'region' | 'province' | 'city' | 'barangay'.
+  level      String
+  name       String
+  /// Parent PSGC (province for a city, city for a barangay) — for roll-ups / joins.
+  parentPsgc String? @map("parent_psgc")
+  /// BSA region key this boundary belongs to (ncr|davao|cavite|batangas).
+  region     String?
+  geom       Unsupported("geography(MultiPolygon, 4326)")?
+  truthLayer TruthLayer @default(verified) @map("truth_layer")
+
+  @@index([level])
+  @@index([region, level])
+  @@index([parentPsgc])
+  @@map("admin_boundary")
 }
 
 // ============================================================================

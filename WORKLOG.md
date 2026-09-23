@@ -5,6 +5,35 @@ The cross-thread state record. Read this (with the Master Instruction and the cu
 
 ---
 
+## 2026-09-24 — R-02: Admin boundary polygons + point-in-polygon tagging — CODE COMPLETE (needs migrate + owner data load)
+
+Skills: 02 Database. Real barangay/city/province for every point, replacing the 600 m circles / bbox tags.
+
+- **Schema:** new `admin_boundary` model (psgc_code pk text, level, name, parent_psgc, region,
+  geography(MultiPolygon) geom, Verified). `psgc_code` added to `poi`, `candidate_site`, `mall_property`.
+  Migration `20260923000005_admin_boundary` (table + GiST/level/region/parent indexes + psgc columns;
+  additive, idempotent; geom added via DO-block since PostGIS types aren't expressible inline).
+- **Loader:** `prisma/loadBoundaries.ts` (`db:load-boundaries -- --region --level --file`) reads GeoJSON
+  (converted from PSGC shapefiles), upserts on psgc_code, sets geom via `ST_Multi(ST_SetSRID(ST_GeomFromGeoJSON,4326))::geography`.
+  Tolerant property mapping in pure `lib/geo/boundaryFeature.ts` (adm4_psgc / ADM4_PCODE / psgc … variants);
+  prints unmapped keys so the lists can be extended.
+- **Backfill:** `prisma/tagByBoundary.ts` (`db:tag-boundaries [-- --all]`) — LATERAL `ST_Intersects` (geography,
+  GiST) sets barangay/city/province/psgc on poi/candidate_site/mall_property. Three explicit tagged-template
+  UPDATEs (no `$…Unsafe`).
+- **Runtime:** `lib/geo/adminBoundary.ts` `resolveAdminBoundary(lat,lon)` (fault-tolerant — missing table
+  never breaks intake); intake route now stamps real barangay/city/province/psgc on each new site when
+  boundaries exist, else keeps the user's values + coarse region.
+- **Docs:** `prisma/data/boundaries/README.md` (git-lfs clone + ogr2ogr per-province + load order + tag).
+  `.geojson` git-ignored. DATA_DICTIONARY updated. Tests: `tests/unit/boundaryFeature.test.ts` (6 cases).
+  **360/360 pass, typecheck clean.**
+
+**⚠️ ACTION REQUIRED:** (1) `npx prisma migrate deploy`. (2) Owner data load (see boundaries/README.md):
+clone the PSGC shapefiles, `ogr2ogr` Cavite/Batangas cities+barangays to GeoJSON, `npm run db:load-boundaries`
+(cities then barangays, per region), then `npm run db:tag-boundaries`. NCR/Davao boundaries can be loaded the
+same way to replace their bbox tags with true barangays.
+
+---
+
 ## 2026-09-24 — R-01: Region registry + region-aware schema — CODE COMPLETE (needs migrate)
 
 First approved backlog item; foundation for R-03/R-05/R-06/R-07/R-08/A-02/U-02. Skills: 02 Database, 01 Senior Web.
