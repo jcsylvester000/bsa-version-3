@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/db/prisma';
 import { getSession } from '@/lib/auth/session';
+import { visibleFranchisorWhere } from '@/lib/auth/auth';
 import { isMockUser } from '@/lib/auth/mockUsers';
 import { safeQuery } from '@/lib/db/safeQuery';
 import { DEMO_RUN_ID } from '@/lib/mock/mockCompute';
@@ -11,22 +12,14 @@ export default async function IntakePage({ searchParams }: { searchParams: { edi
   const session = await getSession();
   const editIntakeId = searchParams.edit ?? null;
 
-  // Brand list for the intake dropdown. Everyone can pick from the SHARED catalog
-  // (brands with no owning user) so a brand-new franchisor account can start an intake
-  // immediately; a user who owns a private brand also sees theirs. Staff see all.
+  // Brand list for the intake dropdown — the same visibility rule as /api/franchisors
+  // (shared catalog + brands the user created + their own client brand; staff see all).
   const getFranchisors = () =>
-    session!.role === 'admin' || session!.role === 'analyst'
-      ? prisma.franchisor.findMany({ select: { id: true, brandName: true }, orderBy: { brandName: 'asc' } })
-      : prisma.franchisor.findMany({
-          where: {
-            OR: [
-              { users: { none: {} } }, // shared catalog — available to any user
-              ...(session!.franchisorId ? [{ id: session!.franchisorId }] : []), // their own private brand
-            ],
-          },
-          select: { id: true, brandName: true },
-          orderBy: { brandName: 'asc' },
-        });
+    prisma.franchisor.findMany({
+      where: visibleFranchisorWhere(session!),
+      select: { id: true, brandName: true },
+      orderBy: { brandName: 'asc' },
+    });
 
   const { data: dbFranchisors, dbDown } = await safeQuery(getFranchisors, [] as Array<{ id: string; brandName: string }>);
   const franchisors = dbFranchisors;

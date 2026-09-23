@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db/prisma';
 import { getSession } from '@/lib/auth/session';
+import { isAdmin } from '@/lib/auth/auth';
 import { ok, errors } from '@/lib/api/respond';
 import { siteCompositeFromModules, type ModuleScore } from '@/lib/modules/scorecard';
 import type { TruthLayer } from '@/lib/truth/truthLayer';
@@ -18,12 +19,13 @@ export const maxDuration = 60;
  * composite + band (identical to the scorecard), and updates the stored
  * compositeScore/verdict. Deterministic, DB-only — no OSM, no external calls.
  *
- * Any signed-in user may run it; it only reconciles the user's own visible data and
- * never fabricates scores (sites with no scored modules are left untouched).
+ * ADMIN ONLY: it rewrites stored composites across EVERY tenant's sites. Never fabricates
+ * scores (sites with no scored modules are left untouched).
  */
 export async function POST(_req: NextRequest) {
   const session = await getSession();
   if (!session) return errors.unauthorized();
+  if (!isAdmin(session)) return errors.forbidden();
 
   const sites = await prisma.candidateSite.findMany({
     select: { id: true, label: true, compositeScore: true, verdict: true },

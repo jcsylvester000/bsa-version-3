@@ -195,6 +195,11 @@ model Franchisor {
   /// each with a Truth Layer + source) — imported from the Franchise Intelligence sheets.
   /// Powers the intake "Use franchise template" auto-prefill. Null = no template.
   requirements Json?   @map("requirements")
+  /// The user who created this brand from the app (independent business, or a brand added
+  /// on the intake screen). NULL = seeded shared-catalog brand. A non-null creator makes
+  /// the brand PRIVATE to that user (plus staff) — see canSeeFranchisor in lib/auth/auth.ts.
+  /// Plain column (no FK relation) to avoid a second AppUser↔Franchisor relation.
+  createdByUserId String? @map("created_by_user_id") @db.Uuid
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   outlets     Outlet[]
@@ -203,6 +208,7 @@ model Franchisor {
   users       AppUser[]
 
   @@index([sector, subCategory])
+  @@index([createdByUserId])
   @@map("franchisor")
 }
 

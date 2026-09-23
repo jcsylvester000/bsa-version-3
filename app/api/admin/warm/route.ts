@@ -1,7 +1,19 @@
 import { NextRequest } from 'next/server';
 import { getSession } from '@/lib/auth/session';
-import { ok, fail, errors } from '@/lib/api/respond';
+import { isAdmin } from '@/lib/auth/auth';
+import { z } from 'zod';
+import { ok, fail, failValidation, errors } from '@/lib/api/respond';
 import { warmArea, NCR_CENTERS } from '@/lib/places/poiCache';
+
+const WarmBody = z.object({
+  lat: z.number().min(4).max(21).optional(), // PH bounds
+  lon: z.number().min(116).max(127).optional(),
+  radiusM: z.number().int().min(100).max(5_000).optional(),
+  verticals: z.array(z.string().regex(/^[a-z_]{2,40}$/)).max(25).optional(),
+  area: z.enum(['ncr']).optional(),
+  cellCap: z.number().int().min(1).max(12).optional(),
+  overallMs: z.number().int().min(1_000).max(50_000).optional(),
+});
 
 // Allow a longer server-side execution for the deliberate warm pass.
 export const maxDuration = 60;
@@ -17,16 +29,16 @@ export const maxDuration = 60;
  *  - else lat/lon/radiusM warms one area.
  *
  * Bounded server-side (budget + cell cap inside warmArea) so it's kind to public Overpass.
- * Any signed-in user may call it; it only ever adds shared reference data.
+ * ADMIN ONLY: it triggers bounded-but-heavy outbound Overpass traffic on the server.
  */
 export async function POST(req: NextRequest) {
   const session = await getSession();
   if (!session) return errors.unauthorized();
+  if (!isAdmin(session)) return errors.forbidden();
 
-  const body = (await req.json().catch(() => ({}))) as {
-    lat?: number; lon?: number; radiusM?: number; verticals?: string[]; area?: string;
-    cellCap?: number; overallMs?: number;
-  };
+  const parsed = WarmBody.safeParse(await req.json().catch(() => ({})));
+  if (!parsed.success) return failValidation(parsed.error);
+  const body = parsed.data;
   const verticals = Array.isArray(body.verticals) && body.verticals.length ? body.verticals : ['fnb_qsr'];
   const radiusM = body.radiusM ?? 900;
   const cellCap = Math.min(12, Math.max(1, body.cellCap ?? 8));

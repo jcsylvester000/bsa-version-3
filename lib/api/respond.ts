@@ -31,4 +31,9 @@ export const errors = {
   forbidden: () => fail({ code: 'forbidden', message: 'You do not have access to this resource.' }, 403),
   notFound: (what = 'Resource') => fail({ code: 'not_found', message: `${what} not found.` }, 404),
   server: (message = 'Something went wrong.') => fail({ code: 'server_error', message }, 500),
+  tooMany: (retryAfterSeconds: number, message = 'Too many attempts. Please wait and try again.') => {
+    const res = fail({ code: 'rate_limited', message }, 429);
+    res.headers.set('Retry-After', String(retryAfterSeconds));
+    return res;
+  },
 };

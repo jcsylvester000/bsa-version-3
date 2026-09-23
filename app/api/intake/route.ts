@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db/prisma';
 import { getSession } from '@/lib/auth/session';
-import { canAccessFranchisor } from '@/lib/auth/auth';
+import { canSeeFranchisor } from '@/lib/auth/auth';
 import { isMockUser } from '@/lib/auth/mockUsers';
 import { intakeSubmitSchema } from '@/lib/validation/schemas';
 import { computeCompleteness, REQUIRED_SECTIONS } from '@/lib/modules/completeness';
@@ -53,8 +53,9 @@ export async function POST(req: NextRequest) {
         sector: sectorForVertical(input.vertical),
         subCategory: input.independent.comparableBrand, // the concept anchor
         positioning: `Independent · benchmarked against ${input.independent.comparableBrand}`,
-        // Link the independent operator to their own new franchisor so scoping holds.
-        ...(session.franchisorId ? {} : {}),
+        // Brand privacy: an independent business is private to the user who created it —
+        // it must never appear in another user's brand list or be runnable by them.
+        createdByUserId: session.id,
       },
     });
     franchisorId = created.id;
@@ -64,14 +65,16 @@ export async function POST(req: NextRequest) {
     if (!input.franchisorId) return fail({ code: 'bad_request', message: 'Missing franchisorId.' }, 400);
     const franchisor = await prisma.franchisor.findUnique({
       where: { id: input.franchisorId },
-      select: { id: true, brandName: true, _count: { select: { users: true } } },
+      select: { id: true, brandName: true, createdByUserId: true, _count: { select: { users: true } } },
     });
-    if (!franchisor) return errors.notFound('Franchisor');
-    // A user can run an intake for a brand they own OR any SHARED catalog brand (one with
-    // no owning user). Private client franchisors (owned by a user) stay access-scoped so
-    // one franchisor can't read another's private data.
-    const isSharedCatalog = franchisor._count.users === 0;
-    if (!isSharedCatalog && !canAccessFranchisor(session, input.franchisorId)) return errors.forbidden();
+    // A user can run an intake for a brand they own/created OR any SHARED catalog brand.
+    // Anything else answers 404 so a private brand's existence isn't confirmed.
+    if (
+      !franchisor ||
+      !canSeeFranchisor(session, { id: franchisor.id, createdByUserId: franchisor.createdByUserId, ownerCount: franchisor._count.users })
+    ) {
+      return errors.notFound('Franchisor');
+    }
     franchisorId = input.franchisorId;
     brandLabel = franchisor.brandName;
   }

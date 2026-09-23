@@ -84,11 +84,11 @@ export default function LoginPage() {
             </label>
             <label className="block">
               <span className="text-sm font-medium text-ink-muted">Password</span>
-              <input type="password" value={regPassword} onChange={(e) => setRegPassword(e.target.value)} placeholder="at least 6 characters" className="field mt-1" required minLength={6} />
+              <input type="password" value={regPassword} onChange={(e) => setRegPassword(e.target.value)} placeholder="at least 10 characters" className="field mt-1" required minLength={10} />
             </label>
             <label className="block">
               <span className="text-sm font-medium text-ink-muted">Confirm password</span>
-              <input type="password" value={regConfirm} onChange={(e) => setRegConfirm(e.target.value)} className="field mt-1" required minLength={6} />
+              <input type="password" value={regConfirm} onChange={(e) => setRegConfirm(e.target.value)} className="field mt-1" required minLength={10} />
             </label>
             {error && <p className="text-sm text-nogo">{error}</p>}
             <button type="submit" disabled={loading} className="btn-accent w-full justify-center">{loading ? 'Creating…' : 'Create account & start'}</button>

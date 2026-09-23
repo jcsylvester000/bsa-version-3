@@ -15,14 +15,14 @@ export type LoginInput = z.infer<typeof loginSchema>;
 export const registerSchema = z.object({
   username: z.string().min(3, 'Username must be at least 3 characters').max(60)
     .regex(/^[a-zA-Z0-9._@+-]+$/, 'Use letters, numbers, and . _ @ + - only'),
-  password: z.string().min(6, 'Password must be at least 6 characters').max(200),
+  password: z.string().min(10, 'Password must be at least 10 characters').max(200),
 });
 export type RegisterInput = z.infer<typeof registerSchema>;
 
 // Change password: verify the current one, then set a new one (same rules as register).
 export const changePasswordSchema = z.object({
   currentPassword: z.string().min(1, 'Enter your current password'),
-  newPassword: z.string().min(6, 'New password must be at least 6 characters').max(200),
+  newPassword: z.string().min(10, 'New password must be at least 10 characters').max(200),
 });
 export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
 

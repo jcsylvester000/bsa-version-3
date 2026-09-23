@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db/prisma';
 import { getSession } from '@/lib/auth/session';
+import { isStaff } from '@/lib/auth/auth';
 import { ok, errors } from '@/lib/api/respond';
 
 /**
@@ -12,11 +13,12 @@ import { ok, errors } from '@/lib/api/respond';
  * reference-data table counts (malls, lease, demographics, zonal, franchisors). Used to
  * measure what brutal-QA report runs actually capture into the shared DB over time.
  *
- * Any signed-in user may read it (counts only, no PII). Never writes.
+ * Grid staff (admin/analyst) only — platform-wide data-coverage counts. Never writes.
  */
 export async function GET(_req: NextRequest) {
   const session = await getSession();
   if (!session) return errors.unauthorized();
+  if (!isStaff(session)) return errors.forbidden();
 
   // POI totals + by category.
   const poiTotal = await prisma.poi.count();

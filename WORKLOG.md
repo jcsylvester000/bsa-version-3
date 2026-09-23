@@ -5,6 +5,76 @@ The cross-thread state record. Read this (with the Master Instruction and the cu
 
 ---
 
+## 2026-09-23 — Fix Batch 1: Security hardening — CODE COMPLETE (needs migrate on neon)
+
+Skills loaded: 04 Security, 03 API, 02 Database.
+
+- **Admin routes role-gated:** `reconcile-composites` + `warm` → admin only; `data-stats` → staff.
+  `warm` body now Zod-validated (PH bounds, caps). New helpers `isAdmin`/`isStaff` in `lib/auth/auth.ts`.
+- **Secret fails closed:** new `lib/auth/secret.ts` (`authSecret()`, `isDeployed()` = NETLIFY/VERCEL/
+  BSA_REQUIRE_SECRET). Missing/short AUTH_SECRET on a deployment now throws; fallback is local-only.
+  `lib/storage/signtoken.ts` uses the same secret, domain-separated (`storage:` prefix).
+- **Demo logins locked on deployments:** `isMockAuth()` false when deployed unless
+  `BSA_ALLOW_DEMO_LOGINS=1`; admin/analyst demo accounts never work when deployed.
+- **Brute-force protection:** `lib/auth/rateLimit.ts` — DB-backed (counts `audit_log` rows, works across
+  serverless instances, no new infra). Login: 5 fails/account + 20 fails/IP per 15 min → 429 +
+  Retry-After. Register: 5/IP/hour. Failed logins are now audited (IPs stored SHA-256 hashed).
+  `errors.tooMany` added to `lib/api/respond.ts`.
+- **Password minimum 6 → 10** for new/changed passwords (schemas + login/register + change form). Existing
+  passwords still sign in.
+- **Security headers** in `next.config.mjs`: CSP (self + CARTO/OSM tiles + Google Fonts, blob workers,
+  frame-ancestors none), X-Frame-Options DENY, nosniff, Referrer-Policy, Permissions-Policy, HSTS (prod),
+  `poweredByHeader:false`. Escape hatch `BSA_CSP_REPORT_ONLY=1`.
+- **Brand privacy (schema):** `Franchisor.createdByUserId` + migration `20260923000000_franchisor_creator`
+  (additive, idempotent, BACKFILLS creators of existing independent/intake-added brands). Rules in
+  `canSeeFranchisor` / `visibleFranchisorWhere`. Applied to GET/POST `/api/franchisors`,
+  `/api/franchisors/[id]` (404 for others' private brands), `/api/intake` (independent brands now
+  private to creator), and the intake page brand list. POST no longer hands back another user's brand id.
+- **Stale duplicate route removed:** `app/franchisors/route.ts` (live at `/franchisors`) moved to
+  `_to_delete/stale_routes/`. Its newer `verticalFromRequirements` logic was merged into `/api/franchisors`
+  (the UI calls that one, so the template-vertical filter was previously dead).
+- **DB dump:** `bsa_dev.dump` untracked (`git rm --cached`, file kept locally) + `*.dump` gitignored.
+  **GitHub repo is PUBLIC and the dump (with password hashes) is in history** — owner must make repo
+  private and purge history (see open items). Removed a stale `.git/index.lock` left by the review session.
+- **Tests:** new `tests/unit/authSecurity.test.ts` (16 cases). Full suite 284/284 pass; app typecheck clean
+  (cloud, with generated Prisma types).
+
+**⚠️ ACTION REQUIRED (owner):**
+1. GitHub → make `bsa-version-3` private; then purge `bsa_dev.dump` from history (commands given in chat)
+   and rotate passwords of any real accounts in that dump.
+2. `npx prisma generate` → `npx prisma migrate deploy` (applies franchisor_creator to neon).
+3. Netlify env: confirm `AUTH_SECRET` (32+ chars) is set — a deploy without it now refuses to sign in.
+4. Browser smoke test: log in, open a site map (CSP) — if tiles/fonts blocked, set `BSA_CSP_REPORT_ONLY=1`.
+
+**Open (not in this batch):** outlets typed in an intake for a SHARED catalog brand are written under
+that shared franchisor → they leak into other users' Territory Guard for the same brand (needs outlet
+ownership — Batch 3). Tokens not revocable before 8h expiry (dev-team item). Nonce-based CSP (dev-team).
+
+---
+
+## 2026-09-23 — State reconstruction + full code review (READ-ONLY, no code changed)
+
+Reviewed Master Instruction, WORKLOG, PROJECT_MEMORY_EXPORT (stale, 2026-08-10) and the whole app.
+HEAD = `85e206c` (branded PDF export + Site Report nav dropped) — that commit was NOT logged before this entry.
+Pure unit tests: 221/221 pass in cloud (4 Prisma-dependent test files need `prisma generate` locally).
+Folder `3 - Skills/12 - Orchestration and Delivery Lead` is EMPTY (no SKILL.md).
+
+Top findings (fix candidates, in priority order):
+1. SECURITY — `/api/admin/*` only checks login, no admin role (reconcile-composites mutates all tenants).
+2. SECURITY — `bsa_dev.dump` (contains app_user password hashes) is tracked + pushed to GitHub.
+3. SECURITY — no rate limit on login/register; hard-coded AUTH_SECRET fallbacks (auth.ts, signtoken.ts); no security headers.
+4. RUNTIME — `runs/[id]/run` awaits VectorShift for all sites (45s timeout each) after the 5.5s-budgeted pipeline → likely Netlify timeout.
+5. SCORING — run confidence is effectively always Low (territory/daypart/whitespace always Projected ≥34%).
+6. SCORING — lease never scores in pipeline (`siteTerms: {}`); when scored via /api/lease-benchmark the percentile isn't inverted.
+7. PIPELINE — error sentinel overwrites the territory row; any single module row marks a site "done" on resume; `failed` status never set.
+8. TRUTH LAYER — demographics forced to Verified (source is Assumed); lease comps labelled Verified (59/80 Assumed); `?? 0` renders missing data as real zeros in analysis context.
+9. GUARDRAILS — "Above market — likely overpaying" label contradicts no-price-verdict; RA 9646 absent everywhere; no AI output validation.
+10. HYGIENE — dead code (IntakeWizard, TriangulationOverlay, rankWhiteSpace v1, pgvector never written), repro_*/verify_* scripts in root, local FS storage on Netlify, two report systems (/reports + Analysis PDF).
+
+Next: user to pick which findings to fix first.
+
+---
+
 ## 2026-08-26 — AI Analysis via VectorShift pipeline (live provider) — CODE COMPLETE (needs env + migrate)
 
 Wired the Analysis Report to a VectorShift pipeline (Input → Anthropic → Output). Prompts live INSIDE

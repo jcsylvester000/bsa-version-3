@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { hashPassword, signSession, SESSION_COOKIE_NAME, SESSION_MAX_AGE, type SessionUser } from '@/lib/auth/auth';
 import { registerSchema } from '@/lib/validation/schemas';
-import { ok, fail, failValidation } from '@/lib/api/respond';
+import { ok, fail, failValidation, errors } from '@/lib/api/respond';
 
 /**
  * POST /api/auth/register — create a new user account (username + password) and sign
@@ -25,6 +25,15 @@ export async function POST(req: NextRequest) {
 
     const { prisma } = await import('@/lib/db/prisma');
     const { audit } = await import('@/lib/audit/audit');
+    const rl = await import('@/lib/auth/rateLimit');
+
+    // Throttle account creation per client IP (stops scripted mass sign-ups).
+    const ipKey = rl.hashKey(rl.clientIp(req));
+    const lim = await rl.checkLimit('register_attempt', 'auth_ip', ipKey, rl.LIMITS.registerPerIp);
+    if (lim.limited) {
+      return errors.tooMany(lim.retryAfterSeconds, 'Too many accounts created from this network. Please try again later.');
+    }
+    await rl.recordAttempt('register_attempt', 'auth_ip', ipKey);
 
     const existing = await prisma.appUser.findUnique({ where: { email } });
     if (existing) return fail({ code: 'username_taken', message: 'That username is already taken.' }, 409);

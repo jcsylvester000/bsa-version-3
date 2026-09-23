@@ -2,19 +2,17 @@
  * Signed download tokens for the local-fs storage adapter. An HMAC over
  * (key + expiry) so a link is time-limited and tamper-evident — the local
  * equivalent of an S3/R2 presigned URL. Server-only; the secret never ships.
+ *
+ * The secret comes from lib/auth/secret (fails closed on a deployment — no public
+ * fallback can ever sign a production download link).
  */
 import 'server-only';
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import { authSecret } from '@/lib/auth/secret';
 
-const DEV_FALLBACK = 'bsa_dev_storage_signing_fallback_0123456789abcdef';
-
+/** Domain-separated so a storage signature can never be replayed as anything else. */
 function signingSecret(): string {
-  const s = process.env.AUTH_SECRET;
-  if (s && s.length >= 32) return s;
-  if (process.env.BSA_REQUIRE_SECRET === '1') {
-    throw new Error('AUTH_SECRET required to sign storage URLs in production.');
-  }
-  return DEV_FALLBACK;
+  return `storage:${authSecret()}`;
 }
 
 /** base64url without padding. */

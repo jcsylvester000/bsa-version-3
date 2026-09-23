@@ -28,8 +28,18 @@ export const MOCK_USERS: MockUser[] = [
   { id: 'mock-owner', email: 'owner@macaoimperial.test', role: 'franchisor', franchisorId: DEMO_FRANCHISOR_ID },
 ];
 
-/** True when the app should authenticate against the mock users instead of the DB. */
+/** Deployed = hosted (Netlify/Vercel) or BSA_REQUIRE_SECRET=1. Kept dependency-free
+ *  (no 'server-only') because this module is also imported by pure tests. */
+function isDeployedEnv(): boolean {
+  return process.env.BSA_REQUIRE_SECRET === '1' || process.env.NETLIFY === 'true' || process.env.VERCEL === '1';
+}
+
+/** True when the app should authenticate against the mock users instead of the DB.
+ *  SECURITY: on a deployment, demo logins are OFF unless BSA_ALLOW_DEMO_LOGINS=1 is set
+ *  explicitly — the demo password is public in the repo, so it must never silently work
+ *  on a hosted site. */
 export function isMockAuth(): boolean {
+  if (isDeployedEnv() && process.env.BSA_ALLOW_DEMO_LOGINS !== '1') return false;
   const mode = process.env.AUTH_MODE;
   if (mode === 'mock') return true;
   if (mode === 'db') return false;
@@ -42,7 +52,11 @@ export function isMockAuth(): boolean {
 export function verifyMockLogin(email: string, password: string): MockUser | null {
   if (password !== MOCK_PASSWORD) return null;
   const target = email.trim().toLowerCase();
-  return MOCK_USERS.find((u) => u.email.toLowerCase() === target) ?? null;
+  const user = MOCK_USERS.find((u) => u.email.toLowerCase() === target) ?? null;
+  // Even when demo logins are explicitly allowed on a deployment, the staff demo accounts
+  // (admin/analyst — cross-tenant visibility) stay disabled there.
+  if (user && isDeployedEnv() && (user.role === 'admin' || user.role === 'analyst')) return null;
+  return user;
 }
 
 /** The set of mock demo-user ids (stable, non-UUID). */

@@ -23,8 +23,8 @@ export function ChangePasswordForm() {
       setError('New password and confirmation do not match.');
       return;
     }
-    if (next.length < 6) {
-      setError('New password must be at least 6 characters.');
+    if (next.length < 10) {
+      setError('New password must be at least 10 characters.');
       return;
     }
     setLoading(true);
@@ -54,11 +54,11 @@ export function ChangePasswordForm() {
       </label>
       <label className="block">
         <span className="text-sm font-medium text-ink-muted">New password</span>
-        <input type="password" value={next} onChange={(e) => setNext(e.target.value)} placeholder="at least 6 characters" className="field mt-1" required minLength={6} autoComplete="new-password" />
+        <input type="password" value={next} onChange={(e) => setNext(e.target.value)} placeholder="at least 10 characters" className="field mt-1" required minLength={10} autoComplete="new-password" />
       </label>
       <label className="block">
         <span className="text-sm font-medium text-ink-muted">Confirm new password</span>
-        <input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} className="field mt-1" required minLength={6} autoComplete="new-password" />
+        <input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} className="field mt-1" required minLength={10} autoComplete="new-password" />
       </label>
       {error && <p className="text-sm text-nogo">{error}</p>}
       {done && <p className="text-sm text-go">Password updated.</p>}

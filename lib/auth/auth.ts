@@ -9,6 +9,8 @@
 import 'server-only';
 import bcrypt from 'bcryptjs';
 import { SignJWT, jwtVerify } from 'jose';
+import { authSecret } from './secret';
+import { isUuid } from '@/lib/util/uuid';
 
 export type UserRole = 'admin' | 'analyst' | 'broker' | 'franchisor';
 
@@ -22,27 +24,10 @@ export interface SessionUser {
 const SESSION_COOKIE = 'bsa_session';
 const SESSION_TTL_SECONDS = 60 * 60 * 8; // 8h
 
-// A stable dev fallback so the app never hard-crashes locally when AUTH_SECRET is
-// unset. In production a real 32+ byte AUTH_SECRET is required and this fallback is
-// refused (see below).
-const DEV_FALLBACK_SECRET = 'bsa_dev_fallback_secret_do_not_use_in_production_0123456789';
-
+// Secret policy (fail closed when deployed) lives in ./secret so session JWTs and signed
+// storage URLs share one rule.
 function secretKey(): Uint8Array {
-  let s = process.env.AUTH_SECRET;
-  if (!s || s.length < 32) {
-    // Only hard-fail on a real deployment (explicit flag), not merely because a
-    // local `next build` sets NODE_ENV=production. This lets you run the app
-    // locally with no .env; production must set AUTH_SECRET and BSA_REQUIRE_SECRET=1.
-    if (process.env.BSA_REQUIRE_SECRET === '1') {
-      throw new Error('AUTH_SECRET is missing or too short (need 32+ bytes).');
-    }
-    if (!process.env.__BSA_WARNED_SECRET) {
-      console.warn('[auth] AUTH_SECRET not set — using an insecure dev fallback. Set AUTH_SECRET (and BSA_REQUIRE_SECRET=1) before deploying.');
-      process.env.__BSA_WARNED_SECRET = '1';
-    }
-    s = DEV_FALLBACK_SECRET;
-  }
-  return new TextEncoder().encode(s);
+  return new TextEncoder().encode(authSecret());
 }
 
 // --- passwords --------------------------------------------------------------
@@ -137,6 +122,47 @@ export function canAccessRun(
   // Legacy run with no recorded owner: fall back to the strict brand check so a
   // franchisor/broker can still open their own historic client-brand runs.
   return user.franchisorId != null && user.franchisorId === run.franchisorId;
+}
+
+/** Grid staff (admin / analyst) — full oversight of every tenant. */
+export function isStaff(user: SessionUser): boolean {
+  return user.role === 'admin' || user.role === 'analyst';
+}
+
+/** Platform administrator — the only role allowed to run cross-tenant maintenance. */
+export function isAdmin(user: SessionUser): boolean {
+  return user.role === 'admin';
+}
+
+/**
+ * Brand visibility — who may SEE a franchisor (in lists, templates, and as an intake target).
+ *  - staff → every brand;
+ *  - the user's own attached franchisor;
+ *  - a brand the user created (independent business, or a brand added from the intake);
+ *  - SHARED catalog brands: no owning user AND no creator (the seeded reference catalog).
+ * A brand created by another user, or owned by another client, is never visible.
+ */
+export function canSeeFranchisor(
+  user: SessionUser,
+  f: { id: string; createdByUserId: string | null; ownerCount: number },
+): boolean {
+  if (isStaff(user)) return true;
+  if (user.franchisorId != null && user.franchisorId === f.id) return true;
+  if (f.createdByUserId != null) return f.createdByUserId === user.id;
+  return f.ownerCount === 0;
+}
+
+/** Prisma `where` fragment matching exactly the franchisors `canSeeFranchisor` allows. */
+export function visibleFranchisorWhere(user: SessionUser) {
+  if (isStaff(user)) return {};
+  return {
+    OR: [
+      { users: { none: {} }, createdByUserId: null }, // shared catalog
+      // brands this user created (demo accounts have non-UUID ids and never create brands)
+      ...(isUuid(user.id) ? [{ createdByUserId: user.id }] : []),
+      ...(user.franchisorId ? [{ id: user.franchisorId }] : []), // their own client brand
+    ],
+  };
 }
 
 /** Roles allowed to run/write analyses (not read-only viewers). */
