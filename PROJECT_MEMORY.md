@@ -33,7 +33,7 @@ _Last updated: 2026-09-23 — after Fix Batch 5 (review programme complete)._
 | 2 | AI runtime: no AI inside the run route, one site per request, per-site lock, regenerate (3/site/day), read-only PDF + status GET, safe errors, strict `AI_PROVIDER`, usage log status/latency | ✅ pushed (`c5ccfaf`) |
 | 3 | Scoring/pipeline: evidence confidence (not always Low), lease value score + recompute on asking rent, per-module isolation, `analyzed_at` resume, `failed` status, stale-score clearing, outlet ownership per intake, Re-run analysis (refresh) | ✅ pushed (`c5ccfaf`) |
 | 4 | Truth Layer + guardrails: honest demographic/lease/territory labels, no fake zeros, proxy-corridor flag, positional lease labels (no price verdicts), RA 9646 disclaimers, zonal-floor wording, AI output check, reference sent to VectorShift; mall ≤3 km, daypart all-day range, canonical zoning city, concept-aware informal | ✅ pushed (`fb4e312`) |
-| 5 | Hygiene + hotfix: hydration #418 (Manila-time formatter), non-fatal usage log + reason codes for AI 502s, maptiles 200-when-off; reports on demand (no storage) + both kept & relabelled; report PII via POST; retired 4 pages + 5 components + root scripts; Lease tab saves asking rent; rankWhiteSpace v1 removed; README + HANDOFF + security/API docs | ✅ code done · **not yet committed** |
+| 5 | Hygiene + hotfix: hydration #418 (Manila-time formatter), non-fatal usage log + reason codes for AI 502s, maptiles 200-when-off; reports on demand (no storage) + both kept & relabelled; report PII via POST; retired 4 pages + 5 components + root scripts; Lease tab saves asking rent; rankWhiteSpace v1 removed; README + HANDOFF + security/API docs | ✅ pushed (`321b49f`) |
 
 ## Pending owner actions (carry forward until confirmed)
 
@@ -77,8 +77,9 @@ _Last updated: 2026-09-23 — after Fix Batch 5 (review programme complete)._
 ## Workflow conventions
 
 - Next (not started): see `docs/HANDOFF.md` §4 — pgvector hybrid retrieval, White-Space SQL-side tiering,
-  API-first page data, nonce CSP, session revocation, S3/R2 only if uploads return. Skill folder
-  `3 - Skills/12 - Orchestration and Delivery Lead` is still EMPTY (no SKILL.md) — offer to write it.
+  API-first page data, nonce CSP, session revocation, S3/R2 only if uploads return. Skill 12
+  (`3 - Skills/12 - Orchestration and Delivery Lead/SKILL.md`) now exists and encodes this workflow
+  (state reconstruction, batches, verification recipe, logging, PowerShell command blocks).
 - After each batch: update `WORKLOG.md` (entry at top) + rewrite this file + ALWAYS give the user the
   GitHub update commands (`git add -A` / `git commit -m "…"` / `git push origin main`) plus any DB commands,
   PowerShell-safe (one command per line — PowerShell 5 has no `&&`).

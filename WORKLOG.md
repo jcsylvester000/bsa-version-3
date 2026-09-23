@@ -5,6 +5,17 @@ The cross-thread state record. Read this (with the Master Instruction and the cu
 
 ---
 
+## 2026-09-23 — Agency: Skill 12 (Orchestration & Delivery Lead) written
+
+`3 - Skills/12 - Orchestration and Delivery Lead/SKILL.md` was an empty folder. Written in the house
+format (Identity / When routed / How you work / Standards / Outputs / Handoffs / Guardrails), encoding the
+workflow proven in fix batches 1–5: reconstruct state (Master Instruction → PROJECT_MEMORY → WORKLOG →
+git), risk-ordered shippable batches, ask only user-owned decisions, verify (typecheck/tests/build with the
+cloud-sandbox Prisma recipe), log WORKLOG + PROJECT_MEMORY after every batch, and always end with
+PowerShell-safe git + database commands. No application code changed.
+
+---
+
 ## 2026-09-23 — Fix Batch 5: Hygiene + handoff docs, and a live-site hotfix — CODE COMPLETE
 
 Skills loaded: 01 Senior Web, 09 Documentation, 04 Security, 10 AI Systems. Batch 4 confirmed pushed (`fb4e312`).
