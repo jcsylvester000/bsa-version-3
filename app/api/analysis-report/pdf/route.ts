@@ -62,6 +62,12 @@ export async function GET(req: NextRequest) {
       confidence: result.confidence,
       narrative: result.analysis,
       schemaText: result.schemaText,
+      checkWarning: result.check && !result.check.ok
+        ? [
+            result.check.ungroundedNumbers.length ? `figures not matched to the site data: ${result.check.ungroundedNumbers.join(', ')}` : '',
+            result.check.priceVerdictPhrases.length ? `price-verdict wording: ${result.check.priceVerdictPhrases.join(', ')}` : '',
+          ].filter(Boolean).join('; ')
+        : null,
     });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const buffer = await renderToBuffer(element as any);

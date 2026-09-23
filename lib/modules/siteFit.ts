@@ -39,8 +39,9 @@ export async function runSiteFit(
 
   // Demand pillar: population within the catchment (from demographic_cell polygons
   // that contain / are near the site). Verified from PSA when present.
-  const demoRows = await prisma.$queryRaw<Array<{ pop: number | null }>>`
-    SELECT COALESCE(SUM(population), 0)::int AS pop
+  const demoRows = await prisma.$queryRaw<Array<{ pop: number | null; layers: string[] | null }>>`
+    SELECT COALESCE(SUM(population), 0)::int AS pop,
+           array_agg(DISTINCT truth_layer::text) AS layers
     FROM demographic_cell
     WHERE ST_DWithin(
       geom,
@@ -49,7 +50,10 @@ export async function runSiteFit(
     )
   `;
   let population = demoRows[0]?.pop ?? 0;
-  let demandTruth: TruthLayer = 'verified';
+  // The demand pillar is only as strong as the weakest demographic row it summed —
+  // read from the rows, never assumed Verified.
+  const layers = (demoRows[0]?.layers ?? []).filter(Boolean);
+  let demandTruth: TruthLayer = layers.includes('projected') ? 'projected' : layers.includes('assumed') || layers.length === 0 ? 'assumed' : 'verified';
 
   // Fallback (Phase 3 QA fix F3): where the demographic layer is thin and no cell is
   // in range, use the NEAREST cell within a wider radius as an Assumed proxy — so a
@@ -97,7 +101,17 @@ export async function runSiteFit(
         )
     `;
     competitorCount = compRows[0]?.c ?? 0;
-    hasPoi = await prisma.poi.count({ take: 1 }).then((n) => n > 0);
+    // Coverage must be LOCAL: "zero competitors" only means something if this area has POI
+    // data at all. (Was a global count — any POI anywhere made an uncovered area read as
+    // "no competition", scored 100.) Any mapped establishment within 2 km = covered.
+    const cover = await prisma.$queryRaw<CountRow[]>`
+      SELECT COUNT(*)::int AS c FROM (
+        SELECT 1 FROM poi
+        WHERE ST_DWithin(geom, ST_SetSRID(ST_MakePoint(${site.lon}, ${site.lat}), 4326)::geography, 2000)
+        LIMIT 1
+      ) x
+    `;
+    hasPoi = (cover[0]?.c ?? 0) > 0;
   }
 
   // Map raw signals to 0–100 pillar scores (documented, simple, deterministic).

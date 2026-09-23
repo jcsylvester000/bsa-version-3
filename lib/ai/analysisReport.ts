@@ -17,6 +17,7 @@ import type { ModuleKind } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { aiProviderName } from './index';
 import { isReadyPayload, isFreshLock, versionToken, type AnalysisPayload } from './analysisCache';
+import { checkAnalysisOutput, type OutputCheck } from './outputCheck';
 import { retrieve } from './retrieveThenGenerate';
 import { TRUTH_META } from '@/lib/truth/truthLayer';
 import { rollUpConfidence, type TruthLayer, type Confidence } from '@/lib/truth/truthLayer';
@@ -36,6 +37,9 @@ export interface AnalysisReportResult {
   confidence: Confidence;
   generatedAt: string;
   cached: boolean;
+  /** Post-generation guardrail check (numbers traceable to the data; no price-verdict wording).
+   *  null on reports generated before the check existed. */
+  check: OutputCheck | null;
 }
 
 /** Merge the submitted intake sections the operator actually filled (skip null/empty). */
@@ -88,6 +92,7 @@ function toResult(p: Payload & { analysis: string }, cached: boolean): AnalysisR
     confidence: (p.confidence as Confidence) ?? 'med',
     generatedAt: (p.generatedAt as string) ?? new Date().toISOString(),
     cached,
+    check: (p.check as OutputCheck | undefined) ?? null,
   };
 }
 
@@ -268,7 +273,8 @@ async function generateLocked(
   ].join('\n');
 
   // Which generator (validated by aiProviderName):
-  //  - 'vectorshift' → live VectorShift pipeline (prompts live in the pipeline; we ship the schema).
+  //  - 'vectorshift' → live VectorShift pipeline (prompts live in the pipeline; we ship the schema
+  //                   + interpretation reference as one labelled text input).
   //  - 'stub' (default) → deterministic mock narrative from the same context.
   let narrative: string;
   let model: string;
@@ -277,7 +283,11 @@ async function generateLocked(
   const t0 = Date.now();
 
   if (which === 'vectorshift') {
-    const vs = await generateViaVectorShift(schemaText);
+    // Send the schema AND the retrieved interpretation reference (was schema only — the
+    // retrieve step's output was discarded on the live path). VECTORSHIFT_SEND_REFERENCE=0
+    // reverts to schema-only if the pipeline prompt needs it.
+    const sendReference = process.env.VECTORSHIFT_SEND_REFERENCE !== '0';
+    const vs = await generateViaVectorShift(sendReference ? context : schemaText);
     narrative = vs.text;
     model = 'vectorshift';
     // Usage/cost log ONLY (admin monitor) — no response text stored here.
@@ -318,13 +328,23 @@ async function generateLocked(
 
   const generatedAt = new Date().toISOString();
 
+  // Guardrail check: every number must trace to what the model was given; no price verdicts.
+  const check = checkAnalysisOutput(narrative, [schemaText, chunkText]);
+  if (!check.ok) {
+    console.warn(`[analysis] guardrail check run=${runId} site=${siteId}`, check);
+  }
+
   // Persist the finished report — only if we still hold the lock (a stale-lock takeover by
   // another request wins; we then just return our text without overwriting theirs).
-  const payload = { status: 'ready', analysis: narrative, schemaText, contextJson: ctx, model, confidence, generatedAt };
+  const payload = {
+    status: 'ready', analysis: narrative, schemaText, contextJson: ctx, model, confidence, generatedAt, check,
+    // Provenance for every path (the VectorShift path previously logged no chunk ids).
+    retrievedChunkIds: chunks.map((c) => String(c.id)),
+  };
   await prisma.moduleResult.updateMany({
     where: { candidateSiteId: siteId, module: 'analysis' as ModuleKind, payload: { path: ['lockId'], equals: lockId } },
-    data: { payload: payload as object, truthLayer: 'projected', flags: [] },
+    data: { payload: payload as object, truthLayer: 'projected', flags: check.ok ? [] : ['ai_output_check_failed'] },
   });
 
-  return { analysis: narrative, schemaText, contextJson: ctx, model, confidence, generatedAt, cached: false };
+  return { analysis: narrative, schemaText, contextJson: ctx, model, confidence, generatedAt, cached: false, check };
 }

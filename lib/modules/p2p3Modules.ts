@@ -22,7 +22,7 @@ import { catchmentRadius, competitiveSaturationPct } from './territoryMath';
 import { lookupCompetitorSet } from './territoryGuard';
 import { conceptFor, tierFor, weightedCompetitorCount, type TierCounts } from '@/lib/places/competitorRelevance';
 import { haversineMeters } from '@/lib/geo/geo';
-import { inferCorridor } from './leaseMath';
+import { inferCorridor, canonicalNcrCity } from './leaseMath';
 
 async function persist(runId: string, candidateSiteId: string, module: ModuleKind, score: number | null, payload: unknown, truthLayer: TruthLayer, flags: string[]) {
   await prisma.moduleResult.upsert({
@@ -89,19 +89,36 @@ export async function runDaypart(runId: string, siteId: string, vertical: string
 
   // Peak-hour mix + seasonality are Projected.
   const noCatchmentData = res + day === 0;
-  await persist(runId, siteId, 'daypart', r.windowMatchPct, { ...r, demographicRadiusM: usedRadius, noCatchmentData, seasonality, corridor: corridorName ?? null }, 'projected', flags);
+  // No catchment data → no score (it must not count in the composite as if the mix were known).
+  await persist(runId, siteId, 'daypart', noCatchmentData ? null : r.windowMatchPct, { ...r, demographicRadiusM: usedRadius, noCatchmentData, seasonality, corridor: corridorName ?? null }, 'projected', flags);
 }
 
-export async function runInformal(runId: string, siteId: string, vertical: string, units?: number | null): Promise<void> {
+export async function runInformal(
+  runId: string,
+  siteId: string,
+  vertical: string,
+  units?: number | null,
+  /** Concept-matched competitors within 800 m (from the orchestrator's competitorsNear). When
+   *  absent we fall back to ALL competitor POIs and flag it — that count mixes unrelated
+   *  businesses (a laundromat next to a café) and overstates competition. */
+  conceptCompetitorCount?: number,
+): Promise<void> {
   const site = await prisma.candidateSite.findUniqueOrThrow({ where: { id: siteId }, select: { lat: true, lon: true } });
-  const rows = await prisma.$queryRaw<Array<{ c: number | null }>>`
-    SELECT COUNT(*)::int AS c FROM poi
-    WHERE category='competitor'
-      AND ST_DWithin(geom, ST_SetSRID(ST_MakePoint(${site.lon}, ${site.lat}),4326)::geography, 800)`;
-  const digital = rows[0]?.c ?? 0;
+  let digital: number;
+  const flags: string[] = [];
+  if (conceptCompetitorCount != null) {
+    digital = conceptCompetitorCount;
+  } else {
+    const rows = await prisma.$queryRaw<Array<{ c: number | null }>>`
+      SELECT COUNT(*)::int AS c FROM poi
+      WHERE category='competitor'
+        AND ST_DWithin(geom, ST_SetSRID(ST_MakePoint(${site.lon}, ${site.lat}),4326)::geography, 800)`;
+    digital = rows[0]?.c ?? 0;
+    flags.push('informal_untyped_count');
+  }
   const mult = INFORMAL_MULTIPLIER[vertical] ?? INFORMAL_MULTIPLIER.default;
   const r = scoreInformal({ digitalCount: digital, informalMultiplier: mult });
-  const flags = r.onGroundCheckAdvised ? ['on_ground_check_advised'] : [];
+  if (r.onGroundCheckAdvised) flags.push('on_ground_check_advised');
 
   // Per-unit capacity read (QA v6) for chair/machine/line formats: pull the tight
   // 800 m resident catchment and turn units → pop-per-unit + breakeven households.
@@ -174,6 +191,15 @@ export async function runMall(runId: string, siteId: string, targetTier?: string
     return;
   }
   const m = rows[0];
+  // A mall only informs this site if it is actually nearby. (Was: the nearest mall at ANY
+  // distance — a Davao site could be scored on an NCR mall.)
+  if (m.dist > MALL_MAX_DISTANCE_M) {
+    await persist(runId, siteId, 'mall', null, {
+      verdict: 'no_mall_nearby', nearestMallName: m.name, nearestMallDistanceM: Math.round(m.dist),
+      maxDistanceM: MALL_MAX_DISTANCE_M, targetTier: targetTier ?? null,
+    }, 'assumed', ['no_mall_within_range']);
+    return;
+  }
   const r = scoreMall({ tier: m.tier as 'A' | 'B' | 'C', footfallBand: m.footfall as 'very_high' | 'high' | 'medium' | 'low' });
   // Compare the operator's target tier (QA v6 intake) to the nearest mall's actual tier.
   const wanted = parseTargetTier(targetTier);
@@ -186,6 +212,9 @@ export async function runMall(runId: string, siteId: string, targetTier?: string
   // Tier Verified, footfall Assumed → row Assumed.
   await persist(runId, siteId, 'mall', r.score, { ...r, mallName: m.name, distanceM: Math.round(m.dist), targetTier: wanted, tierMatch }, 'assumed', flags);
 }
+
+/** Beyond this, the nearest mall is not this site's mall context. */
+const MALL_MAX_DISTANCE_M = 3000;
 
 /** Extract an A/B/C target tier from the intake mall-tier string. */
 function parseTargetTier(s: string | null | undefined): 'A' | 'B' | 'C' | null {
@@ -241,11 +270,19 @@ export async function runLand(
     trafficBand = nearby >= 6 ? 'high' : nearby >= 3 ? 'medium' : nearby >= 1 ? 'low' : 'unknown';
   }
 
-  // Zoning: commercial classification present in zonal_value for the city → ok.
-  const zoning = site.city
-    ? await prisma.zonalValue.findFirst({ where: { cityMunicipality: site.city, classificationCode: { startsWith: 'C' } }, select: { id: true } })
-    : null;
-  const zoningOk = site.city ? zoning != null : null;
+  // Zoning: a commercial (C*) classification exists in zonal_value for the site's city.
+  // City names are canonicalised the same way the zonal ETL did ("City of Pasig" → "Pasig");
+  // a city outside zonal coverage is UNKNOWN (null), not a failed zoning check — it used to
+  // cap every non-matching site's land score at 25.
+  const zonalCity = canonicalNcrCity(site.city, null);
+  let zoningOk: boolean | null = null;
+  if (zonalCity) {
+    const covered = await prisma.zonalValue.findFirst({ where: { cityMunicipality: zonalCity }, select: { id: true } });
+    if (covered) {
+      const commercial = await prisma.zonalValue.findFirst({ where: { cityMunicipality: zonalCity, classificationCode: { startsWith: 'C' } }, select: { id: true } });
+      zoningOk = commercial != null;
+    }
+  }
 
   const mins = LAND_MINIMUMS[vertical] ?? LAND_MINIMUMS.default;
   // Frontage/lot now come from the QA-v6 land-parcel intake field when supplied;

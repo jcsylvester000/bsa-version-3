@@ -37,7 +37,7 @@ export default async function ScorecardPage({ searchParams }: { searchParams: { 
       buildScorecard('Proposed — BGC High Street', [
         { module: 'site_fit', score: 83.2, truthLayer: 'verified', note: 'Composite 83.2/100 — verdict: go.' },
         { module: 'territory', score: 75.2, truthLayer: 'projected', note: 'Max overlap 75.2% — verdict: redistributes existing sales.' },
-        { module: 'lease', score: 77.8, truthLayer: 'assumed', note: 'Base rent at the 77.8th percentile — above market.' },
+        { module: 'lease', score: 77.8, truthLayer: 'assumed', note: 'Base rent at the 77.8th percentile — above the corridor median.' },
         { module: 'daypart', score: 75.9, truthLayer: 'projected', note: 'Window match 75.9%.' },
         { module: 'informal', score: 60, truthLayer: 'assumed', note: '7 est. competitors; on-ground check advised.' },
       ]),

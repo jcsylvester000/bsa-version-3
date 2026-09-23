@@ -76,7 +76,12 @@ describe('normalizeDemo', () => {
     const d = normalizeDemo({ psgc_code: '123', population: '38000', renter_share_pct: '62' })!;
     expect(d.population).toBe(38000);
     expect(d.renterSharePct).toBe(62);
-    expect(d.truthLayer).toBe('verified');
+    // Unlabelled rows are Assumed — never silently promoted to Verified.
+    expect(d.truthLayer).toBe('assumed');
+  });
+  it("honours the source row's truth layer", () => {
+    expect(normalizeDemo({ psgc_code: '1', truth_layer: 'assumed' })!.truthLayer).toBe('assumed');
+    expect(normalizeDemo({ psgc_code: '1', truth_layer: 'Verified' })!.truthLayer).toBe('verified');
   });
 });
 

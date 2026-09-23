@@ -121,7 +121,7 @@ export interface LeaseBenchmarkOutput {
   sampleSize: number;
   /** True when the sample is thin — the fair-range read is downgraded. */
   lowSample: boolean;
-  /** PHP/sqm the site sits above the corridor median on base rent (>0 = overpaying). */
+  /** PHP/sqm the site sits above the corridor median on base rent (>0 = above the median). */
   negotiatingRoomPhpSqm: number | null;
   /** Same as a % of the median. */
   negotiatingRoomPct: number | null;
@@ -209,7 +209,7 @@ export function benchmarkLease(site: SiteTerms, comps: Comp[]): LeaseBenchmarkOu
 
   const flags: string[] = [];
   if (lowSample) flags.push('low_sample');
-  if (verdict === 'above_market') flags.push('overpaying_base_rent');
+  if (verdict === 'above_market') flags.push('base_rent_above_corridor_median');
   if (terms.some((t) => t.flag === 'over' && t.term !== 'baseRentPhpSqm')) flags.push('secondary_terms_over_market');
 
   return {

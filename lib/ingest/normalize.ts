@@ -135,6 +135,7 @@ export interface RawDemo {
   income_band?: string | null;
   renter_share_pct?: number | string | null;
   daytime_pop?: number | string | null;
+  truth_layer?: string | null;
 }
 export interface NormDemo {
   psgcCode: string;
@@ -158,8 +159,10 @@ export function normalizeDemo(raw: RawDemo): NormDemo | null {
     incomeBand: raw.income_band?.trim() || null,
     renterSharePct: numOrNull(raw.renter_share_pct),
     daytimePop: intOrNull(raw.daytime_pop),
-    // PSA census Verified; daytime/projection Assumed.
-    truthLayer: 'verified',
+    // Honour the source's own classification (demographics.real.json marks every row
+    // Assumed: PSA population, but centroid coords + estimated income/daytime bands).
+    // Unlabelled rows default to Assumed — never silently promoted to Verified.
+    truthLayer: asTruthLayer(raw.truth_layer) ?? 'assumed',
   };
 }
 

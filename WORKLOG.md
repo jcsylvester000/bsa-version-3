@@ -5,6 +5,65 @@ The cross-thread state record. Read this (with the Master Instruction and the cu
 
 ---
 
+## 2026-09-23 — Fix Batch 4: Truth Layer honesty + Grid guardrails — CODE COMPLETE (needs migrate + methodology reseed + re-run)
+
+Skills loaded: 07 PH Broker (guardrail wording), 10 AI Systems, 02 Database. Batches 2+3 confirmed pushed (`c5ccfaf`).
+
+**Guardrails**
+- New `lib/truth/guardrailCopy.ts` — single source for guardrail wording: positional lease labels
+  (`Below corridor median / Within corridor range / Above corridor median`), `LEASE_POSITION_EXPLAINER`,
+  `ZONAL_FLOOR_NOTE`, `BROKER_DISCLAIMER_SHORT/LONG` (RA 9646), `PRICE_VERDICT_PATTERNS`.
+- **No price verdicts:** "Above market — likely overpaying" / "Below market — favourable" / "a competitive
+  rate" / "a favourable rate" removed from SiteIntelligenceTabs, LeaseBenchmarkView (+ tooltip),
+  analysisContext (what the AI reads), methodology chunk `method-lease`, scorecard demo note. Flag
+  `overpaying_base_rent` → `base_rent_above_corridor_median`. Above-median now amber, not red.
+- **RA 9646:** short disclaimer footer on every signed-in page (`app/(app)/layout.tsx`); long form on the
+  Analysis PDF footer and the HTML report cover; stated in the AI schema's GUARDRAILS line.
+- **BIR zonal = tax-reference floor** wording on the Analysis tab zonal row, the AI schema line and the
+  Analysis tab footer (LeaseBenchmarkView already had it).
+
+**Truth Layer**
+- Demographics: `normalizeDemo` honoured nothing and stamped `verified`; now uses the source row's label
+  (all 296 are `assumed`), default `assumed`. Migration `20260923000003_truth_layer_fixes` relabels stored rows.
+  The old unit test that asserted `verified` was encoding the bug → updated.
+- Site Fit demand truth now read from the summed rows (was forced Verified). Competition-pillar coverage
+  check is LOCAL (any POI within 2 km) — was a global `poi.count()`.
+- Lease `truth.comps` = weakest comp row (was hard-coded Verified; 59/80 comps are Assumed); lease-benchmark
+  route facts use it.
+- Territory own-branch overlap truth = weakest truth of the outlets used (typed outlets are Assumed; was
+  hard-coded Verified).
+- AI schema + Analysis tab use each payload's per-field truth; missing values print "—" instead of a
+  fabricated 0 (overlap, saturation, cannibalization, window match, zonal band, scanned areas).
+- Lease with no matching corridor: flag `corridor_default_fallback`, row → Projected, shown on the Lease tab
+  and in the AI schema as a proxy (was a silent Quezon City benchmark).
+
+**AI output check** — new pure `lib/ai/outputCheck.ts`: every number in the write-up must trace (incl.
+rounding) to the schema + retrieved reference; price-verdict phrases detected. Stored as `check` on the
+analysis payload, flag `ai_output_check_failed`; amber "Check before sharing" box on the Analysis tab and a
+line on the PDF. Warning, not a block. VectorShift now receives schema + interpretation reference
+(`VECTORSHIFT_SEND_REFERENCE=0` reverts); retrieved chunk ids stored on every path.
+
+**Scoring carry-overs from Batch 3**
+- Mall: nearest mall only if ≤ 3 km (else `no_mall_nearby`, unscored). Was any distance.
+- Daypart all-day: `100 − 2·|50 − share|` (full range; was floored at 50). No catchment data → unscored.
+- Land zoning: canonical NCR city (`canonicalNcrCity`); a city outside zonal coverage = unknown, not a fail
+  (used to cap land at 25).
+- Informal: uses the concept-matched competitor count from the orchestrator (competitorsNear max 20 → 40);
+  untyped fallback flagged `informal_untyped_count`.
+
+**New script:** `npm run db:seed-methodology` — refreshes ONLY the methodology corpus (safe on Neon). Do not
+use `db:seed` on a shared DB (it resets demo intakes/outlets and sample lease comps).
+
+**Verified (cloud):** 334/334 tests (new `tests/unit/guardrails.test.ts` 12 cases + daypart case), typecheck
+clean except the known pre-existing cast at `tests/unit/analysisContext.test.ts:117` (Batch 5).
+
+**⚠️ ACTION REQUIRED:** `npx prisma migrate deploy` → `npm run db:seed-methodology` → redeploy → **↻ Re-run
+analysis** on runs you care about (labels, scores and write-ups update only on re-run). Optionally add one
+line to the VectorShift prompt: "An INTERPRETATION REFERENCE may follow the schema — use it only to understand
+the fields; cite figures only from the schema."
+
+---
+
 ## 2026-09-23 — Fix Batch 3: Scoring + pipeline integrity — CODE COMPLETE (needs migrate + re-run)
 
 Skills loaded: 02 Database, 01 Senior Web, 03 API, 04 Security. New file `PROJECT_MEMORY.md` (current-state

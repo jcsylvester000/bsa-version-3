@@ -35,7 +35,7 @@ export const METHODOLOGY_CHUNKS: Chunk[] = [
   {
     id: 'method-lease',
     content:
-      'Lease Benchmark compares a site asking rent, escalation, CUSA, lease term and fit-out against comparable leases for the same format and corridor. The comparable comps are Verified against source leases or published corridor bands. The fair-range read — the percentile of the asking rate within the corridor spread and the negotiating room to the median — is an Assumed estimate shown with its sample size, and is low-confidence when the sample is thin. A rate above the corridor median means the tenant is likely overpaying and has room to negotiate down toward the median. BSA sharpens the negotiation; the broker still closes the deal.',
+      'Lease Benchmark compares a site asking rent, escalation, CUSA, lease term and fit-out against comparable leases for the same format and corridor. The comparable comps are Verified against source leases or published corridor bands. The fair-range read — the percentile of the asking rate within the corridor spread and the negotiating room to the median — is an Assumed estimate shown with its sample size, and is low-confidence when the sample is thin. A rate above the corridor median is a negotiating reference, not a price verdict: it shows the gap to the median that the broker can raise in negotiation. BSA sharpens the negotiation; the broker still closes the deal.',
     truth: 'verified',
   },
   {

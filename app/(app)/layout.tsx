@@ -6,6 +6,7 @@ import { isUuid } from '@/lib/util/uuid';
 import { LogoutButton } from '@/components/LogoutButton';
 import { SidebarNav } from '@/components/SidebarNav';
 import { OnboardingTour } from '@/components/OnboardingTour';
+import { BROKER_DISCLAIMER_SHORT } from '@/lib/truth/guardrailCopy';
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await getSession();
@@ -56,6 +57,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <LogoutButton />
         </header>
         <main className="mx-auto max-w-7xl px-6 py-8">{children}</main>
+        {/* RA 9646 / broker-supplementation notice on every signed-in page. */}
+        <footer className="mx-auto max-w-7xl px-6 pb-6 text-[11px] leading-relaxed text-ink-muted">{BROKER_DISCLAIMER_SHORT}</footer>
       </div>
 
       <OnboardingTour show={showTour} />

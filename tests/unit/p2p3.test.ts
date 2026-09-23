@@ -84,3 +84,12 @@ describe('rankWhiteSpace', () => {
     expect(gaps[0].reason).toContain('pop');
   });
 });
+
+describe('scoreDaypart — all-day formats (Batch 4)', () => {
+  it('uses the full 0–100 range: balanced catchment 100, one-sided 0', () => {
+    expect(scoreDaypart({ residentialPop: 50000, daytimePop: 50000, targetWindow: 'allday' }).windowMatchPct).toBe(100);
+    const lopsided = scoreDaypart({ residentialPop: 95000, daytimePop: 5000, targetWindow: 'allday' });
+    expect(lopsided.windowMatchPct).toBeLessThan(40);
+    expect(lopsided.verdict).toBe('mismatched'); // impossible under the old formula (floor 50)
+  });
+});

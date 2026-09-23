@@ -57,7 +57,7 @@ export async function POST(req: NextRequest) {
   const facts = [
     `Candidate: ${site.label}, corridor ${result.corridor}, format ${result.format}.`,
     stats
-      ? `Corridor base-rent comps (Verified): median ₱${stats.median}/sqm, range ₱${stats.min}–₱${stats.max}/sqm, n=${stats.n}.`
+      ? `Corridor base-rent comps (${result.truth.comps === 'verified' ? 'Verified' : result.truth.comps === 'assumed' ? 'Assumed' : 'Projected'}): median ₱${stats.median}/sqm, range ₱${stats.min}–₱${stats.max}/sqm, n=${stats.n}.`
       : 'No corridor base-rent comps found.',
     result.baseRentPercentile != null
       ? `The site's asking base rent sits at the ${result.baseRentPercentile}th percentile of the corridor spread (Assumed — estimate from ${result.sampleSize} comps).`

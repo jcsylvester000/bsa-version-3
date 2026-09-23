@@ -17,6 +17,7 @@ import type { ComposedReport, ComposedSection, ReportMetric } from './reportComp
 import { manilaLongStamp } from '@/lib/util/manilaTime';
 import type { Scorecard } from './scorecard';
 import type { Confidence } from '@/lib/truth/truthLayer';
+import { BROKER_DISCLAIMER_LONG } from '@/lib/truth/guardrailCopy';
 
 /** Client / preparation details collected from the modal — all optional, all escaped. */
 export interface ReportClientDetails {
@@ -360,7 +361,7 @@ export function renderReportHtml(
       ${coverRows || '<div class="cover-row"><span class="cover-v" style="color:#8ea0c0">Add client details on the report page to personalise this cover.</span></div>'}
     </div>
     <div class="gen">Generated ${esc(generated)}</div>
-    <div class="disclaimer">Figures carry a Truth-Layer classification (Verified / Assumed / Projected). Projected and Assumed values are model- or estimate-based and should be validated before any commitment. This report supplements — it does not replace — professional due diligence.</div>
+    <div class="disclaimer">${BROKER_DISCLAIMER_LONG} Projected and Assumed values are model- or estimate-based and should be validated before any commitment.</div>
   </div>
 
   <div class="page"><div class="sheet">

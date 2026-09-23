@@ -7,6 +7,8 @@
  * the already-computed values, each carrying its Truth Layer. Kept pure so it is unit-tested.
  */
 
+import { leasePositionLabel } from '@/lib/truth/guardrailCopy';
+
 export type TruthLayer = 'verified' | 'assumed' | 'projected';
 
 /** Loose shapes for the persisted payloads (module_result.payload JSON). */
@@ -83,8 +85,17 @@ function territoryBlock(m?: AnalysisModuleInput | null) {
     totalCannibalizedPhp: num(g(p, 'totalCannibalizedPhp')),
     competitorSet: cset ? { anchorBrand: str(g(cset, 'anchorBrand')), competitors: arr(g(cset, 'competitors')).slice(0, 8), truthLayer: str(g(cset, 'truthLayer')) } : null,
     affectedOutletCount: arr(g(p, 'affectedOutlets')).length,
+    /** Per-field Truth Layer from the module payload (never re-labelled here). */
+    fieldTruth: truthOf(g(p, 'truth')),
     flags: arr(g(p, 'flags')),
   };
+}
+
+/** Pick the per-field truth map off a payload (`{ overlapPct: 'assumed', … }`), strings only. */
+function truthOf(v: unknown): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (v && typeof v === 'object') for (const [k, x] of Object.entries(v as Record<string, unknown>)) if (typeof x === 'string') out[k] = x;
+  return out;
 }
 
 function leaseBlock(m?: AnalysisModuleInput | null) {
@@ -113,6 +124,7 @@ function leaseBlock(m?: AnalysisModuleInput | null) {
           usedAsFallback: g(z, 'usedAsFallback') === true,
         }
       : null,
+    fieldTruth: truthOf(g(p, 'truth')),
     flags: arr(g(p, 'flags')),
   };
 }
@@ -249,15 +261,19 @@ export function analysisSchemaText(ctx: AnalysisContext): string {
   if (t?.ran) {
     out.push(`verdict: ${verdictLabel('territory', rd(t, 'verdict') as string)}`);
     if (rd(t, 'headlineSource') === 'competitive') out.push('note: driven by competitive saturation, not own branches');
-    out.push(line('Own-branch overlap', pct((num(rd(t, 'ownOutletOverlapPct')) ?? num(rd(t, 'maxOverlapPct'))) ?? 0), 'Verified'));
+    // Missing values print "—" (never a fabricated 0), and each Truth Layer comes from the
+    // module payload's own per-field classification.
+    const tt = (rd(t, 'fieldTruth') as Record<string, string> | undefined) ?? {};
+    out.push(line('Own-branch overlap', pct(num(rd(t, 'ownOutletOverlapPct')) ?? num(rd(t, 'maxOverlapPct'))), T(tt.overlapPct ?? 'assumed')));
     const mix = rd(t, 'competitorMix') as AnyRec;
-    out.push(line('Competitive saturation', `${pct(num(rd(t, 'competitiveSaturationPct')) ?? 0)}${mix ? ` — ${num(rd(mix, 'direct')) ?? 0} direct + ${num(rd(mix, 'adjacent')) ?? 0} adjacent` : ''}`, 'Projected'));
-    out.push(line('Est. monthly cannibalization', peso(num(rd(t, 'totalCannibalizedPhp')) ?? 0), 'Projected'));
+    const mixTxt = mix && num(rd(mix, 'direct')) != null && num(rd(mix, 'adjacent')) != null ? ` — ${num(rd(mix, 'direct'))} direct + ${num(rd(mix, 'adjacent'))} adjacent` : '';
+    out.push(line('Competitive saturation', `${pct(num(rd(t, 'competitiveSaturationPct')))}${mixTxt}`, T(tt.competitiveSaturation ?? 'projected')));
+    out.push(line('Est. monthly cannibalization', peso(num(rd(t, 'totalCannibalizedPhp'))), T(tt.cannibalizedPhp ?? 'projected')));
     const cset = rd(t, 'competitorSet') as AnyRec;
     const comps = cset ? (arr(rd(cset, 'competitors')).map(String)) : [];
     if (comps.length) out.push(line('Competes with', comps.slice(0, 5).join(', ')));
     const affected = num(rd(t, 'affectedOutletCount')) ?? 0;
-    out.push(line('Affected own outlets', affected === 0 ? 'None in this catchment' : String(affected), 'Verified'));
+    out.push(line('Affected own outlets', affected === 0 ? 'None in this catchment' : String(affected), T(tt.overlapPct ?? 'assumed')));
   }
   out.push('');
 
@@ -265,8 +281,11 @@ export function analysisSchemaText(ctx: AnalysisContext): string {
   out.push('[LEASE BENCHMARK]' + (l?.ran ? '' : '  (not run for this site)'));
   if (l?.ran) {
     out.push(`verdict: ${verdictLabel('lease', rd(l, 'verdict') as string)}`);
-    out.push(line('Corridor', str(rd(l, 'corridor')) ?? '—'));
-    out.push(line('Comparable leases', String(num(rd(l, 'sampleSize')) ?? 0), 'Verified'));
+    const fallbackCorridor = arr(rd(l, 'flags')).includes('corridor_default_fallback');
+    out.push(line('Corridor', `${str(rd(l, 'corridor')) ?? '—'}${fallbackCorridor ? ' — proxy: no corridor matched the site location, comps are from this reference corridor' : ''}`, fallbackCorridor ? 'Projected' : undefined));
+    const lt = (rd(l, 'fieldTruth') as Record<string, string> | undefined) ?? {};
+    const n = num(rd(l, 'sampleSize'));
+    out.push(line('Comparable leases', n != null ? String(n) : '—', T(lt.comps ?? 'assumed')));
     const perc = num(rd(l, 'baseRentPercentile'));
     out.push(line('Base-rent percentile', perc != null ? ordinalText(perc) : '—', 'Assumed'));
     const nrm = num(rd(l, 'negotiatingRoomPhpSqm'));
@@ -274,7 +293,7 @@ export function analysisSchemaText(ctx: AnalysisContext): string {
     const z = rd(l, 'zonal') as AnyRec;
     const band = z ? (rd(z, 'band') as AnyRec) : null;
     if (band) {
-      out.push(line('BIR zonal band', `${str(rd(band, 'classification')) ?? 'CR'} · ${peso(num(rd(band, 'lowPhpSqm')))}–${peso(num(rd(band, 'highPhpSqm')))}/sqm${rd(z!, 'usedAsFallback') === true ? ' · used as fallback anchor' : ''}`, 'Verified'));
+      out.push(line('BIR zonal band (tax-reference floor, not a market price)', `${str(rd(band, 'classification')) ?? 'CR'} · ${peso(num(rd(band, 'lowPhpSqm')))}–${peso(num(rd(band, 'highPhpSqm')))}/sqm${rd(z!, 'usedAsFallback') === true ? ' · used as fallback anchor' : ''}`, T(str(rd(band, 'truthLayer')) ?? lt.zonalBand ?? 'verified')));
     }
   }
   out.push('');
@@ -283,8 +302,8 @@ export function analysisSchemaText(ctx: AnalysisContext): string {
   out.push('[DAYPART DEMAND]' + (d?.ran ? '' : '  (not run for this site)'));
   if (d?.ran) {
     const noData = rd(d, 'noCatchmentData') === true;
-    const win = num(rd(d, 'windowMatchPct')) ?? 0;
-    out.push(`verdict: ${noData ? 'Catchment mix not derived' : win >= 60 ? 'Strong window match' : win >= 40 ? 'Partial window match' : 'Weak window match'}`);
+    const win = num(rd(d, 'windowMatchPct'));
+    out.push(`verdict: ${noData || win == null ? 'Catchment mix not derived' : win >= 60 ? 'Strong window match' : win >= 40 ? 'Partial window match' : 'Weak window match'}`);
     out.push(line('Peak-hour demand captured', pct(win), 'Projected'));
     const share = num(rd(d, 'daytimeShare'));
     out.push(line('Catchment mix', noData || share == null ? 'Not derived (demographic layer not loaded)' : `${Math.round(share * 10) / 10}% daytime · ${Math.round((100 - share) * 10) / 10}% residential`, 'Projected'));
@@ -300,19 +319,21 @@ export function analysisSchemaText(ctx: AnalysisContext): string {
   if (w?.ran) {
     const recs = arr(rd(w, 'recommendations')) as AnyRec[];
     out.push(`verdict: ${recs.length ? `${recs.length} recommended area(s)` : 'No open areas in current coverage'}`);
-    out.push(line('Barangays scanned', String(num(rd(w, 'scanned')) ?? 0), 'Verified'));
+    const sc = num(rd(w, 'scanned'));
+    out.push(line('Areas scanned', sc != null ? String(sc) : '—', 'Verified'));
     out.push(line('Cannibalization threshold', `<= ${num(rd(w, 'threshold')) ?? 40}`, 'Projected'));
     const prop = rd(w, 'proposed') as AnyRec;
     if (prop && num(rd(prop, 'cannibalizationPct')) != null) out.push(line("This site's cannibalization", `${Math.round(num(rd(prop, 'cannibalizationPct'))!)}%`, 'Projected'));
     recs.slice(0, 3).forEach((r, i) => {
       const name = [str(rd(r, 'barangay')) ?? 'Unnamed area', str(rd(r, 'city'))].filter(Boolean).join(', ');
-      out.push(line(`Alternative #${i + 1} ${name}`, `${Math.round(num(rd(r, 'cannibalizationPct')) ?? 0)}% cannibalization${rd(r, 'beatsProposed') === true ? ' — beats this site' : ''}`, 'Projected'));
+      const cp = num(rd(r, 'cannibalizationPct'));
+      out.push(line(`Alternative #${i + 1} ${name}`, `${cp != null ? `${Math.round(cp)}%` : '—'} cannibalization${rd(r, 'beatsProposed') === true ? ' — beats this site' : ''}`, 'Projected'));
     });
   }
   out.push('');
 
   if (ctx.flags.length) out.push(`FLAGS: ${ctx.flags.join(', ')}`);
-  out.push('GUARDRAILS: broker-supplementation; no price verdict; BIR zonal is a tax-reference floor only.');
+  out.push('GUARDRAILS: broker-supplementation (the licensed broker advises the client and closes the deal, RA 9646); no price verdict (state the rent position vs the corridor only; never judge whether a price is good or bad); BIR zonal is a tax-reference floor only; use only the figures above — "—" means not available, do not estimate it.');
 
   return out.join('\n');
 }
@@ -322,11 +343,8 @@ function verdictLabel(module: 'territory' | 'lease', v: string | null | undefine
   if (module === 'territory') {
     return v === 'adds' ? 'Adds sales' : v === 'redistributes' ? 'Redistributes existing sales' : 'Mixed — some redistribution';
   }
-  return v === 'below_market' ? 'Below market — favourable'
-    : v === 'above_market' ? 'Above market — likely overpaying'
-    : v === 'at_market' ? 'At market'
-    : v === 'corridor_benchmark' ? 'Corridor market benchmark'
-    : 'Insufficient comparable data';
+  // Positional labels only — the model must never see (or echo) a price verdict.
+  return leasePositionLabel(v);
 }
 
 function ordinalText(n: number): string {

@@ -26,6 +26,7 @@
     "db:seed-cannibalization": "tsx --tsconfig tsconfig.scripts.json prisma/seedCompetitorSets.ts",
     "db:seed-traffic": "tsx --tsconfig tsconfig.scripts.json prisma/seedTrafficCorridors.ts",
     "db:enrich-age": "tsx --tsconfig tsconfig.scripts.json prisma/enrichAgeProfiles.ts",
+    "db:seed-methodology": "tsx --tsconfig tsconfig.scripts.json prisma/seedMethodology.ts",
     "db:seed-all": "npm run db:seed && npm run db:populate:ncr && npm run db:seed-cannibalization && npm run db:seed-traffic && npm run db:enrich-age",
     "db:setup-neon": "prisma migrate deploy && npm run db:seed-all"
   },

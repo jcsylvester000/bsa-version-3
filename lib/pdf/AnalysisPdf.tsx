@@ -12,6 +12,7 @@
 import React from 'react';
 import { Document, Page, Text, View, Image, StyleSheet } from '@react-pdf/renderer';
 import { GRID_LOGO_DATA_URI } from './gridLogo';
+import { BROKER_DISCLAIMER_LONG } from '@/lib/truth/guardrailCopy';
 
 // Grid brand palette (guidelines).
 const C = {
@@ -27,7 +28,7 @@ const C = {
 };
 
 const styles = StyleSheet.create({
-  page: { paddingTop: 42, paddingBottom: 60, paddingHorizontal: 46, fontSize: 10, color: C.ink, fontFamily: 'Helvetica', lineHeight: 1.5 },
+  page: { paddingTop: 42, paddingBottom: 104, paddingHorizontal: 46, fontSize: 10, color: C.ink, fontFamily: 'Helvetica', lineHeight: 1.5 },
   headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
   logo: { width: 128 },
   kicker: { fontSize: 8, letterSpacing: 1.5, color: C.muesli, fontFamily: 'Helvetica-Bold' },
@@ -54,6 +55,8 @@ export interface AnalysisPdfProps {
   confidence?: string | null;
   narrative: string;
   schemaText: string;
+  /** Guardrail-check warning (figures not traceable to the data / price-verdict wording). */
+  checkWarning?: string | null;
 }
 
 function truthColor(t: string): string {
@@ -88,6 +91,11 @@ export function AnalysisPdf(p: AnalysisPdfProps): React.ReactElement {
         {paras.length > 0
           ? paras.map((t, i) => <Text key={i} style={styles.para}>{t}</Text>)
           : <Text style={styles.para}>{p.narrative}</Text>}
+        {p.checkWarning ? (
+          <Text style={[styles.para, { color: C.assumed, fontSize: 9 }]}>
+            Automated check — verify before relying on this text: {p.checkWarning}.
+          </Text>
+        ) : null}
 
         {lines.length > 0 ? (
           <View wrap>
@@ -126,9 +134,7 @@ export function AnalysisPdf(p: AnalysisPdfProps): React.ReactElement {
 
         <View style={styles.footer} fixed>
           <Text style={styles.footerText}>
-            Business Site Analysis (BSA) · Grid Property Ventures. Decision support only — BSA supplements the broker and does not replace them.
-            Verified figures are measured or from official sources; Assumed are stated estimates; Projected are modelled. BIR zonal values are a
-            tax-reference floor, never a market price. This report is not legal or financial advice.
+            Business Site Analysis (BSA) · Grid Property Ventures. {BROKER_DISCLAIMER_LONG}
           </Text>
         </View>
         <Text style={styles.pageNo} fixed render={({ pageNumber, totalPages }) => `${pageNumber} / ${totalPages}`} />

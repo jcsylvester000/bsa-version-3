@@ -89,7 +89,7 @@ export interface TerritoryGuardResult {
   mapCompetitors: Array<{ name: string; lat: number; lon: number; tier: RelevanceTier; category: string }>;
   /** Per-field Truth Layer, carried into the module_result payload and the AI context. */
   truth: {
-    overlapPct: TruthLayer;            // own-outlet overlap — Verified (from coordinates)
+    overlapPct: TruthLayer;            // own-outlet overlap — weakest truth of the outlets used
     competitiveSaturation: TruthLayer; // competitor-set saturation — Projected (modelled)
     cannibalizedPhp: TruthLayer;
   };
@@ -105,6 +105,7 @@ interface OutletRow {
   lat: number;
   lon: number;
   monthly_sales_php: number | null;
+  truth_layer: TruthLayer;
   dist_m: number;
 }
 
@@ -247,6 +248,7 @@ export async function runTerritoryGuard(
   const rows = await prisma.$queryRaw<OutletRow[]>`
     SELECT o.id, o.outlet_name, o.format, o.lat, o.lon,
            o.monthly_sales_php::float8 AS monthly_sales_php,
+           o.truth_layer::text AS truth_layer,
            ST_Distance(
              o.geom,
              ST_SetSRID(ST_MakePoint(${site.lon}, ${site.lat}), 4326)::geography
@@ -425,7 +427,12 @@ export async function runTerritoryGuard(
     realCompetitors,
     mapCompetitors,
     truth: {
-      overlapPct: 'verified',            // own-branch overlap, from coordinates
+      // Own-branch overlap is exact geometry, but only as trustworthy as the outlet
+      // coordinates it uses (typed-in / ingested outlets are Assumed). No recorded outlet in
+      // range = the record itself shows no overlap → Verified.
+      overlapPct: rows.length === 0 ? 'verified'
+        : rows.some((r) => r.truth_layer === 'projected') ? 'projected'
+        : rows.some((r) => r.truth_layer === 'assumed') ? 'assumed' : 'verified',
       competitiveSaturation: 'projected', // modelled market-saturation proxy
       cannibalizedPhp: 'projected',
     },

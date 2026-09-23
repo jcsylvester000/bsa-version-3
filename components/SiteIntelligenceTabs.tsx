@@ -1,5 +1,6 @@
 'use client';
 
+import { LEASE_POSITION_LABEL, ZONAL_FLOOR_NOTE } from '@/lib/truth/guardrailCopy';
 import { useEffect, useRef, useState } from 'react';
 import { TerritoryMap, type MapOutlet } from '@/components/TerritoryMap';
 import { DaypartCurve, type DaypartData } from '@/components/DaypartCurve';
@@ -23,6 +24,8 @@ export interface SiteModulePayloads {
     affectedOutlets?: Array<{ outletName: string; overlapPct: number; distanceM: number }>;
     realCompetitors?: Array<{ name: string; lat: number; lon: number }>;
     mapCompetitors?: Array<{ name: string; lat: number; lon: number; tier?: 'direct' | 'adjacent' | 'unrelated'; category?: string }>;
+    /** Per-field Truth Layer written by the module (e.g. overlapPct: 'assumed'). */
+    truth?: { overlapPct?: string; competitiveSaturation?: string; cannibalizedPhp?: string };
   } | null;
   lease: {
     corridor?: string; sampleSize?: number; baseRentPercentile?: number | null;
@@ -30,6 +33,8 @@ export interface SiteModulePayloads {
     medianPhpSqm?: number | null; p25PhpSqm?: number | null; p75PhpSqm?: number | null;
     verdict?: 'below_market' | 'at_market' | 'above_market' | 'insufficient_data' | 'corridor_benchmark';
     comps?: Array<{ baseRentPhpSqm: number | null }>;
+    truth?: { comps?: string; fairRange?: string; zonalBand?: string };
+    flags?: string[];
   } | null;
   daypart: {
     daytimeShare?: number; windowMatchPct?: number; hourly?: number[]; peakHour?: number;
@@ -77,6 +82,7 @@ export interface SiteModulePayloads {
     model?: string;
     confidence?: 'high' | 'med' | 'low';
     generatedAt?: string;
+    check?: AiCheck | null;
     contextJson?: {
       truthLayerSummary?: { verified: number; assumed: number; projected: number };
       meta?: { overallConfidence?: string; generatedAt?: string; siteLabel?: string } & Record<string, unknown>;
@@ -109,6 +115,18 @@ function Stat({ label, value, sub }: { label: string; value: React.ReactNode; su
     </div>
   );
 }
+
+/** Post-generation guardrail check stored with each AI analysis (lib/ai/outputCheck.ts). */
+type AiCheck = { ungroundedNumbers: string[]; priceVerdictPhrases: string[]; ok: boolean };
+
+type TL = 'Verified' | 'Assumed' | 'Projected';
+/** A payload's per-field truth string → display label (fallback when absent on legacy runs). */
+function tl(v: string | null | undefined, fallback: TL): TL {
+  return v === 'verified' ? 'Verified' : v === 'assumed' ? 'Assumed' : v === 'projected' ? 'Projected' : fallback;
+}
+/** Missing numbers display as "—", never as a fabricated 0. */
+const fmtPct = (v: number | null | undefined): string => (v == null ? '—' : `${v}%`);
+const fmtPeso = (v: number | null | undefined): string => (v == null ? '—' : `₱${Math.round(v).toLocaleString()}`);
 
 function ordinal(n: number): string {
   const s = ['th', 'st', 'nd', 'rd'], v = n % 100;
@@ -261,18 +279,25 @@ function TerritoryTab({ site, outlets, p, primary = true }: { site: { lat: numbe
           )}
         </div>
 
-        {/* Own-branch overlap — Verified from coordinates. 0% for a brand with no outlets. */}
+        {/* Own-branch overlap — exact geometry over the recorded outlets; its Truth Layer is
+            the outlets' own (typed-in branches are Assumed). */}
         <Stat
           label="Own-branch overlap"
-          value={`${p.ownOutletOverlapPct ?? p.maxOverlapPct ?? 0}%`}
-          sub={(p.ownOutletOverlapPct ?? p.maxOverlapPct ?? 0) > 0 ? 'with your nearest branch (Verified)' : 'no own branch in this catchment (Verified)'}
+          value={fmtPct(p.ownOutletOverlapPct ?? p.maxOverlapPct)}
+          sub={
+            (p.ownOutletOverlapPct ?? p.maxOverlapPct) == null
+              ? 'not computed on this run — re-run the analysis'
+              : (p.ownOutletOverlapPct ?? p.maxOverlapPct)! > 0
+                ? `with your nearest branch (${tl(p.truth?.overlapPct, 'Assumed')})`
+                : `no own branch in this catchment (${tl(p.truth?.overlapPct, 'Assumed')})`
+          }
         />
 
         {/* Competitive saturation — the cannibalization-map signal. Projected. This is the
             read that stops a new brand in a saturated corridor from showing a false 0%. */}
         <Stat
           label="Competitive saturation"
-          value={`${p.competitiveSaturationPct ?? 0}%`}
+          value={fmtPct(p.competitiveSaturationPct)}
           sub={
             !tiered
               ? 'competitor tiers not computed on this run — re-run the pipeline (Projected)'
@@ -282,7 +307,7 @@ function TerritoryTab({ site, outlets, p, primary = true }: { site: { lat: numbe
           }
         />
 
-        <Stat label="Est. monthly cannibalization" value={`₱${(p.totalCannibalizedPhp ?? 0).toLocaleString()}`} sub="own-branch model (Projected)" />
+        <Stat label="Est. monthly cannibalization" value={fmtPeso(p.totalCannibalizedPhp)} sub="own-branch model (Projected)" />
 
         {/* Who you compete with — named from the Cannibalization Map. */}
         {p.competitorSet && p.competitorSet.competitors.length > 0 && (
@@ -320,12 +345,13 @@ function TerritoryTab({ site, outlets, p, primary = true }: { site: { lat: numbe
 }
 
 /* ---- Lease -------------------------------------------------------------- */
+// Positional labels only — no price verdicts (Grid guardrail). Shared wording in lib/truth/guardrailCopy.
 const L_VERDICT = {
-  below_market: { label: 'Below market — favourable', tone: 'go' as const },
-  at_market: { label: 'At market', tone: 'caution' as const },
-  above_market: { label: 'Above market — likely overpaying', tone: 'nogo' as const },
-  insufficient_data: { label: 'Insufficient comparable data', tone: 'muted' as const },
-  corridor_benchmark: { label: 'Corridor market benchmark', tone: 'caution' as const },
+  below_market: { label: LEASE_POSITION_LABEL.below_market, tone: 'go' as const },
+  at_market: { label: LEASE_POSITION_LABEL.at_market, tone: 'caution' as const },
+  above_market: { label: LEASE_POSITION_LABEL.above_market, tone: 'caution' as const },
+  insufficient_data: { label: LEASE_POSITION_LABEL.insufficient_data, tone: 'muted' as const },
+  corridor_benchmark: { label: LEASE_POSITION_LABEL.corridor_benchmark, tone: 'caution' as const },
 };
 function LeaseTab({ p, primary = true }: { p: SiteModulePayloads['lease']; primary?: boolean }) {
   const [askingRent, setAskingRent] = useState('');
@@ -363,7 +389,7 @@ function LeaseTab({ p, primary = true }: { p: SiteModulePayloads['lease']; prima
           {v === 'insufficient_data'
             ? `Only ${n} comparable lease${n === 1 ? '' : 's'} in ${p.corridor ?? 'this corridor'} — treat any range as indicative.`
             : v === 'corridor_benchmark'
-              ? `This ran automatically with your analysis: the ${p.corridor ?? 'corridor'} benchmark from ${n} comparable lease${n === 1 ? '' : 's'}. Enter your asking rent below to see instantly where it lands in the spread (at / above / below market).`
+              ? `This ran automatically with your analysis: the ${p.corridor ?? 'corridor'} benchmark from ${n} comparable lease${n === 1 ? '' : 's'}. Enter your asking rent below to see instantly where it sits in the corridor spread (below / within / above the median range).`
               : `Asking rate sits ${p.baseRentPercentile != null ? `at the ${ordinal(p.baseRentPercentile)} percentile` : 'within the range'} of the ${p.corridor ?? 'corridor'} spread across ${n} comps.`}
         </p>
 
@@ -394,14 +420,22 @@ function LeaseTab({ p, primary = true }: { p: SiteModulePayloads['lease']; prima
                 {enteredPct >= 60
                   ? 'Room to negotiate down toward the median.'
                   : enteredPct <= 40
-                    ? 'Below the corridor median — a competitive rate.'
+                    ? 'Below the corridor median.'
                     : 'Right around the corridor median.'}
               </p>
             )}
           </div>
         )}
       </div>
-      <Stat label="Corridor" value={p.corridor ?? '—'} sub={`${n} comparable leases`} />
+      <Stat
+        label="Corridor"
+        value={p.corridor ?? '—'}
+        sub={
+          p.flags?.includes('corridor_default_fallback')
+            ? `No corridor matched this site's location — showing ${p.corridor ?? 'a reference'} comps as a proxy (Projected). Enter the local corridor on the Lease Benchmark tool.`
+            : `${n} comparable leases (${tl(p.truth?.comps, 'Assumed')})`
+        }
+      />
       <Stat label="Base-rent percentile" value={p.baseRentPercentile != null ? ordinal(p.baseRentPercentile) : '—'} sub="within corridor (Assumed)" />
       {p.negotiatingRoomPhpSqm != null && (
         <Stat
@@ -504,7 +538,7 @@ function DaypartTab({ p, primary = true }: { p: SiteModulePayloads['daypart']; p
           <Stat label="Catchment mix" value="Not derived" sub="demographic layer not loaded (Projected)" />
         ) : (
           <>
-        <Stat label="Peak-hour demand captured" value={`${p.windowMatchPct ?? 0}%`} sub="falls inside the format's target window (Projected)" />
+        <Stat label="Peak-hour demand captured" value={fmtPct(p.windowMatchPct)} sub="falls inside the format's target window (Projected)" />
         <Stat label="Catchment mix" value={`${daytimePct}% daytime`} sub={`${residentialPct}% residential · peaks ${officeLed ? '11:00–14:00' : '17:00–20:00'}`} />
           </>
         )}
@@ -767,10 +801,10 @@ function AnalysisTab({
   siteId: string;
 }) {
   const cached = payloads.analysis;
-  type Report = { analysis: string; schemaText?: string; model?: string; confidence?: string; generatedAt?: string };
+  type Report = { analysis: string; schemaText?: string; model?: string; confidence?: string; generatedAt?: string; check?: AiCheck | null };
   const [report, setReport] = useState<Report | null>(
     cached && typeof cached.analysis === 'string' && cached.status !== 'generating'
-      ? { analysis: cached.analysis, schemaText: cached.schemaText, model: cached.model, confidence: cached.confidence, generatedAt: cached.generatedAt }
+      ? { analysis: cached.analysis, schemaText: cached.schemaText, model: cached.model, confidence: cached.confidence, generatedAt: cached.generatedAt, check: cached.check ?? null }
       : null,
   );
   const [loading, setLoading] = useState(false);
@@ -782,7 +816,7 @@ function AnalysisTab({
   const pollTries = useRef(0);
 
   function applyReport(r: Report) {
-    setReport({ analysis: r.analysis, schemaText: r.schemaText, model: r.model, confidence: r.confidence, generatedAt: r.generatedAt });
+    setReport({ analysis: r.analysis, schemaText: r.schemaText, model: r.model, confidence: r.confidence, generatedAt: r.generatedAt, check: r.check ?? null });
     setShowSchema(false);
   }
 
@@ -845,7 +879,7 @@ function AnalysisTab({
   // Territory read (carried from the Territory Guard tab).
   const tVerdict = t?.verdict ?? 'mixed';
   const tMix = t?.competitorMix;
-  const tOwn = t?.ownOutletOverlapPct ?? t?.maxOverlapPct ?? 0;
+  const tOwn = t?.ownOutletOverlapPct ?? t?.maxOverlapPct ?? null;
 
   // Lease read (carried from the Lease Benchmark tab).
   const lV = (l?.verdict ?? 'insufficient_data') as keyof typeof L_VERDICT;
@@ -854,9 +888,9 @@ function AnalysisTab({
   // Daypart read (carried from the Daypart Demand tab). Verdict band from the already-computed
   // window-match figure — a display threshold, not a new calculation.
   const dNoData = d?.noCatchmentData === true;
-  const dWindow = d?.windowMatchPct ?? 0;
-  const dTone: 'go' | 'caution' | 'nogo' = dWindow >= 60 ? 'go' : dWindow >= 40 ? 'caution' : 'nogo';
-  const dLabel = dWindow >= 60 ? 'Strong window match' : dWindow >= 40 ? 'Partial window match' : 'Weak window match';
+  const dWindow = d?.windowMatchPct ?? null;
+  const dTone: 'go' | 'caution' | 'nogo' | 'muted' = dWindow == null ? 'muted' : dWindow >= 60 ? 'go' : dWindow >= 40 ? 'caution' : 'nogo';
+  const dLabel = dWindow == null ? 'Not derived' : dWindow >= 60 ? 'Strong window match' : dWindow >= 40 ? 'Partial window match' : 'Weak window match';
   const dShare = d?.daytimeShare ?? 50;
   const dOfficeLed = dShare >= 50;
 
@@ -923,6 +957,23 @@ function AnalysisTab({
               <div className="space-y-3 text-[15px] leading-relaxed text-ink-text">
                 {paras.length ? paras.map((para, i) => <p key={i}>{para}</p>) : <p>{report.analysis}</p>}
               </div>
+              {report.check && !report.check.ok && (
+                <div className="mt-3 rounded-lg border-l-4 border-caution bg-caution/10 px-4 py-2.5 text-sm text-ink-text">
+                  <p className="font-medium">Check before sharing</p>
+                  {report.check.ungroundedNumbers.length > 0 && (
+                    <p className="mt-1 text-ink-muted">
+                      These figures could not be matched to the site data: <span className="text-ink-text">{report.check.ungroundedNumbers.join(', ')}</span>.
+                      Verify them against the sections below, or regenerate.
+                    </p>
+                  )}
+                  {report.check.priceVerdictPhrases.length > 0 && (
+                    <p className="mt-1 text-ink-muted">
+                      Contains price-verdict wording (<span className="text-ink-text">{report.check.priceVerdictPhrases.join(', ')}</span>) — BSA positions rents
+                      against the corridor; the price judgement is the broker&apos;s. Edit before sharing, or regenerate.
+                    </p>
+                  )}
+                </div>
+              )}
               <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-ink-muted">
                 {report.confidence && <Chip tone={report.confidence === 'high' ? 'go' : report.confidence === 'low' ? 'muted' : 'caution'}>Confidence: {report.confidence}</Chip>}
                 <span>{report.model === 'mock-analysis-v1' ? 'Mock analysis (preview)' : report.model}</span>
@@ -963,20 +1014,20 @@ function AnalysisTab({
             {t.headlineSource === 'competitive' && (
               <p className="mb-2 text-xs text-ink-muted">Driven by competitive saturation, not your own branches.</p>
             )}
-            <ReportRow label="Own-branch overlap" value={`${tOwn}%`} truth="Verified" />
+            <ReportRow label="Own-branch overlap" value={fmtPct(tOwn)} truth={tl(t.truth?.overlapPct, 'Assumed')} />
             <ReportRow
               label="Competitive saturation"
-              value={tMix ? `${t.competitiveSaturationPct ?? 0}% · ${tMix.direct} direct + ${tMix.adjacent} adjacent` : `${t.competitiveSaturationPct ?? 0}%`}
-              truth="Projected"
+              value={tMix ? `${fmtPct(t.competitiveSaturationPct)} · ${tMix.direct} direct + ${tMix.adjacent} adjacent` : fmtPct(t.competitiveSaturationPct)}
+              truth={tl(t.truth?.competitiveSaturation, 'Projected')}
             />
-            <ReportRow label="Est. monthly cannibalization" value={`₱${(t.totalCannibalizedPhp ?? 0).toLocaleString()}`} truth="Projected" />
+            <ReportRow label="Est. monthly cannibalization" value={fmtPeso(t.totalCannibalizedPhp)} truth={tl(t.truth?.cannibalizedPhp, 'Projected')} />
             {t.competitorSet?.competitors?.length ? (
               <ReportRow label="Competes with" value={t.competitorSet.competitors.slice(0, 5).join(', ')} />
             ) : null}
             <ReportRow
               label="Affected own outlets"
               value={(t.affectedOutlets?.length ?? 0) === 0 ? 'None in this catchment' : `${t.affectedOutlets!.length}`}
-              truth="Verified"
+              truth={tl(t.truth?.overlapPct, 'Assumed')}
             />
           </div>
         )}
@@ -994,7 +1045,7 @@ function AnalysisTab({
         {l && (
           <div>
             <ReportRow label="Corridor" value={l.corridor ?? '—'} />
-            <ReportRow label="Comparable leases" value={`${l.sampleSize ?? l.comps?.length ?? 0}`} truth="Verified" />
+            <ReportRow label="Comparable leases" value={`${l.sampleSize ?? l.comps?.length ?? 0}`} truth={tl(l.truth?.comps, 'Assumed')} />
             <ReportRow
               label="Base-rent percentile"
               value={l.baseRentPercentile != null ? ordinal(l.baseRentPercentile) : '—'}
@@ -1009,9 +1060,9 @@ function AnalysisTab({
             )}
             {lZonal?.band && (
               <ReportRow
-                label="BIR zonal band"
+                label="BIR zonal band (tax-reference floor)"
                 value={
-                  `${lZonal.band.classification ?? 'CR'} · ₱${(lZonal.band.lowPhpSqm ?? 0).toLocaleString()}–₱${(lZonal.band.highPhpSqm ?? 0).toLocaleString()}/sqm` +
+                  `${lZonal.band.classification ?? 'CR'} · ${fmtPeso(lZonal.band.lowPhpSqm)}–${fmtPeso(lZonal.band.highPhpSqm)}/sqm` +
                   (lZonal.crossCheck?.position ? ` · ${lZonal.crossCheck.position.replace(/_/g, ' ')}` : '') +
                   (lZonal.usedAsFallback ? ' · used as fallback anchor' : '')
                 }
@@ -1033,7 +1084,7 @@ function AnalysisTab({
       >
         {d && (
           <div>
-            <ReportRow label="Peak-hour demand captured" value={`${dWindow}%`} truth="Projected" />
+            <ReportRow label="Peak-hour demand captured" value={fmtPct(dWindow)} truth="Projected" />
             <ReportRow
               label="Catchment mix"
               value={dNoData ? 'Not derived (demographic layer not loaded)' : `${Math.round(dShare * 10) / 10}% daytime · ${Math.round((100 - dShare) * 10) / 10}% residential`}
@@ -1089,7 +1140,7 @@ function AnalysisTab({
 
       <p className="px-1 text-[11px] text-ink-muted">
         The sections below are a straight consolidation of the four tabs; the written analysis above phrases only these figures.
-        BSA supplements the broker; it does not replace them.
+        {' '}{ZONAL_FLOOR_NOTE}
       </p>
     </div>
   );

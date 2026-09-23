@@ -1,5 +1,6 @@
 'use client';
 
+import { LEASE_POSITION_LABEL, LEASE_POSITION_EXPLAINER } from '@/lib/truth/guardrailCopy';
 import { useState } from 'react';
 import { LeaseDistributionChart } from '@/components/LeaseDistributionChart';
 import { TruthChip } from '@/components/TruthChip';
@@ -53,11 +54,12 @@ interface LeaseResult {
 }
 
 const VERDICT_META: Record<string, { label: string; cls: string }> = {
-  below_market: { label: 'Below market — favourable', cls: 'text-go' },
-  at_market: { label: 'At market', cls: 'text-accent' },
-  above_market: { label: 'Above market — likely overpaying', cls: 'text-nogo' },
-  insufficient_data: { label: 'Insufficient comparable data', cls: 'text-ink-muted' },
-  corridor_benchmark: { label: 'Corridor market benchmark', cls: 'text-accent' },
+  // Positional labels only — no price verdicts (Grid guardrail).
+  below_market: { label: LEASE_POSITION_LABEL.below_market, cls: 'text-go' },
+  at_market: { label: LEASE_POSITION_LABEL.at_market, cls: 'text-accent' },
+  above_market: { label: LEASE_POSITION_LABEL.above_market, cls: 'text-caution' },
+  insufficient_data: { label: LEASE_POSITION_LABEL.insufficient_data, cls: 'text-ink-muted' },
+  corridor_benchmark: { label: LEASE_POSITION_LABEL.corridor_benchmark, cls: 'text-accent' },
 };
 
 /**
@@ -73,7 +75,7 @@ function leaseSummary(r: LeaseResult): string {
   }
   const pct = r.baseRentPercentile != null ? `${ordinal(r.baseRentPercentile)} percentile of the ${r.corridor} spread` : `within the ${r.corridor} spread`;
   const room = r.negotiatingRoomPhpSqm != null && r.negotiatingRoomPct != null
-    ? ` ${r.negotiatingRoomPhpSqm > 0 ? `₱${Math.abs(r.negotiatingRoomPhpSqm).toLocaleString()}/sqm (${Math.abs(r.negotiatingRoomPct)}%) above the median — room to negotiate down` : r.negotiatingRoomPhpSqm < 0 ? `₱${Math.abs(r.negotiatingRoomPhpSqm).toLocaleString()}/sqm below the median — a favourable rate` : 'right at the median'}.`
+    ? ` ${r.negotiatingRoomPhpSqm > 0 ? `₱${Math.abs(r.negotiatingRoomPhpSqm).toLocaleString()}/sqm (${Math.abs(r.negotiatingRoomPct)}%) above the median — room to negotiate down` : r.negotiatingRoomPhpSqm < 0 ? `₱${Math.abs(r.negotiatingRoomPhpSqm).toLocaleString()}/sqm below the median` : 'right at the median'}.`
     : '.';
   const head = r.verdict === 'above_market' ? 'Asking rate is above market' : r.verdict === 'below_market' ? 'Asking rate is below market' : 'Asking rate is at market';
   return `${head} — ${pct} across ${r.sampleSize} comps.${room}`;
@@ -316,7 +318,7 @@ export function LeaseBenchmarkView({
           {/* verdict + stats */}
           <div className="lg:col-span-2 space-y-4">
             <div className="card p-5">
-              <p className="inline-flex items-center gap-1.5 text-xs uppercase tracking-wide text-ink-muted">Verdict <InfoHint text="Percentile shows where this asking rent sits versus comparable leases in the same corridor. High percentile = you're likely overpaying, with room to negotiate down toward the median. Low = the rent is competitive for the area." /></p>
+              <p className="inline-flex items-center gap-1.5 text-xs uppercase tracking-wide text-ink-muted">Position vs corridor <InfoHint text={LEASE_POSITION_EXPLAINER} /></p>
               <p className={`mt-1 text-xl font-bold ${VERDICT_META[result.verdict].cls}`}>
                 {VERDICT_META[result.verdict].label}
               </p>

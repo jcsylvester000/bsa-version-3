@@ -104,7 +104,9 @@ export function scoreDaypart(input: DaypartInput): DaypartResult {
   let windowMatchPct: number;
   if (input.targetWindow === 'day') windowMatchPct = daytimeShare;
   else if (input.targetWindow === 'evening') windowMatchPct = Math.round((100 - daytimeShare) * 10) / 10;
-  else windowMatchPct = 100 - Math.abs(50 - daytimeShare); // allday best when balanced
+  // All-day formats want a balanced catchment: 100 at a 50/50 mix, 0 when fully one-sided.
+  // (Was 100 − |50 − share|, which could never fall below 50 → never 'mismatched'.)
+  else windowMatchPct = Math.round((100 - 2 * Math.abs(50 - daytimeShare)) * 10) / 10;
   windowMatchPct = Math.max(0, Math.min(100, windowMatchPct));
   const verdict = windowMatchPct >= 60 ? 'well_matched' : windowMatchPct >= 40 ? 'partial' : 'mismatched';
   const hourly = daypartCurve(daytimeShare);

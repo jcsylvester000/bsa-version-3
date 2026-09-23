@@ -147,7 +147,7 @@ async function runPipelineSlice(runId: string, opts: { refresh?: boolean }): Pro
     // Cache-through: warms this area from OSM on a miss, then counts from the DB.
     let conceptCompetitorCount: number | undefined;
     try {
-      const comps = await competitorsNear(site.lat, site.lon, run.vertical, conceptText, { radiusM: 800, max: 20 });
+      const comps = await competitorsNear(site.lat, site.lon, run.vertical, conceptText, { radiusM: 800, max: 40 });
       conceptCompetitorCount = comps.length;
     } catch { conceptCompetitorCount = undefined; }
 
@@ -172,13 +172,20 @@ async function runPipelineSlice(runId: string, opts: { refresh?: boolean }): Pro
     // until the user enters an asking rent on the Lease tab).
     if (modules.includes('lease')) {
       await attempt('lease', async () => {
-        const corridor = inferCorridor(site.city, site.label) ?? DEFAULT_LEASE_CORRIDOR;
+        const inferred = inferCorridor(site.city, site.label);
+        const corridor = inferred ?? DEFAULT_LEASE_CORRIDOR;
         const lease = await runLeaseBenchmark({ candidateSiteId: site.id, format: site.siteType ?? 'inline', corridor, siteTerms: {} });
+        if (!inferred) {
+          // Never silent: the comps come from a DIFFERENT area than the site, so the read is a
+          // proxy (Projected) and the UI/AI say so.
+          lease.flags.push('corridor_default_fallback');
+          lease.moduleTruthLayer = 'projected';
+        }
         await persistLeaseResult(runId, lease);
       });
     }
     if (modules.includes('daypart')) await attempt('daypart', () => runDaypart(runId, site.id, run.vertical));
-    if (expectedModules.includes('informal')) await attempt('informal', () => runInformal(runId, site.id, run.vertical, units));
+    if (expectedModules.includes('informal')) await attempt('informal', () => runInformal(runId, site.id, run.vertical, units, conceptCompetitorCount));
     if (modules.includes('healthcare')) await attempt('healthcare', () => runHealthcare(runId, site.id));
     if (modules.includes('mall')) await attempt('mall', () => runMall(runId, site.id, targetMallTier));
     if (modules.includes('whitespace')) {

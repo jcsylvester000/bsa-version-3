@@ -204,9 +204,19 @@ export async function runLeaseBenchmark(input: LeaseBenchmarkInput): Promise<Lea
       sampleSource: c.sampleSource,
     })),
     zonal,
-    truth: { comps: 'verified', fairRange, zonalBand: zonalBandTruth },
+    // Comps are labelled by their WEAKEST row (lease.real.json: 21 Verified / 59 Assumed) —
+    // never a blanket "Verified".
+    truth: { comps: weakestLayer(compRows.map((c) => c.truthLayer as TruthLayer)), fairRange, zonalBand: zonalBandTruth },
     moduleTruthLayer,
   };
+}
+
+/** Weakest Truth Layer in a set (empty → Assumed: nothing to vouch for). */
+function weakestLayer(layers: TruthLayer[]): TruthLayer {
+  if (layers.length === 0) return 'assumed';
+  if (layers.includes('projected')) return 'projected';
+  if (layers.includes('assumed')) return 'assumed';
+  return 'verified';
 }
 
 /** Persist a Lease Benchmark result as a module_result row (idempotent per site×module).
