@@ -46,8 +46,8 @@ export default async function RunsPage({ searchParams }: { searchParams: { runId
     });
     if (run && session && canAccessRun(session, run)) {
       const rows = await prisma.moduleResult.findMany({
-        where: { pipelineRunId: runId },
-        include: { site: { select: { id: true, label: true, city: true, compositeScore: true, verdict: true } } },
+        where: { pipelineRunId: runId, module: { not: 'analysis' } },
+        include: { site: { select: { id: true, label: true, city: true, compositeScore: true, verdict: true, pipelineError: true } } },
       });
       const lite: ModuleResultLite[] = rows.map((r) => ({
         module: r.module,
@@ -59,9 +59,10 @@ export default async function RunsPage({ searchParams }: { searchParams: { runId
           id: r.site.id, label: r.site.label, city: r.site.city,
           composite: r.site.compositeScore != null ? Number(r.site.compositeScore) : null,
           verdict: r.site.verdict,
+          pipelineError: r.site.pipelineError,
         },
       }));
-      const dash = buildDashboard(lite);
+      const dash = buildDashboard(lite, { runConfidence: run.confidence ?? null });
       return (
         <>
           <RunDashboard

@@ -14,7 +14,7 @@
  *   VECTORSHIFT_PIPELINE_ID — pipeline id, e.g. 6a8e89b52ac88a5957edcb26 (required)
  *   VECTORSHIFT_INPUT_KEY   — Input node variable name (default: BSA_v3_analsysis_page_intake)
  *   VECTORSHIFT_OUTPUT_KEY  — Output node name (default: Bsav3_Ai_analysis)
- *   VECTORSHIFT_TIMEOUT_MS  — per-call timeout (default: 45000)
+ *   VECTORSHIFT_TIMEOUT_MS  — per-call timeout (default: 24000 — keep under the host function limit)
  */
 import 'server-only';
 
@@ -29,21 +29,37 @@ export interface VectorShiftResult {
 
 const DEFAULT_INPUT_KEY = 'BSA_v3_analsysis_page_intake';
 const DEFAULT_OUTPUT_KEY = 'Bsav3_Ai_analysis';
+/** Must stay under the hosting function limit (Netlify sync functions: 26s max, see
+ *  app/api/analysis-report/route.ts). Override with VECTORSHIFT_TIMEOUT_MS. */
+const DEFAULT_TIMEOUT_MS = 24_000;
 
-/** Run the VectorShift pipeline for one schema. Throws on missing config or a failed run. */
+/**
+ * A generation failure with a short machine `code` (logged to pipeline_usage) and a
+ * detail string for SERVER LOGS ONLY. Never forward `detail` to the client — it can contain
+ * the provider's raw response body.
+ */
+export class AiGenerationError extends Error {
+  constructor(public code: string, public detail: string) {
+    super(`AI generation failed (${code})`);
+    this.name = 'AiGenerationError';
+  }
+}
+
+/** Run the VectorShift pipeline for one schema. Throws AiGenerationError on any failure. */
 export async function generateViaVectorShift(schemaText: string): Promise<VectorShiftResult> {
   const apiKey = process.env.VECTORSHIFT_API_KEY;
   const pipelineId = process.env.VECTORSHIFT_PIPELINE_ID;
-  if (!apiKey) throw new Error('VECTORSHIFT_API_KEY is not set.');
-  if (!pipelineId) throw new Error('VECTORSHIFT_PIPELINE_ID is not set.');
+  if (!apiKey) throw new AiGenerationError('config_missing_key', 'VECTORSHIFT_API_KEY is not set.');
+  if (!pipelineId) throw new AiGenerationError('config_missing_pipeline', 'VECTORSHIFT_PIPELINE_ID is not set.');
 
   const inputKey = process.env.VECTORSHIFT_INPUT_KEY || DEFAULT_INPUT_KEY;
   const outputKey = process.env.VECTORSHIFT_OUTPUT_KEY || DEFAULT_OUTPUT_KEY;
-  const timeoutMs = Number(process.env.VECTORSHIFT_TIMEOUT_MS ?? 45000);
-  const url = `https://api.vectorshift.ai/v1/pipeline/${pipelineId}/run`;
+  const envTimeout = Number(process.env.VECTORSHIFT_TIMEOUT_MS);
+  const timeoutMs = Number.isFinite(envTimeout) && envTimeout > 0 ? envTimeout : DEFAULT_TIMEOUT_MS;
+  const url = `https://api.vectorshift.ai/v1/pipeline/${encodeURIComponent(pipelineId)}/run`;
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), Number.isFinite(timeoutMs) ? timeoutMs : 45000);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     // A string input goes as JSON. (If this pipeline requires multipart/form-data instead,
     // switch to: const fd = new FormData(); fd.append('inputs', JSON.stringify({ [inputKey]: schemaText }));
@@ -61,27 +77,29 @@ export async function generateViaVectorShift(schemaText: string): Promise<Vector
 
     if (!res.ok) {
       const body = await res.text().catch(() => '');
-      throw new Error(`VectorShift run failed (HTTP ${res.status}): ${body.slice(0, 400)}`);
+      throw new AiGenerationError(`http_${res.status}`, `VectorShift HTTP ${res.status}: ${body.slice(0, 400)}`);
     }
 
-    const data = (await res.json()) as {
+    const data = (await res.json().catch(() => null)) as {
       status?: string;
       run_id?: string;
       outputs?: Record<string, unknown> | null;
-    };
+    } | null;
+    if (!data) throw new AiGenerationError('bad_json', 'VectorShift returned a non-JSON body.');
 
     const outputs = data.outputs ?? {};
     const text = normalizeOutput(outputs[outputKey]);
     if (!text) {
-      throw new Error(`VectorShift returned no "${outputKey}" text (keys: ${Object.keys(outputs).join(', ') || 'none'}).`);
+      throw new AiGenerationError('empty_output', `No "${outputKey}" text (keys: ${Object.keys(outputs).join(', ') || 'none'}).`);
     }
     const cost = outputs.cost != null ? String(outputs.cost) : null;
     return { text, cost, vsRunId: data.run_id ?? null };
   } catch (e) {
+    if (e instanceof AiGenerationError) throw e;
     if (e instanceof Error && e.name === 'AbortError') {
-      throw new Error(`VectorShift run timed out after ${timeoutMs}ms.`);
+      throw new AiGenerationError('timeout', `VectorShift run timed out after ${timeoutMs}ms.`);
     }
-    throw e;
+    throw new AiGenerationError('network', e instanceof Error ? e.message : String(e));
   } finally {
     clearTimeout(timer);
   }

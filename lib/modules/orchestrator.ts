@@ -2,17 +2,27 @@
  * Pipeline run orchestrator — sequences the deterministic modules for a run.
  *
  * This is the "Run pipeline" step: for each candidate site, run the modules the
- * vertical activates (site_fit + territory + lease always; others per vertical),
- * write module_results, update the candidate's composite score + verdict, then set
- * run status and confidence from the Truth Layer mix. AI is NOT involved here — the
- * report composer phrases later, from these results.
+ * vertical activates (site_fit + territory + lease + daypart + whitespace always; others
+ * per vertical), write module_results, update the candidate's composite score + verdict,
+ * then set run status and evidence confidence. AI is NOT involved here — the Analysis
+ * Report is generated per site afterwards (POST /api/analysis-report).
+ *
+ * Batch 3 integrity rules:
+ *  - A site is DONE only when `candidate_site.analyzed_at` is set (after every module was
+ *    attempted). Resume = process sites where it is NULL. (Before, any single module row
+ *    marked a site done, so a killed invocation left it half-analysed forever.)
+ *  - Each module is isolated: one failing module is recorded in `pipeline_error` and the
+ *    others still run. No sentinel rows overwrite real results.
+ *  - An unexpected failure outside a site marks the run `failed` (never stuck `analyzing`).
+ *  - `refresh: true` clears the markers so a finished run is fully recomputed (e.g. after
+ *    reference data is updated).
  *
  * Runs modules sequentially per site (safe under the Neon HTTP adapter — no deep
  * nested writes).
  */
 import 'server-only';
 import { prisma } from '@/lib/db/prisma';
-import { rollUpConfidence, type TruthLayer, type Confidence } from '@/lib/truth/truthLayer';
+import type { TruthLayer, Confidence } from '@/lib/truth/truthLayer';
 import { modulesForVertical } from './verticalConfig';
 import { runSiteFit, persistSiteFit } from './siteFit';
 import { runTerritoryGuard, persistTerritoryResult } from './territoryGuard';
@@ -20,7 +30,8 @@ import { runLeaseBenchmark, persistLeaseResult } from './leaseBenchmark';
 import { inferCorridor } from './leaseMath';
 import { runDaypart, runInformal, runHealthcare, runMall, runWhiteSpace, runLand } from './p2p3Modules';
 import { competitorsNear } from '@/lib/places/poiCache';
-import { siteCompositeFromModules, type ModuleScore } from './scorecard';
+import { siteEvidenceScore, runEvidenceConfidence } from './scorecard';
+import { recomputeSiteComposite } from './scorecardServer';
 import type { ModuleKind } from '@prisma/client';
 
 export interface RunResult {
@@ -33,7 +44,7 @@ export interface RunResult {
   remaining: number;
   modulesRun: ModuleKind[];
   siteCount: number;
-  perSite: Array<{ siteId: string; label: string; composite: number | null; verdict: string | null }>;
+  perSite: Array<{ siteId: string; label: string; composite: number | null; verdict: string | null; error?: string | null }>;
 }
 
 /**
@@ -43,15 +54,33 @@ export interface RunResult {
  */
 const DEFAULT_LEASE_CORRIDOR = 'Quezon City';
 
+/** Wall-clock budget per invocation (serverless-safe); checked between sites. */
+const PIPELINE_BUDGET_MS = 5500;
+
 /**
- * Execute the pipeline for a run. Idempotent: module_results upsert per (site,module),
- * so re-running refreshes rather than duplicates.
+ * Execute one time-boxed slice of the pipeline for a run. Call repeatedly until
+ * `complete`. Module rows upsert per (site, module), so re-running refreshes rather
+ * than duplicates.
  */
-export async function runPipeline(runId: string): Promise<RunResult> {
+export async function runPipeline(runId: string, opts: { refresh?: boolean } = {}): Promise<RunResult> {
+  try {
+    return await runPipelineSlice(runId, opts);
+  } catch (err) {
+    // Anything outside the per-site isolation (DB outage, bad run) → the run is FAILED,
+    // not left looking "analyzing" forever. The client can retry (refresh or resume).
+    console.error(`[pipeline] run ${runId} failed:`, err);
+    await prisma.pipelineRun
+      .update({ where: { id: runId }, data: { status: 'failed', finishedAt: new Date() } })
+      .catch(() => undefined);
+    throw err;
+  }
+}
+
+async function runPipelineSlice(runId: string, opts: { refresh?: boolean }): Promise<RunResult> {
   const run = await prisma.pipelineRun.findUniqueOrThrow({
     where: { id: runId },
     include: {
-      sites: { select: { id: true, label: true, siteType: true, city: true, lat: true, lon: true } },
+      sites: { select: { id: true, label: true, siteType: true, city: true, lat: true, lon: true, analyzedAt: true } },
       franchisor: { select: { brandName: true, subCategory: true } },
       intake: { select: { sectionA: true, sectionH: true, sectionI: true, sectionJ: true } },
     },
@@ -71,30 +100,28 @@ export async function runPipeline(runId: string): Promise<RunResult> {
   ].filter(Boolean).join(' ');
 
   const modules = modulesForVertical(run.vertical);
-  const allLayers: TruthLayer[] = [];
-  let onGroundFlagged = false;
+  // Informal also runs for any per-unit format that supplied a unit count.
+  const expectedModules: ModuleKind[] = units != null && !modules.includes('informal') ? [...modules, 'informal'] : modules;
 
-  const PIPELINE_BUDGET_MS = 5500;
-  const pipelineStart = Date.now();
+  // Refresh = recompute a finished run from scratch (keeps old rows until overwritten).
+  if (opts.refresh) {
+    await prisma.candidateSite.updateMany({
+      where: { pipelineRunId: runId },
+      data: { analyzedAt: null, pipelineError: null },
+    });
+    // Cached AI write-ups describe the OLD figures — drop them so they're regenerated.
+    await prisma.moduleResult.deleteMany({ where: { pipelineRunId: runId, module: 'analysis' } });
+    for (const s of run.sites) s.analyzedAt = null;
+  }
 
-  // Resumable batch (serverless-safe): process only sites that have no
-  // module_results yet, and stop once we're over the wall-clock budget. The
-  // client re-invokes this route until `complete` — so a run with more sites
-  // than fit in one function invocation still analyzes EVERY site instead of
-  // timing out after ~2 heavy sites.
-  const doneBeforeRows = await prisma.moduleResult.findMany({
-    where: { pipelineRunId: runId },
-    select: { candidateSiteId: true },
-    distinct: ['candidateSiteId'],
-  });
-  const doneBefore = new Set(doneBeforeRows.map((r) => r.candidateSiteId));
-  const pending = run.sites.filter((s) => !doneBefore.has(s.id));
-
+  const pending = run.sites.filter((s) => s.analyzedAt == null);
+  const startedFresh = pending.length === run.sites.length;
   await prisma.pipelineRun.update({
     where: { id: runId },
-    data: { status: 'analyzing', ...(doneBefore.size === 0 ? { startedAt: new Date() } : {}) },
+    data: { status: 'analyzing', ...(startedFresh ? { startedAt: new Date(), finishedAt: null } : {}) },
   });
 
+  const pipelineStart = Date.now();
   const perSite: RunResult['perSite'] = [];
   let processedThisCall = 0;
 
@@ -104,194 +131,133 @@ export async function runPipeline(runId: string): Promise<RunResult> {
     if (processedThisCall > 0 && Date.now() - pipelineStart > PIPELINE_BUDGET_MS) break;
     processedThisCall++;
 
-    try {
-      // Concept-aware competitor count within the site-fit competition radius (800 m),
-      // so the competition pillar reflects only genuine same-concept competitors.
-      // Cache-through: warms this area from OSM on a miss (free, shared across all users),
-      // then counts from the DB — so the competition pillar always has real data, not just
-      // when a paid Places key is present.
-      let conceptCompetitorCount: number | undefined;
+    const errors: string[] = [];
+    /** Run one module in isolation: a failure is recorded, the remaining modules still run. */
+    const attempt = async (name: string, fn: () => Promise<unknown>) => {
       try {
-        const comps = await competitorsNear(site.lat, site.lon, run.vertical, conceptText, { radiusM: 800, max: 20 });
-        conceptCompetitorCount = comps.length;
-      } catch { conceptCompetitorCount = undefined; }
+        await fn();
+      } catch (err) {
+        const msg = String((err as { message?: string })?.message ?? err).slice(0, 200);
+        console.error(`[pipeline] run=${runId} site=${site.id} module=${name}:`, msg);
+        errors.push(`${name}: ${msg}`);
+      }
+    };
 
-      // --- site_fit (also sets the candidate composite/verdict) --------------
-      if (modules.includes('site_fit')) {
+    // Concept-aware competitor count within the site-fit competition radius (800 m).
+    // Cache-through: warms this area from OSM on a miss, then counts from the DB.
+    let conceptCompetitorCount: number | undefined;
+    try {
+      const comps = await competitorsNear(site.lat, site.lon, run.vertical, conceptText, { radiusM: 800, max: 20 });
+      conceptCompetitorCount = comps.length;
+    } catch { conceptCompetitorCount = undefined; }
+
+    if (modules.includes('site_fit')) {
+      await attempt('site_fit', async () => {
         const fit = await runSiteFit(site.id, conceptCompetitorCount);
         await persistSiteFit(runId, site.id, fit);
-        allLayers.push(fit.truthLayer);
-        await prisma.candidateSite.update({
-          where: { id: site.id },
-          data: {
-            compositeScore: fit.composite ?? undefined,
-            verdict: fit.verdict === 'insufficient' ? undefined : (fit.verdict as 'go' | 'caution' | 'nogo'),
-          },
-        });
-        perSite.push({ siteId: site.id, label: site.label, composite: fit.composite, verdict: fit.verdict });
-      }
-
-      // --- territory ---------------------------------------------------------
-      if (modules.includes('territory')) {
-        const terr = await runTerritoryGuard(site.id, run.franchisorId, run.exclusivityRadiusM, run.vertical, conceptText, run.franchisor?.brandName ?? undefined);
-        await persistTerritoryResult(runId, terr);
-        allLayers.push(terr.moduleTruthLayer);
-        if (terr.flags.some((f) => f.includes('cannibalization'))) onGroundFlagged = onGroundFlagged || false;
-      }
-
-      // --- lease (ALWAYS produces a result) ----------------------------------
-      // Lease is a core module: every intake must yield a Lease Benchmark. We infer the
-      // corridor from the site city/label; when nothing matches (missing/foreign city),
-      // fall back to a central NCR corridor that has comps so the module still returns an
-      // honest corridor benchmark instead of silently producing nothing. The benchmark's
-      // own verdict (corridor_benchmark / insufficient_data) already carries the caveat.
-      if (modules.includes('lease')) {
-        const corridor = inferCorridor(site.city, site.label) ?? DEFAULT_LEASE_CORRIDOR;
-        const lease = await runLeaseBenchmark({
-          candidateSiteId: site.id,
-          format: site.siteType ?? 'inline',
-          corridor,
-          siteTerms: {}, // no asking terms at pipeline time; benchmark yields the corridor read
-        });
-        await persistLeaseResult(runId, lease);
-        allLayers.push(lease.moduleTruthLayer);
-        if (lease.flags.includes('secondary_terms_over_market')) onGroundFlagged = true;
-      }
-
-      // --- P2/P3 modules (vertical-activated) --------------------------------
-      if (modules.includes('daypart')) { await runDaypart(runId, site.id, run.vertical); allLayers.push('projected'); }
-      // Informal runs for its listed verticals, AND for any per-unit format that supplied
-      // a units count (e.g. a water-refilling station filed under convenience) so the
-      // pop-per-unit / breakeven read is produced wherever it's meaningful.
-      if (modules.includes('informal') || units != null) {
-        await runInformal(runId, site.id, run.vertical, units);
-        allLayers.push('assumed');
-        onGroundFlagged = true; // informal capture always advises the on-ground check honesty flag
-      }
-      if (modules.includes('healthcare')) { await runHealthcare(runId, site.id); allLayers.push('projected'); }
-      if (modules.includes('mall')) { await runMall(runId, site.id, targetMallTier); allLayers.push('assumed'); }
-      if (modules.includes('whitespace')) { await runWhiteSpace(runId, site.id, run.franchisorId, run.vertical, conceptText, run.franchisor?.brandName ?? undefined); allLayers.push('projected'); }
-      if (modules.includes('land')) { await runLand(runId, site.id, run.vertical, parcel); allLayers.push('assumed'); }
-
-      // --- Reconcile the stored site composite with ALL modules --------------
-      // site_fit set a provisional composite above, but that read ignores territory
-      // cannibalization, lease, daypart, etc. Recompute the stored composite/verdict
-      // from every module that ran (the SAME weighted math the scorecard uses), so the
-      // dashboard headline, the ranked shortlist, and the scorecard can never disagree
-      // (no more "97 GO" on the dashboard vs "55.1 CAUTION" on the scorecard for one site).
-      const siteRows = await prisma.moduleResult.findMany({
-        where: { candidateSiteId: site.id },
-        select: { module: true, score: true, truthLayer: true },
-      });
-      if (siteRows.length) {
-        const moduleScores: ModuleScore[] = siteRows.map((r) => ({
-          module: r.module,
-          score: r.score != null ? Number(r.score) : null,
-          truthLayer: r.truthLayer as TruthLayer,
-          note: '',
-        }));
-        const { composite, band } = siteCompositeFromModules(moduleScores);
-        if (composite != null) {
-          await prisma.candidateSite.update({
-            where: { id: site.id },
-            data: {
-              compositeScore: composite,
-              verdict: band === 'insufficient' ? undefined : (band as 'go' | 'caution' | 'nogo'),
-            },
-          });
-          // Keep the returned perSite summary consistent with what we stored.
-          const ps = perSite.find((p) => p.siteId === site.id);
-          if (ps) { ps.composite = composite; ps.verdict = band; }
-        }
-      }
-    } catch (err) {
-      // Fault isolation: one failed site must not stall the whole run. Persist a
-      // sentinel territory result so the site counts as processed and the batch
-      // makes forward progress instead of retrying the same site every call.
-      const detail = String((err as { message?: string })?.message ?? err);
-      await prisma.moduleResult.upsert({
-        where: { site_module_key: { candidateSiteId: site.id, module: 'territory' } },
-        create: {
-          candidateSiteId: site.id,
-          pipelineRunId: runId,
-          module: 'territory',
-          score: null,
-          payload: { error: 'pipeline_site_error', detail } as object,
-          truthLayer: 'projected',
-          flags: ['pipeline_error'],
-        },
-        update: {
-          payload: { error: 'pipeline_site_error', detail } as object,
-          truthLayer: 'projected',
-          flags: ['pipeline_error'],
-        },
       });
     }
+    if (modules.includes('territory')) {
+      await attempt('territory', async () => {
+        const terr = await runTerritoryGuard(
+          site.id, run.franchisorId, run.exclusivityRadiusM, run.vertical, conceptText,
+          run.franchisor?.brandName ?? undefined, run.intakeSubmissionId,
+        );
+        await persistTerritoryResult(runId, terr);
+      });
+    }
+    // Lease is a core module: every intake yields a Lease Benchmark. Corridor inferred from
+    // the site city/label, else a central NCR corridor with comps. With no asking rent at
+    // pipeline time the result is a corridor read (unscored → it doesn't move the composite
+    // until the user enters an asking rent on the Lease tab).
+    if (modules.includes('lease')) {
+      await attempt('lease', async () => {
+        const corridor = inferCorridor(site.city, site.label) ?? DEFAULT_LEASE_CORRIDOR;
+        const lease = await runLeaseBenchmark({ candidateSiteId: site.id, format: site.siteType ?? 'inline', corridor, siteTerms: {} });
+        await persistLeaseResult(runId, lease);
+      });
+    }
+    if (modules.includes('daypart')) await attempt('daypart', () => runDaypart(runId, site.id, run.vertical));
+    if (expectedModules.includes('informal')) await attempt('informal', () => runInformal(runId, site.id, run.vertical, units));
+    if (modules.includes('healthcare')) await attempt('healthcare', () => runHealthcare(runId, site.id));
+    if (modules.includes('mall')) await attempt('mall', () => runMall(runId, site.id, targetMallTier));
+    if (modules.includes('whitespace')) {
+      await attempt('whitespace', () =>
+        runWhiteSpace(runId, site.id, run.franchisorId, run.vertical, conceptText, run.franchisor?.brandName ?? undefined, run.intakeSubmissionId),
+      );
+    }
+    if (modules.includes('land')) await attempt('land', () => runLand(runId, site.id, run.vertical, parcel));
+
+    // Composite from EVERY module that scored (same math as the scorecard), then mark done.
+    let composite: number | null = null;
+    let band: string | null = null;
+    await attempt('composite', async () => {
+      const r = await recomputeSiteComposite(site.id);
+      composite = r.composite;
+      band = r.band === 'insufficient' ? null : r.band;
+    });
+    const pipelineError = errors.length ? errors.join(' | ').slice(0, 1000) : null;
+    await prisma.candidateSite.update({
+      where: { id: site.id },
+      data: { analyzedAt: new Date(), pipelineError },
+    });
+    perSite.push({ siteId: site.id, label: site.label, composite, verdict: band, error: pipelineError });
   }
 
-  // After this batch, how many sites still have no module_results at all?
-  const doneAfterRows = await prisma.moduleResult.findMany({
-    where: { pipelineRunId: runId },
-    select: { candidateSiteId: true },
-    distinct: ['candidateSiteId'],
-  });
-  const doneAfter = new Set(doneAfterRows.map((r) => r.candidateSiteId));
-  const remaining = run.sites.filter((s) => !doneAfter.has(s.id)).length;
-
+  const remaining = await prisma.candidateSite.count({ where: { pipelineRunId: runId, analyzedAt: null } });
   if (remaining > 0) {
-    // Still sites to analyze — stay 'analyzing' and let the client re-invoke.
     return {
-      runId,
-      status: 'analyzing',
-      confidence: null,
-      complete: false,
-      remaining,
-      modulesRun: modules,
-      siteCount: run.sites.length,
-      perSite,
+      runId, status: 'analyzing', confidence: null, complete: false, remaining,
+      modulesRun: expectedModules, siteCount: run.sites.length, perSite,
     };
   }
 
-  // Every site analyzed — finalize. Roll confidence up from EVERY module_result's
-  // truth layer read back from the DB (so it reflects all batches, not just this call).
-  const allRows = await prisma.moduleResult.findMany({
-    where: { pipelineRunId: runId },
-    select: { module: true, truthLayer: true, flags: true },
-  });
-  const finalLayers = allRows.map((r) => r.truthLayer as TruthLayer);
-  const finalOnGround = allRows.some((r) =>
-    r.module === 'informal' ||
-    (r.flags ?? []).includes('secondary_terms_over_market') ||
-    (r.flags ?? []).includes('pipeline_error'),
+  // Every site analysed — finalize from the DB (reflects every slice, not just this call).
+  const [siteRows, rows] = await Promise.all([
+    prisma.candidateSite.findMany({
+      where: { pipelineRunId: runId },
+      select: { id: true, label: true, compositeScore: true, verdict: true, pipelineError: true },
+    }),
+    prisma.moduleResult.findMany({
+      where: { pipelineRunId: runId, module: { not: 'analysis' } }, // AI narrative is not evidence
+      select: { candidateSiteId: true, module: true, score: true, truthLayer: true, flags: true },
+    }),
+  ]);
+  const siteEvidence = siteRows.map((s) =>
+    siteEvidenceScore(
+      rows.filter((r) => r.candidateSiteId === s.id)
+        .map((r) => ({ module: r.module, score: r.score != null ? Number(r.score) : null, truthLayer: r.truthLayer as TruthLayer })),
+      expectedModules,
+    ),
   );
-  const confidence = rollUpConfidence(finalLayers, { onGroundCheckFlagged: finalOnGround });
+  const onGround =
+    rows.some((r) => r.module === 'informal' || (r.flags ?? []).includes('secondary_terms_over_market')) ||
+    siteRows.some((s) => s.pipelineError != null);
+  const { confidence } = runEvidenceConfidence(siteEvidence, { onGroundCheckFlagged: onGround });
+
+  // A run where EVERY site failed outright (no module produced anything) is failed, not ready.
+  const nothingProduced = rows.length === 0;
+  const status: RunResult['status'] = nothingProduced ? 'failed' : 'ready';
   await prisma.pipelineRun.update({
     where: { id: runId },
-    data: { status: 'ready', confidence, finishedAt: new Date() },
+    data: { status, confidence: nothingProduced ? null : confidence, finishedAt: new Date() },
   });
-
-  // Rebuild perSite from the DB so the finalizing call returns every site, even
-  // if it processed zero pending sites itself.
-  const finalSiteRows = await prisma.candidateSite.findMany({
-    where: { id: { in: run.sites.map((s) => s.id) } },
-    select: { id: true, label: true, compositeScore: true, verdict: true },
-  });
-  const perSiteFinal = finalSiteRows.map((s) => ({
-    siteId: s.id,
-    label: s.label,
-    composite: s.compositeScore != null ? Number(s.compositeScore) : null,
-    verdict: (s.verdict as string | null) ?? null,
-  }));
 
   return {
     runId,
-    status: 'ready',
-    confidence,
+    status,
+    confidence: nothingProduced ? null : confidence,
     complete: true,
     remaining: 0,
-    modulesRun: modules,
+    modulesRun: expectedModules,
     siteCount: run.sites.length,
-    perSite: perSiteFinal,
+    perSite: siteRows.map((s) => ({
+      siteId: s.id,
+      label: s.label,
+      composite: s.compositeScore != null ? Number(s.compositeScore) : null,
+      verdict: (s.verdict as string | null) ?? null,
+      error: s.pipelineError,
+    })),
   };
 }
 

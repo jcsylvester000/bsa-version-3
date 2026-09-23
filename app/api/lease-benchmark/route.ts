@@ -6,6 +6,7 @@ import { isUuid } from '@/lib/util/uuid';
 import { leaseBenchmarkRequestSchema } from '@/lib/validation/schemas';
 import { ok, fail, failValidation, errors } from '@/lib/api/respond';
 import { runLeaseBenchmark, persistLeaseResult } from '@/lib/modules/leaseBenchmark';
+import { recomputeSiteComposite } from '@/lib/modules/scorecardServer';
 import { generateGrounded } from '@/lib/ai/retrieveThenGenerate';
 import { audit } from '@/lib/audit/audit';
 import { isMockAuth } from '@/lib/auth/mockUsers';
@@ -47,6 +48,9 @@ export async function POST(req: NextRequest) {
     siteTerms: parsed.data.siteTerms,
   });
   await persistLeaseResult(site.run.id, result);
+  // The asking rent changes the lease criterion → refresh the stored composite so the
+  // dashboard, shortlist and scorecard agree immediately.
+  await recomputeSiteComposite(site.id);
 
   // Retrieve-then-generate: phrase the verdict from grounded, classified facts only.
   const stats = result.baseRentStats;

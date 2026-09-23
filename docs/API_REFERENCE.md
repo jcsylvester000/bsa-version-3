@@ -26,7 +26,13 @@ request; it is set on login and cleared on logout.
 ## POST /api/auth/login
 Body: `{ email, password }`. On success sets the session cookie and returns
 `{ user: { id, email, role, franchisorId } }`. Wrong credentials → `401 invalid_credentials`
-(uniform — no user enumeration).
+(uniform — no user enumeration). Brute-force guard: 5 failed attempts per account or 20 per
+client IP in 15 min → `429 rate_limited` with `Retry-After`. `POST /api/auth/register` is
+capped at 5 accounts per IP per hour; new passwords need 10+ characters.
+
+## Admin routes (`/api/admin/*`)
+`POST /api/admin/reconcile-composites` and `POST /api/admin/warm` require **role admin**;
+`GET /api/admin/data-stats` requires staff (admin/analyst). Others → `403 forbidden`.
 
 ## POST /api/auth/logout
 Clears the session cookie. Returns `{ loggedOut: true }`.
@@ -147,8 +153,28 @@ the vertical activates (site_fit + territory + lease always; daypart/informal/ma
 healthcare/whitespace per vertical) across all candidate sites, writes `module_result`
 rows, updates each candidate's composite score + verdict, and sets run status
 (`analyzing`→`ready`/`failed`) and confidence from the Truth Layer mix. Idempotent
-(module_results upsert). Returns `{ runId, status, confidence, modulesRun[], siteCount,
-perSite[{siteId,label,composite,verdict}] }`.
+(module_results upsert). Time-boxed: call repeatedly until `complete: true`. Returns
+`{ runId, status, confidence, complete, remaining, modulesRun[], siteCount,
+perSite[{siteId,label,composite,verdict}] }`. It does **not** generate AI text — see below.
+
+## GET /api/analysis-report?runId=uuid&siteId=uuid
+Read-only status of one site's AI Analysis Report. Never generates, never bills — safe to
+poll. `{ status: 'ready', report }` | `{ status: 'generating', startedAt }` | `{ status: 'missing' }`.
+
+## POST /api/analysis-report
+Body `{ runId, siteId, force? }` (Zod). Generates the site's analysis if missing (`force`
+regenerates). ONE site per request — the client loops sites sequentially. The per-site
+`module_result` row is a lock, so concurrent requests never double-call the live model.
+- `200 { status:'ready', report }`
+- `202 { status:'generating', startedAt }` — another request holds the lock; poll the GET.
+- `429 rate_limited` — regenerate cap (3 per site per 24h on the live provider).
+- `502 ai_unavailable` / `503 ai_not_configured` — generic messages; provider details are
+  logged server-side only (and to `pipeline_usage.error_code`), never returned.
+`report` = `{ analysis, schemaText, contextJson, model, confidence, generatedAt, cached }`.
+
+## GET /api/analysis-report/pdf?runId=uuid&siteId=uuid
+Branded PDF of a READY analysis. Read-only — `409 analysis_missing|analysis_generating` if
+there is no finished report (it never triggers a generation).
 
 ## GET /api/modules?runId=uuid
 Auth + access-scoped. All `module_result` rows for a run, for the modules overview:

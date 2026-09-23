@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { TerritoryMap, type MapOutlet } from '@/components/TerritoryMap';
 import { DaypartCurve, type DaypartData } from '@/components/DaypartCurve';
 import { LeaseDistributionChart } from '@/components/LeaseDistributionChart';
@@ -69,6 +69,9 @@ export interface SiteModulePayloads {
   } | null;
   /** AI Analysis Report — the retrieve-then-generate capstone, persisted per site. */
   analysis: {
+    /** 'ready' | 'generating' (a generation holds the per-site lock). Legacy rows omit it. */
+    status?: string;
+    startedAt?: string;
     analysis?: string;
     schemaText?: string;
     model?: string;
@@ -700,7 +703,8 @@ function WhiteSpaceTab({ p }: { p: SiteModulePayloads['whitespace']; primary?: b
  * Territory Guard, Lease Benchmark, Daypart Demand and White-Space tabs into one read-through
  * view. Nothing is recomputed and nothing is invented — each value is carried straight from the
  * persisted module_result payloads the other tabs render, with its Truth Layer kept in place.
- * (The AI write-up is a later step; this is the data-combining foundation it will build on.)
+ * Above it sits the AI write-up (retrieve-then-generate over exactly these figures), generated
+ * one site per request and cached per site; see lib/ai/analysisReport.ts.
  */
 
 /** One compact label → value row inside a report section, with an optional Truth-Layer tag. */
@@ -763,14 +767,50 @@ function AnalysisTab({
   siteId: string;
 }) {
   const cached = payloads.analysis;
-  const [report, setReport] = useState<{ analysis: string; schemaText?: string; model?: string; confidence?: string; generatedAt?: string } | null>(
-    cached && typeof cached.analysis === 'string'
+  type Report = { analysis: string; schemaText?: string; model?: string; confidence?: string; generatedAt?: string };
+  const [report, setReport] = useState<Report | null>(
+    cached && typeof cached.analysis === 'string' && cached.status !== 'generating'
       ? { analysis: cached.analysis, schemaText: cached.schemaText, model: cached.model, confidence: cached.confidence, generatedAt: cached.generatedAt }
       : null,
   );
   const [loading, setLoading] = useState(false);
+  // True while ANOTHER request (e.g. the intake submit) is writing this site's analysis.
+  const [waiting, setWaiting] = useState<boolean>(cached?.status === 'generating');
   const [error, setError] = useState<string | null>(null);
   const [showSchema, setShowSchema] = useState(false);
+  const [pollTick, setPollTick] = useState(0);
+  const pollTries = useRef(0);
+
+  function applyReport(r: Report) {
+    setReport({ analysis: r.analysis, schemaText: r.schemaText, model: r.model, confidence: r.confidence, generatedAt: r.generatedAt });
+    setShowSchema(false);
+  }
+
+  // Poll the READ-ONLY status endpoint while a generation is in flight elsewhere (never bills).
+  // Each tick schedules one check; `pollTick` re-arms the effect for the next one.
+  useEffect(() => {
+    if (!waiting || !runId) return;
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      pollTries.current += 1;
+      try {
+        const res = await fetch(`/api/analysis-report?runId=${encodeURIComponent(runId)}&siteId=${encodeURIComponent(siteId)}`);
+        const json = await res.json().catch(() => null);
+        if (cancelled) return;
+        const st = json?.data?.status;
+        if (st === 'ready') { applyReport(json.data.report); setWaiting(false); return; }
+        if (st === 'missing') { setWaiting(false); return; } // the other attempt failed → Generate shows
+      } catch { /* network blip — keep polling */ }
+      if (cancelled) return;
+      if (pollTries.current >= 30) {
+        setWaiting(false);
+        setError('The analysis is taking longer than expected. Refresh the page in a minute.');
+        return;
+      }
+      setPollTick((n) => n + 1);
+    }, 4000);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [waiting, runId, siteId, pollTick]);
 
   async function run(regen: boolean) {
     if (!runId) { setError('Open this site from the Ranked Site Shortlist to generate its report.'); return; }
@@ -782,9 +822,8 @@ function AnalysisTab({
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) { setError(json?.error?.message ?? `Could not generate the report (HTTP ${res.status}).`); return; }
-      const dta = json.data;
-      setReport({ analysis: dta.analysis, schemaText: dta.schemaText, model: dta.model, confidence: dta.confidence, generatedAt: dta.generatedAt });
-      setShowSchema(false);
+      if (json.data?.status === 'generating') { pollTries.current = 0; setWaiting(true); setPollTick((n) => n + 1); return; }
+      if (json.data?.status === 'ready') applyReport(json.data.report);
     } catch { setError('The request failed — check your connection and try again.'); }
     finally { setLoading(false); }
   }
@@ -846,17 +885,28 @@ function AnalysisTab({
             {report == null && (
               <button
                 onClick={() => run(false)}
-                disabled={loading}
+                disabled={loading || waiting}
                 className={`rounded-lg px-4 py-2 text-sm font-medium transition ${loading ? 'bg-ink-panel-2 text-ink-muted' : 'bg-accent text-ink-bg hover:opacity-90'}`}
               >
-                {loading ? 'Analysing…' : 'Generate analysis'}
+                {loading || waiting ? 'Analysing…' : 'Generate analysis'}
               </button>
             )}
             {/* Export the branded professional PDF (server-generated) once a report exists. */}
             {report != null && (
               <button
+                onClick={() => run(true)}
+                disabled={loading || waiting}
+                title="Write a fresh version of this analysis (limited to a few per site per day)"
+                className="rounded-lg border border-ink-border px-4 py-2 text-sm font-medium text-ink-muted transition hover:text-ink-text disabled:opacity-50"
+              >
+                {loading || waiting ? 'Regenerating…' : 'Regenerate'}
+              </button>
+            )}
+            {report != null && (
+              <button
                 onClick={exportPdf}
-                className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-ink-bg transition hover:opacity-90"
+                disabled={loading || waiting}
+                className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-ink-bg transition hover:opacity-90 disabled:opacity-50"
               >
                 Export PDF
               </button>
@@ -891,7 +941,7 @@ function AnalysisTab({
             </>
           ) : (
             <p className="text-sm text-ink-muted">
-              {loading
+              {loading || waiting
                 ? 'Reading the four modules and writing the analysis…'
                 : 'Click Generate analysis to turn the combined data below into a short written report. It reads only the figures on this page — nothing is invented.'}
             </p>
@@ -1038,7 +1088,7 @@ function AnalysisTab({
       </ReportSection>
 
       <p className="px-1 text-[11px] text-ink-muted">
-        This is a straight consolidation of the four tabs above — a foundation for the written AI analysis to come.
+        The sections below are a straight consolidation of the four tabs; the written analysis above phrases only these figures.
         BSA supplements the broker; it does not replace them.
       </p>
     </div>

@@ -64,7 +64,8 @@ export default async function TerritoryGuardPage({
   }
 
   const outlets = await prisma.outlet.findMany({
-    where: { franchisorId: run.franchisorId, status: 'open' },
+    // Reference network + this run's own typed outlets (never another user's).
+    where: { franchisorId: run.franchisorId, status: 'open', OR: [{ intakeSubmissionId: null }, { intakeSubmissionId: run.intakeSubmissionId }] },
     select: { id: true, outletName: true, lat: true, lon: true, format: true },
   });
 

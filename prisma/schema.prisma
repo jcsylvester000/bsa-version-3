@@ -240,6 +240,7 @@ model IntakeSubmission {
   parentIntakeId String?      @map("parent_intake_id") @db.Uuid
   version        Int          @default(1)
 
+  outlets        Outlet[]
   franchisor     Franchisor   @relation(fields: [franchisorId], references: [id], onDelete: Cascade)
   run            PipelineRun?
 
@@ -267,11 +268,18 @@ model Outlet {
   performanceTag PerformanceTag? @map("performance_tag")
   openingDate    DateTime?       @map("opening_date") @db.Date
   truthLayer     TruthLayer      @default(assumed) @map("truth_layer")
+  /// The intake that supplied this outlet (a user typing their branch list). NULL = the brand's
+  /// reference network (seeded/ingested). A run only ever sees the reference network PLUS the
+  /// outlets from its OWN intake — one user's typed branches never leak into another user's
+  /// Territory Guard for the same shared brand.
+  intakeSubmissionId String?     @map("intake_submission_id") @db.Uuid
   createdAt      DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
 
   franchisor     Franchisor      @relation(fields: [franchisorId], references: [id], onDelete: Cascade)
+  intake         IntakeSubmission? @relation(fields: [intakeSubmissionId], references: [id], onDelete: Cascade)
 
   @@index([franchisorId])
+  @@index([intakeSubmissionId])
   @@map("outlet")
 }
 
@@ -290,6 +298,12 @@ model CandidateSite {
   siteType       String?         @map("site_type")
   compositeScore Decimal?        @map("composite_score") @db.Decimal(6, 2)
   verdict        Verdict?
+  /// Set when the pipeline has FINISHED this site (every module attempted). NULL = still to do.
+  /// The resumable pipeline processes sites where this is NULL — a module_result row alone
+  /// no longer marks a site done (a killed invocation could leave it half-analysed).
+  analyzedAt     DateTime?       @map("analyzed_at") @db.Timestamptz(6)
+  /// Modules that failed for this site on the last pass (e.g. "whitespace: timeout"). NULL = clean.
+  pipelineError  String?         @map("pipeline_error")
   createdAt      DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
 
   run            PipelineRun     @relation(fields: [pipelineRunId], references: [id], onDelete: Cascade)
@@ -553,11 +567,19 @@ model PipelineUsage {
   vsRunId         String?  @map("vs_run_id")          // VectorShift run_id
   costRaw         String?  @map("cost_raw")           // raw cost string from the pipeline output
   costValue       Decimal? @map("cost_value") @db.Decimal(14, 6) // parsed numeric, if any
+  /// 'ok' | 'error' — failed/timed-out calls are logged too (they may still be billed).
+  status          String   @default("ok")
+  /// Short machine code for a failure (e.g. 'timeout', 'http_502', 'empty_output'). No response text.
+  errorCode       String?  @map("error_code")
+  latencyMs       Int?     @map("latency_ms")
+  /// 'initial' (first generation for the site) | 'regenerate' (user-forced).
+  trigger         String   @default("initial")
   createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   @@index([userId])
   @@index([franchisorId])
   @@index([createdAt])
+  @@index([candidateSiteId, createdAt])
   @@map("pipeline_usage")
 }
 

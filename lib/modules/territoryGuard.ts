@@ -229,6 +229,9 @@ export async function runTerritoryGuard(
   brandOrConcept?: string,
   /** The operator's own brand name, so their existing branches aren't counted as rivals. */
   ownBrandName?: string,
+  /** The run's intake. Own-outlet overlap uses the brand's reference network PLUS the outlets
+   *  typed into THIS intake — never outlets another user typed for the same shared brand. */
+  intakeSubmissionId: string | null = null,
 ): Promise<TerritoryGuardResult> {
   const site = await prisma.candidateSite.findUniqueOrThrow({
     where: { id: candidateSiteId },
@@ -251,6 +254,7 @@ export async function runTerritoryGuard(
     FROM outlet o
     WHERE o.franchisor_id = ${franchisorId}::uuid
       AND o.status = 'open'
+      AND (o.intake_submission_id IS NULL OR o.intake_submission_id = ${intakeSubmissionId}::uuid)
       AND ST_DWithin(
             o.geom,
             ST_SetSRID(ST_MakePoint(${site.lon}, ${site.lat}), 4326)::geography,

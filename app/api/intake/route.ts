@@ -106,8 +106,12 @@ export async function POST(req: NextRequest) {
   if (input.parentIntakeId) {
     const parent = await prisma.intakeSubmission.findUnique({
       where: { id: input.parentIntakeId },
-      select: { id: true, parentIntakeId: true },
+      select: { id: true, parentIntakeId: true, createdByUserId: true },
     });
+    // Only the intake's owner (or Grid staff) may version it — no attaching to someone
+    // else's lineage.
+    const staff = session.role === 'admin' || session.role === 'analyst';
+    if (parent && !staff && parent.createdByUserId !== session.id) return errors.notFound('Intake');
     if (parent) {
       const rootId = parent.parentIntakeId ?? parent.id; // normalise to the lineage root
       parentIntakeId = rootId;
@@ -149,6 +153,8 @@ export async function POST(req: NextRequest) {
           monthlySalesPhp: o.monthlySalesPhp != null ? new Prisma.Decimal(o.monthlySalesPhp) : null,
           performanceTag: o.performanceTag,
           truthLayer: 'assumed' as const,
+          // Owned by this intake: only this run's Territory Guard sees these outlets.
+          intakeSubmissionId: intake.id,
         },
       });
     }

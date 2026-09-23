@@ -27,8 +27,8 @@ import { inferCorridor } from './leaseMath';
 async function persist(runId: string, candidateSiteId: string, module: ModuleKind, score: number | null, payload: unknown, truthLayer: TruthLayer, flags: string[]) {
   await prisma.moduleResult.upsert({
     where: { site_module_key: { candidateSiteId, module } },
-    update: { score: score ?? undefined, payload: payload as object, truthLayer, flags },
-    create: { candidateSiteId, pipelineRunId: runId, module, score: score ?? undefined, payload: payload as object, truthLayer, flags },
+    update: { score: score ?? null, payload: payload as object, truthLayer, flags },
+    create: { candidateSiteId, pipelineRunId: runId, module, score: score ?? null, payload: payload as object, truthLayer, flags },
   });
 }
 
@@ -306,6 +306,8 @@ export async function runWhiteSpace(
   brandOrConcept?: string,
   /** Operator's own brand, so their existing branches aren't counted as competitors. */
   ownBrandName?: string,
+  /** The run's intake — own outlets = reference network + this intake's typed outlets only. */
+  intakeSubmissionId: string | null = null,
 ): Promise<void> {
   // Score each area on the default outlet catchment, so an area's cannibalization reads on the
   // SAME trade-area scale Territory Guard uses per site.
@@ -321,7 +323,8 @@ export async function runWhiteSpace(
   // code so it works for both demographic and POI-derived candidate areas.
   const ownOutlets = await prisma.$queryRaw<Array<{ lat: number; lon: number }>>`
     SELECT lat, lon FROM outlet
-    WHERE franchisor_id = ${franchisorId}::uuid AND status = 'open' AND geom IS NOT NULL`;
+    WHERE franchisor_id = ${franchisorId}::uuid AND status = 'open' AND geom IS NOT NULL
+      AND (intake_submission_id IS NULL OR intake_submission_id = ${intakeSubmissionId}::uuid)`;
   const nearestOwnDist = (lat: number, lon: number): number | null => {
     if (ownOutlets.length === 0) return null;
     let m = Infinity;

@@ -13,7 +13,9 @@ every read, and it travels with the data into any AI context.
 ### franchisor
 The brand/company that owns the intake. One row per client. *Truth Layer: n/a (factual record).*
 Key columns: `id` (uuid pk), `brand_name`, `legal_name`, `sector` (FnB/Retail/Services),
-`sub_category`, `positioning`, `created_at`. Index: `btree(sector, sub_category)`.
+`sub_category`, `positioning`, `requirements` (jsonb template), `created_by_user_id` (uuid,
+nullable — **brand privacy**: NULL = shared seeded catalog; set = private to that user + staff),
+`created_at`. Indexes: `btree(sector, sub_category)`, `btree(created_by_user_id)`.
 
 ### intake_submission
 One completed intake per run — the A–K checklist as typed JSONB sections, not stringified
@@ -28,13 +30,16 @@ Guard cannibalization math. *Truth Layer: sales/perf = Assumed unless franchisor
 Key columns: `id`, `franchisor_id` (fk), `outlet_name`, `format`, `status`,
 `lat`, `lon`, `geom` (geography point, trigger-computed), `floor_area_sqm`,
 `monthly_sales_php`, `avg_ticket_php`, `monthly_rent_php`, `performance_tag`,
-`opening_date`, `truth_layer`. Indexes: `fk`, `GiST(geom)`.
+`opening_date`, `truth_layer`, `intake_submission_id` (fk nullable — NULL = the brand's
+reference network; set = typed into that intake and visible ONLY to that run).
+Indexes: `fk`, `GiST(geom)`, `btree(intake_submission_id)`.
 
 ### candidate_site
 A location evaluated in a run. *Truth Layer: geom Verified, scores Projected.*
 Key columns: `id`, `pipeline_run_id` (fk), `label`, `address`, `barangay`, `city`,
-`lat`, `lon`, `geom`, `site_type`, `composite_score`, `verdict` (go/caution/nogo).
-Indexes: `fk`, `GiST(geom)`.
+`lat`, `lon`, `geom`, `site_type`, `composite_score`, `verdict` (go/caution/nogo),
+`analyzed_at` (set when the pipeline finished the site — resume key), `pipeline_error`
+(modules that failed on the last pass; NULL = clean). Indexes: `fk`, `GiST(geom)`.
 
 ## Group 2 — Reference data (all carry a Truth Layer column)
 
@@ -72,7 +77,7 @@ Natural key: `psgc_code`. `geom` is a polygon for containment joins. Index: `GiS
 
 ### pipeline_run
 One BSL analysis run; tracks state through the phases. *Truth Layer: run-level confidence =
-Truth Layer mix.* Key columns: `id`, `intake_submission_id` (fk, unique), `franchisor_id`,
+evidence confidence (decision-weighted Truth Layers; see `lib/modules/scorecard.ts`).* Key columns: `id`, `intake_submission_id` (fk, unique), `franchisor_id`,
 `vertical`, `status` (queued/researching/analyzing/composing/ready/failed), `confidence`,
 `exclusivity_radius_m`, `started_at`, `finished_at`. Indexes: `fk`, `btree(status)`.
 
@@ -102,6 +107,13 @@ Audit trail of every AI call — the retrieved chunk ids, prompt purpose, model,
 Makes any generated sentence traceable. Key columns: `pipeline_run_id` (fk), `purpose`
 (verdict/summary/section), `retrieved_chunk_ids` (bigint[]), `model`, `input_tokens`,
 `output_tokens`, `output`, `created_at`.
+
+### pipeline_usage
+One row per live external-AI (VectorShift) call — cost + reliability monitor. **No response
+text.** Key columns: `user_id`, `franchisor_id`, `pipeline_run_id`, `candidate_site_id`,
+`provider`, `model`, `vs_run_id`, `cost_raw`, `cost_value`, `status` (ok/error),
+`error_code`, `latency_ms`, `trigger` (initial/regenerate), `created_at`.
+Indexes: `user_id`, `franchisor_id`, `created_at`, `(candidate_site_id, created_at)`.
 
 ## Group 5 — Ops / Governance
 

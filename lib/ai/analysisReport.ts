@@ -5,13 +5,18 @@
  *   generate (system + JSON-as-context + task) ─▶ log provenance ─▶ persist per-site
  *
  * The model sees ONLY the strict JSON (already-computed figures, each Truth-Layer tagged)
- * plus the retrieved interpretation reference. It never recomputes; it phrases. Runs on the
- * stub provider today; swap AI_PROVIDER for a live model and this file is unchanged.
+ * plus the retrieved interpretation reference. It never recomputes; it phrases.
+ *
+ * Runtime shape (Batch 2): ONE site per request, never fanned out inside another request —
+ * each call must finish inside a single serverless invocation. The per-site module_result
+ * row doubles as a lock so concurrent requests can't double-bill the live provider.
  */
 import 'server-only';
 import { prisma } from '@/lib/db/prisma';
 import type { ModuleKind } from '@prisma/client';
-import { getAiProvider } from './index';
+import { randomUUID } from 'node:crypto';
+import { aiProviderName } from './index';
+import { isReadyPayload, isFreshLock, versionToken, type AnalysisPayload } from './analysisCache';
 import { retrieve } from './retrieveThenGenerate';
 import { TRUTH_META } from '@/lib/truth/truthLayer';
 import { rollUpConfidence, type TruthLayer, type Confidence } from '@/lib/truth/truthLayer';
@@ -20,7 +25,7 @@ import { buildAnalysisContext, analysisContextToJsonText, analysisSchemaText, ty
 import { humanizeVertical } from '@/lib/modules/verticalConfig';
 import { conceptFor } from '@/lib/places/competitorRelevance';
 import { composeMockAnalysis } from './mockAnalysis';
-import { generateViaVectorShift, parseCostValue } from './vectorshiftProvider';
+import { generateViaVectorShift, parseCostValue, AiGenerationError } from './vectorshiftProvider';
 
 export interface AnalysisReportResult {
   analysis: string;
@@ -46,35 +51,150 @@ function mergeIntake(sections: Array<unknown>): Record<string, unknown> {
   return out;
 }
 
+// ---------------------------------------------------------------------------------------
+// Cache states + concurrency
+//
+// The per-site `analysis` module_result row is BOTH the cache and a lock:
+//   payload.status = 'ready'      → a finished report (legacy rows without status but with an
+//                                    `analysis` string are treated as ready)
+//   payload.status = 'generating' → a generation is in flight (lockId + startedAt)
+// A generation first CLAIMS the row (create, or a conditional update on the previous
+// token), so two simultaneous requests for the same site can never both call — and both
+// pay for — the live model. A claim older than LOCK_TTL_MS is considered abandoned (e.g. the
+// function was killed) and can be taken over.
+// ---------------------------------------------------------------------------------------
+
+/** Max user-forced regenerations per site per rolling 24h (live provider only — cost cap). */
+export const REGENERATE_CAP_PER_DAY = 3;
+
+type Payload = AnalysisPayload;
+
+export type AnalysisState =
+  | { state: 'ready'; result: AnalysisReportResult }
+  | { state: 'generating'; startedAt: string }
+  | { state: 'missing' };
+
+export type GenerateOutcome =
+  | { status: 'ready'; result: AnalysisReportResult }
+  | { status: 'generating'; startedAt: string }
+  | { status: 'regenerate_limit'; cap: number };
+
+function toResult(p: Payload & { analysis: string }, cached: boolean): AnalysisReportResult {
+  return {
+    analysis: p.analysis,
+    schemaText: (p.schemaText as string) ?? '',
+    contextJson: p.contextJson ?? null,
+    model: (p.model as string) ?? 'mock-analysis-v1',
+    confidence: (p.confidence as Confidence) ?? 'med',
+    generatedAt: (p.generatedAt as string) ?? new Date().toISOString(),
+    cached,
+  };
+}
+
+async function readRow(siteId: string) {
+  return prisma.moduleResult.findUnique({
+    where: { site_module_key: { candidateSiteId: siteId, module: 'analysis' as ModuleKind } },
+    select: { id: true, payload: true },
+  });
+}
+
+/** Read-only: the cached state for a site. Never generates (safe for GET routes / PDF). */
+export async function readAnalysis(siteId: string): Promise<AnalysisState> {
+  const row = await readRow(siteId);
+  const p = (row?.payload ?? null) as Payload | null;
+  if (isReadyPayload(p)) return { state: 'ready', result: toResult(p, true) };
+  if (isFreshLock(p)) return { state: 'generating', startedAt: String(p!.startedAt) };
+  return { state: 'missing' };
+}
+
 /**
  * Generate (or return the cached) Analysis Report for one site in a run.
- * `force` regenerates and overwrites the cached module_result.
+ * `force` regenerates (capped per site per day on the live provider).
+ * Throws AiGenerationError (code + server-only detail) when the provider fails.
  */
 export async function generateAnalysisReport(
   runId: string,
   siteId: string,
   opts: { force?: boolean; actorId?: string } = {},
-): Promise<AnalysisReportResult> {
-  // Cache: a persisted `analysis` module_result for this site.
-  if (!opts.force) {
-    const cached = await prisma.moduleResult.findUnique({
-      where: { site_module_key: { candidateSiteId: siteId, module: 'analysis' as ModuleKind } },
-      select: { payload: true },
+): Promise<GenerateOutcome> {
+  const which = aiProviderName(); // throws on an unsupported AI_PROVIDER
+  const row = await readRow(siteId);
+  const prev = (row?.payload ?? null) as Payload | null;
+
+  if (isReadyPayload(prev) && !opts.force) return { status: 'ready', result: toResult(prev, true) };
+  if (isFreshLock(prev)) return { status: 'generating', startedAt: String(prev!.startedAt) };
+
+  // Cost cap on user-forced regeneration (live provider only; the stub is free).
+  if (opts.force && isReadyPayload(prev) && which === 'vectorshift') {
+    const since = new Date(Date.now() - 24 * 60 * 60_000);
+    const n = await prisma.pipelineUsage.count({
+      where: { candidateSiteId: siteId, trigger: 'regenerate', createdAt: { gte: since } },
     });
-    const p = cached?.payload as Record<string, unknown> | undefined;
-    if (p && typeof p.analysis === 'string') {
-      return {
-        analysis: p.analysis as string,
-        schemaText: (p.schemaText as string) ?? '',
-        contextJson: p.contextJson ?? null,
-        model: (p.model as string) ?? 'mock-analysis-v1',
-        confidence: (p.confidence as Confidence) ?? 'med',
-        generatedAt: (p.generatedAt as string) ?? new Date().toISOString(),
-        cached: true,
-      };
-    }
+    if (n >= REGENERATE_CAP_PER_DAY) return { status: 'regenerate_limit', cap: REGENERATE_CAP_PER_DAY };
   }
 
+  // --- Claim the lock -------------------------------------------------------------
+  const lockId = randomUUID();
+  const startedAt = new Date().toISOString();
+  const restore: Payload | null = isReadyPayload(prev) ? { ...prev, status: 'ready' } : null;
+  const lockPayload = { ...(restore ?? {}), status: 'generating', lockId, startedAt };
+  if (!row) {
+    try {
+      await prisma.moduleResult.create({
+        data: { candidateSiteId: siteId, pipelineRunId: runId, module: 'analysis' as ModuleKind, payload: lockPayload as object, truthLayer: 'projected', flags: [] },
+      });
+    } catch (e) {
+      if ((e as { code?: string })?.code === 'P2002') return { status: 'generating', startedAt }; // someone else claimed it first
+      throw e;
+    }
+  } else {
+    const token = prev ? versionToken(prev) : null;
+    const claimed = await prisma.moduleResult.updateMany({
+      where: { id: row.id, ...(token ? { payload: token } : {}) },
+      data: { payload: lockPayload as object },
+    });
+    if (claimed.count === 0) return { status: 'generating', startedAt }; // lost the race
+  }
+
+  // --- Generate (lock held) --------------------------------------------------------
+  const trigger: 'initial' | 'regenerate' = opts.force && restore ? 'regenerate' : 'initial';
+  const t0 = Date.now();
+  try {
+    const result = await generateLocked(runId, siteId, which, { actorId: opts.actorId, trigger }, lockId);
+    return { status: 'ready', result };
+  } catch (err) {
+    const code = err instanceof AiGenerationError ? err.code : 'internal';
+    const detail = err instanceof AiGenerationError ? err.detail : err instanceof Error ? err.message : String(err);
+    console.error(`[analysis] generation failed run=${runId} site=${siteId} code=${code}: ${detail}`);
+    if (which === 'vectorshift') {
+      // Failed calls are logged too — a timed-out run may still be billed.
+      await prisma.pipelineUsage.create({
+        data: {
+          userId: opts.actorId ?? null, pipelineRunId: runId, candidateSiteId: siteId,
+          provider: 'vectorshift', model: 'vectorshift', status: 'error', errorCode: code,
+          latencyMs: Date.now() - t0, trigger,
+        },
+      }).catch((e) => console.error('[analysis] usage log failed', e));
+    }
+    // Release the lock: put the previous report back, or remove the placeholder.
+    const mine = { path: ['lockId'], equals: lockId };
+    if (restore) {
+      await prisma.moduleResult.updateMany({ where: { candidateSiteId: siteId, module: 'analysis' as ModuleKind, payload: mine }, data: { payload: restore as object } });
+    } else {
+      await prisma.moduleResult.deleteMany({ where: { candidateSiteId: siteId, module: 'analysis' as ModuleKind, payload: mine } });
+    }
+    throw err instanceof AiGenerationError ? err : new AiGenerationError(code, detail);
+  }
+}
+
+/** The retrieve-then-generate body. Runs only while this request holds the site's lock. */
+async function generateLocked(
+  runId: string,
+  siteId: string,
+  which: 'stub' | 'vectorshift',
+  opts: { actorId?: string; trigger: 'initial' | 'regenerate' },
+  lockId: string,
+): Promise<AnalysisReportResult> {
   const run = await prisma.pipelineRun.findUniqueOrThrow({
     where: { id: runId },
     include: {
@@ -103,7 +223,9 @@ export async function generateAnalysisReport(
 
   const layers = rows.map((r) => r.truthLayer as TruthLayer);
   const onGround = rows.some((r) => (r.payload as { flags?: string[] } | null)?.flags?.some((f) => f.includes('on_ground')) ?? false);
-  const confidence = rollUpConfidence(layers, { onGroundCheckFlagged: onGround });
+  // Use the RUN's evidence confidence (set by the pipeline) so the write-up, dashboard and
+  // PDF all show the same label; fall back to the local roll-up only for legacy runs.
+  const confidence: Confidence = (run.confidence as Confidence | null) ?? rollUpConfidence(layers, { onGroundCheckFlagged: onGround });
 
   const conceptText = [run.franchisor?.brandName, run.franchisor?.subCategory].filter(Boolean).join(' ');
   const input: AnalysisInput = {
@@ -145,44 +267,20 @@ export async function generateAnalysisReport(
     chunkText || '- (none retrieved)',
   ].join('\n');
 
-  // Which generator:
+  // Which generator (validated by aiProviderName):
   //  - 'vectorshift' → live VectorShift pipeline (prompts live in the pipeline; we ship the schema).
   //  - 'stub' (default) → deterministic mock narrative from the same context.
-  //  - anything else → the in-code provider path (retrieve-then-generate with the bundled prompts).
-  const which = process.env.AI_PROVIDER ?? 'stub';
   let narrative: string;
   let model: string;
   let inputTokens: number | undefined;
   let outputTokens: number | undefined;
-  let cost: string | null = null;
-  let vsRunId: string | null = null;
+  const t0 = Date.now();
 
   if (which === 'vectorshift') {
     const vs = await generateViaVectorShift(schemaText);
     narrative = vs.text;
     model = 'vectorshift';
-    cost = vs.cost;
-    vsRunId = vs.vsRunId;
-  } else if (which === 'stub') {
-    narrative = composeMockAnalysis(ctx);
-    model = 'mock-analysis-v1';
-    inputTokens = Math.ceil((context.length + jsonText.length) / 4);
-    outputTokens = Math.ceil(narrative.length / 4);
-  } else {
-    const { ANALYSIS_SYSTEM_PROMPT, ANALYSIS_TASK_INSTRUCTIONS } = await import('./analysisPrompts');
-    const provider = getAiProvider();
-    const gen = await provider.generate({ system: ANALYSIS_SYSTEM_PROMPT, context, task: ANALYSIS_TASK_INSTRUCTIONS });
-    narrative = gen.text;
-    model = gen.model;
-    inputTokens = gen.inputTokens;
-    outputTokens = gen.outputTokens;
-  }
-
-  const generatedAt = new Date().toISOString();
-
-  if (which === 'vectorshift') {
-    // Usage/cost log ONLY (admin monitor) — no response text stored here. The response text
-    // lives in the module_result below (so the page shows it and never re-runs).
+    // Usage/cost log ONLY (admin monitor) — no response text stored here.
     await prisma.pipelineUsage.create({
       data: {
         userId: opts.actorId ?? null,
@@ -191,13 +289,20 @@ export async function generateAnalysisReport(
         candidateSiteId: siteId,
         provider: 'vectorshift',
         model,
-        vsRunId,
-        costRaw: cost,
-        costValue: parseCostValue(cost),
+        vsRunId: vs.vsRunId,
+        costRaw: vs.cost,
+        costValue: parseCostValue(vs.cost),
+        status: 'ok',
+        latencyMs: Date.now() - t0,
+        trigger: opts.trigger,
       },
     });
   } else {
-    // Dev/provenance log for the mock + in-code provider paths.
+    narrative = composeMockAnalysis(ctx);
+    model = 'mock-analysis-v1';
+    inputTokens = Math.ceil((context.length + jsonText.length) / 4);
+    outputTokens = Math.ceil(narrative.length / 4);
+    // Dev/provenance log for the mock path.
     await prisma.aiGeneration.create({
       data: {
         pipelineRunId: runId,
@@ -211,12 +316,14 @@ export async function generateAnalysisReport(
     });
   }
 
-  // Persist the analysis per-site (the cache + what the tab reads).
-  const payload = { analysis: narrative, schemaText, contextJson: ctx, model, confidence, generatedAt };
-  await prisma.moduleResult.upsert({
-    where: { site_module_key: { candidateSiteId: siteId, module: 'analysis' as ModuleKind } },
-    update: { payload: payload as object, truthLayer: 'projected', flags: [] },
-    create: { candidateSiteId: siteId, pipelineRunId: runId, module: 'analysis' as ModuleKind, payload: payload as object, truthLayer: 'projected', flags: [] },
+  const generatedAt = new Date().toISOString();
+
+  // Persist the finished report — only if we still hold the lock (a stale-lock takeover by
+  // another request wins; we then just return our text without overwriting theirs).
+  const payload = { status: 'ready', analysis: narrative, schemaText, contextJson: ctx, model, confidence, generatedAt };
+  await prisma.moduleResult.updateMany({
+    where: { candidateSiteId: siteId, module: 'analysis' as ModuleKind, payload: { path: ['lockId'], equals: lockId } },
+    data: { payload: payload as object, truthLayer: 'projected', flags: [] },
   });
 
   return { analysis: narrative, schemaText, contextJson: ctx, model, confidence, generatedAt, cached: false };

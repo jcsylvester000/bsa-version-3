@@ -259,7 +259,8 @@ export async function pullBrand(brand: BrandDef, opts: { cities?: string[]; perC
   }
 
   // Idempotent: clear this brand's outlets then insert the fresh real set.
-  await prisma.outlet.deleteMany({ where: { franchisorId } });
+  // Only the REFERENCE network is replaced — outlets users typed into intakes are kept.
+  await prisma.outlet.deleteMany({ where: { franchisorId, intakeSubmissionId: null } });
   let loaded = 0;
   for (const p of outlets) {
     await prisma.outlet.create({

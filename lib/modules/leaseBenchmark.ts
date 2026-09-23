@@ -9,6 +9,7 @@
  * percentile read is Assumed and shown with its sample size. The module_result row
  * therefore carries `assumed` — the estimate is the weakest meaningful field.
  */
+import { leaseValueScore } from './scorecard';
 import 'server-only';
 import { prisma } from '@/lib/db/prisma';
 import type { TruthLayer } from '@/lib/truth/truthLayer';
@@ -208,12 +209,14 @@ export async function runLeaseBenchmark(input: LeaseBenchmarkInput): Promise<Lea
   };
 }
 
-/** Persist a Lease Benchmark result as a module_result row (idempotent per site×module). */
+/** Persist a Lease Benchmark result as a module_result row (idempotent per site×module).
+ *  `score` is the lease VALUE score (100 − rent percentile: cheaper vs corridor = better),
+ *  null when no asking rent was supplied — a re-run clears any stale score. */
 export async function persistLeaseResult(runId: string, result: LeaseBenchmarkResult): Promise<void> {
   await prisma.moduleResult.upsert({
     where: { site_module_key: { candidateSiteId: result.candidateSiteId, module: 'lease' } },
     update: {
-      score: result.baseRentPercentile ?? undefined,
+      score: leaseValueScore(result.baseRentPercentile),
       payload: result as unknown as object,
       truthLayer: result.moduleTruthLayer,
       flags: result.flags,
@@ -222,7 +225,7 @@ export async function persistLeaseResult(runId: string, result: LeaseBenchmarkRe
       candidateSiteId: result.candidateSiteId,
       pipelineRunId: runId,
       module: 'lease',
-      score: result.baseRentPercentile ?? undefined,
+      score: leaseValueScore(result.baseRentPercentile),
       payload: result as unknown as object,
       truthLayer: result.moduleTruthLayer,
       flags: result.flags,

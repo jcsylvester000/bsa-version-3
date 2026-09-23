@@ -355,10 +355,23 @@ export function SteppedIntakeWizard({ franchisors, mockMode = false, mockRunId, 
       // Resumable pipeline: re-invoke until the server reports the run is complete,
       // so multi-site intakes analyze every candidate site rather than timing out
       // after the first couple in a single serverless invocation.
+      let finalSites: Array<{ siteId: string }> = [];
       for (let i = 0; i < 30; i++) {
         const r = await fetch(`/api/runs/${runId}/run`, { method: 'POST' });
         const j = await r.json().catch(() => null);
+        if (j?.ok && j.data?.complete === true) finalSites = j.data.perSite ?? [];
         if (!j || !j.ok || j.data?.complete !== false) break;
+      }
+      // Pre-write each site's AI analysis so it's ready on the Analysis tab. ONE site per
+      // request, sequentially — each call must fit in a single serverless invocation, and the
+      // server locks per site so this can't double-bill. Failures are non-fatal: the Analysis
+      // tab offers "Generate analysis" (and polls if a generation is still in flight).
+      for (const s of finalSites) {
+        await fetch('/api/analysis-report', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ runId, siteId: s.siteId }),
+        }).catch(() => null);
       }
     } catch {
       /* dashboard shows the manual Run pipeline control as a fallback */

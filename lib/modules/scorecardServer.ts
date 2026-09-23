@@ -4,7 +4,7 @@
  */
 import 'server-only';
 import { prisma } from '@/lib/db/prisma';
-import { buildScorecard, type Scorecard, type ModuleScore } from './scorecard';
+import { buildScorecard, siteCompositeFromModules, type Scorecard, type ModuleScore } from './scorecard';
 import type { TruthLayer } from '@/lib/truth/truthLayer';
 
 // Humanize a raw verdict/enum for display — turns "above_market" → "above market",
@@ -24,7 +24,7 @@ function noteFor(module: string, payload: Record<string, unknown>): string {
       if (payload.verdict === 'corridor_benchmark' && st?.median != null) {
         return `Corridor rent ₱${Math.round(st.min ?? 0).toLocaleString()}–₱${Math.round(st.max ?? 0).toLocaleString()}/sqm, median ₱${Math.round(st.median).toLocaleString()} (n=${st.n ?? 0}). Enter your asking rent to benchmark against it.`;
       }
-      return `Base rent at the ${payload.baseRentPercentile ?? '?'}th percentile, "${hz(payload.verdict)}".`;
+      return `Base rent at the ${payload.baseRentPercentile ?? '?'}th percentile of the corridor (scored as value: lower rent vs corridor scores higher).`;
     }
     case 'daypart': return `Window match ${payload.windowMatchPct ?? '?'}%.`;
     case 'informal': return `${payload.totalEstimated ?? '?'} est. competitors${payload.onGroundCheckAdvised ? '; on-ground check advised' : ''}.`;
@@ -38,20 +38,42 @@ export async function buildScorecardsForRun(runId: string): Promise<Scorecard[]>
     where: { pipelineRunId: runId },
     select: { id: true, label: true },
   });
+  // One query for every site's rows (was one query per site).
+  const rows = await prisma.moduleResult.findMany({
+    where: { candidateSiteId: { in: sites.map((s) => s.id) }, module: { not: 'analysis' } },
+    select: { candidateSiteId: true, module: true, score: true, truthLayer: true, payload: true },
+  });
+  return sites.map((site) => {
+    const moduleScores: ModuleScore[] = rows
+      .filter((r) => r.candidateSiteId === site.id)
+      .map((r) => ({
+        module: r.module,
+        score: r.score != null ? Number(r.score) : null,
+        truthLayer: r.truthLayer as TruthLayer,
+        note: noteFor(r.module, (r.payload ?? {}) as Record<string, unknown>),
+      }));
+    return buildScorecard(site.label, moduleScores);
+  });
+}
 
-  const scorecards: Scorecard[] = [];
-  for (const site of sites) {
-    const rows = await prisma.moduleResult.findMany({
-      where: { candidateSiteId: site.id },
-      select: { module: true, score: true, truthLayer: true, payload: true },
-    });
-    const moduleScores: ModuleScore[] = rows.map((r) => ({
-      module: r.module,
-      score: r.score != null ? Number(r.score) : null,
-      truthLayer: r.truthLayer as TruthLayer,
-      note: noteFor(r.module, (r.payload ?? {}) as Record<string, unknown>),
-    }));
-    scorecards.push(buildScorecard(site.label, moduleScores));
-  }
-  return scorecards;
+/**
+ * Recompute and store ONE site's composite + verdict from its current module scores — the same
+ * math the scorecard shows. Called by the pipeline after each site and by any route that
+ * changes a module score afterwards (e.g. the user entering an asking rent on the Lease tab),
+ * so the dashboard headline and the scorecard can never drift apart.
+ * A site with nothing scorable is cleared (composite + verdict null), never left stale.
+ */
+export async function recomputeSiteComposite(siteId: string): Promise<{ composite: number | null; band: Scorecard['band'] }> {
+  const rows = await prisma.moduleResult.findMany({
+    where: { candidateSiteId: siteId, module: { not: 'analysis' } },
+    select: { module: true, score: true, truthLayer: true },
+  });
+  const { composite, band } = siteCompositeFromModules(
+    rows.map((r) => ({ module: r.module, score: r.score != null ? Number(r.score) : null, truthLayer: r.truthLayer as TruthLayer, note: '' })),
+  );
+  await prisma.candidateSite.update({
+    where: { id: siteId },
+    data: { compositeScore: composite, verdict: band === 'insufficient' ? null : band },
+  });
+  return { composite, band };
 }

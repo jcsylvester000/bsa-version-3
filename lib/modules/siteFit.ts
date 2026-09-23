@@ -121,12 +121,12 @@ export async function runSiteFit(
 export async function persistSiteFit(runId: string, candidateSiteId: string, result: SiteFitResult): Promise<void> {
   await prisma.moduleResult.upsert({
     where: { site_module_key: { candidateSiteId, module: 'site_fit' } },
-    update: { score: result.composite ?? undefined, payload: result as unknown as object, truthLayer: result.truthLayer, flags: result.flags },
+    update: { score: result.composite ?? null, payload: result as unknown as object, truthLayer: result.truthLayer, flags: result.flags },
     create: {
       candidateSiteId,
       pipelineRunId: runId,
       module: 'site_fit',
-      score: result.composite ?? undefined,
+      score: result.composite ?? null,
       payload: result as unknown as object,
       truthLayer: result.truthLayer,
       flags: result.flags,

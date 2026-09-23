@@ -41,7 +41,7 @@ export interface ModuleResultLite {
   truthLayer: TruthLayer;
   flags: string[];
   payload: Record<string, unknown>;
-  site: { id: string; label: string; city: string | null; composite: number | null; verdict: string | null };
+  site: { id: string; label: string; city: string | null; composite: number | null; verdict: string | null; pipelineError?: string | null };
 }
 
 const MODULE_LABEL: Record<string, string> = {
@@ -50,7 +50,13 @@ const MODULE_LABEL: Record<string, string> = {
   healthcare: 'Healthcare Proximity', whitespace: 'White-Space', land: 'Land & Traffic',
 };
 
-export function buildDashboard(rows: ModuleResultLite[]): DashboardData {
+export function buildDashboard(
+  rows: ModuleResultLite[],
+  /** The run's stored evidence confidence (set by the pipeline). Preferred over the local
+   *  fallback so the dashboard, write-up and PDF show the same label. */
+  opts: { runConfidence?: DashboardData['confidence'] } = {},
+): DashboardData {
+  rows = rows.filter((r) => r.module !== 'analysis'); // the AI write-up is not a module finding
   // Group by site.
   const sites = new Map<string, ModuleResultLite['site'] & { modules: ModuleResultLite[] }>();
   for (const r of rows) {
@@ -161,8 +167,24 @@ export function buildDashboard(rows: ModuleResultLite[]): DashboardData {
     assumed: Math.round((mix.assumed / total) * 100),
     projected: Math.round((mix.projected / total) * 100),
   };
-  const confidence: DashboardData['confidence'] =
-    pct.projected >= 34 ? 'low' : pct.verified >= 60 && pct.projected < 20 ? 'high' : 'med';
+  // Legacy fallback only (runs finalized before Batch 3 have no evidence confidence).
+  const confidence: DashboardData['confidence'] = opts.runConfidence !== undefined && opts.runConfidence !== null
+    ? opts.runConfidence
+    : pct.projected >= 34 ? 'low' : pct.verified >= 60 && pct.projected < 20 ? 'high' : 'med';
+
+  // Sites where a module failed on the last pass — never silent.
+  for (const s of sites.values()) {
+    if (s.pipelineError) {
+      alerts.push({
+        module: 'pipeline',
+        moduleLabel: 'Analysis',
+        severity: 'caution',
+        title: `Some modules did not complete for ${s.label}`,
+        detail: `Affected: ${s.pipelineError.split(' | ').map((e) => e.split(':')[0]).join(', ')}. Use "Re-run analysis" to retry; results shown for this site may be partial.`,
+        truthLayer: 'projected',
+      });
+    }
+  }
 
   // Order alerts most-severe first.
   const sev = { nogo: 0, caution: 1, go: 2 };

@@ -48,9 +48,10 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   if ((S.sectionI as { mallTier?: string })?.mallTier) sections.mall = (S.sectionI as { mallTier?: string }).mallTier;
   if ((S.sectionJ as { capacityUnits?: string })?.capacityUnits) sections.units = (S.sectionJ as { capacityUnits?: string }).capacityUnits;
 
-  // Outlets for this franchisor (the intake's outlet master).
+  // The outlets typed into THIS intake (its outlet master) — never another user's outlets
+  // for the same brand, and not the seeded reference network.
   const outlets = await prisma.outlet.findMany({
-    where: { franchisorId: intake.franchisorId },
+    where: { intakeSubmissionId: intake.id },
     select: { outletName: true, format: true, lat: true, lon: true, monthlySalesPhp: true },
   });
 

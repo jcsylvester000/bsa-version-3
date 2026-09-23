@@ -4,8 +4,8 @@ import { prisma } from '@/lib/db/prisma';
 import { getSession } from '@/lib/auth/session';
 import { canAccessRun } from '@/lib/auth/auth';
 import { isUuid } from '@/lib/util/uuid';
-import { errors } from '@/lib/api/respond';
-import { generateAnalysisReport } from '@/lib/ai/analysisReport';
+import { errors, fail } from '@/lib/api/respond';
+import { readAnalysis } from '@/lib/ai/analysisReport';
 import { AnalysisPdf } from '@/lib/pdf/AnalysisPdf';
 
 // @react-pdf needs the Node runtime (not edge); the report is per-request.
@@ -14,8 +14,9 @@ export const dynamic = 'force-dynamic';
 
 /**
  * GET /api/analysis-report/pdf?runId=…&siteId=… — the branded, server-generated PDF of a
- * site's Analysis Report (Grid identity). Returns the cached analysis (generating it if
- * missing) and renders it. Access-scoped to the run's franchisor.
+ * site's Analysis Report (Grid identity). READ-ONLY: renders the cached analysis and never
+ * triggers a (paid) generation — a GET must be safe to open, prefetch or retry. If no report
+ * exists yet it answers 409 and the UI asks the user to generate first. Access-scoped per run.
  */
 export async function GET(req: NextRequest) {
   const session = await getSession();
@@ -33,8 +34,19 @@ export async function GET(req: NextRequest) {
   if (!site || site.pipelineRunId !== runId) return errors.notFound('Site');
 
   try {
-    // Cached analysis (or generate it if this site somehow has none yet).
-    const result = await generateAnalysisReport(runId, siteId, { actorId: session.id });
+    const state = await readAnalysis(siteId);
+    if (state.state !== 'ready') {
+      return fail(
+        {
+          code: state.state === 'generating' ? 'analysis_generating' : 'analysis_missing',
+          message: state.state === 'generating'
+            ? 'The analysis is still being written. Try the PDF again in a moment.'
+            : 'Generate the analysis for this site before exporting the PDF.',
+        },
+        409,
+      );
+    }
+    const result = state.result;
     const meta = ((result.contextJson ?? {}) as { meta?: Record<string, unknown> }).meta ?? {};
     const siteLabel = String(meta.siteLabel ?? 'Site');
     const brand = meta.brand != null ? String(meta.brand) : null;
@@ -64,6 +76,7 @@ export async function GET(req: NextRequest) {
       },
     });
   } catch (e) {
-    return errors.server(`Could not build the PDF: ${e instanceof Error ? e.message : String(e)}`);
+    console.error(`[analysis-pdf] run=${runId} site=${siteId}`, e);
+    return errors.server('Could not build the PDF. Please try again.');
   }
 }

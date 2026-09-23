@@ -5,6 +5,92 @@ The cross-thread state record. Read this (with the Master Instruction and the cu
 
 ---
 
+## 2026-09-23 — Fix Batch 3: Scoring + pipeline integrity — CODE COMPLETE (needs migrate + re-run)
+
+Skills loaded: 02 Database, 01 Senior Web, 03 API, 04 Security. New file `PROJECT_MEMORY.md` (current-state
+snapshot, rewritten after every batch — read it first in a new thread).
+
+- **Confidence no longer always Low.** Old rule: ≥34% Projected rows → Low, and Territory/Daypart/
+  White-Space are always Projected. New evidence confidence in `lib/modules/scorecard.ts`
+  (`siteEvidenceScore`, `evidenceBand`, `runEvidenceConfidence`): decision-weighted Truth Layer values
+  (V 1 · A 0.7 · P 0.35 · missing / unscorable Site Fit 0), High ≥ 0.75, Medium ≥ 0.5, −1 band for
+  on-ground flags or failed modules. Used by the pipeline finalize; the dashboard and AI write-up now
+  show the run's stored confidence (dashboard's own copy of the old rule is now legacy fallback only).
+- **Lease score fixed.** Stored as a VALUE score `leaseValueScore = 100 − percentile` (was the raw
+  percentile, so pricier rent RAISED the composite). Pipeline leaves lease unscored (no asking rent);
+  `POST /api/lease-benchmark` now calls new `recomputeSiteComposite()` so entering an asking rent updates
+  the dashboard/scorecard immediately.
+- **Pipeline integrity** (`orchestrator.ts` main loop rewritten):
+  - per-module isolation (`attempt()`): one failing module no longer skips the rest; failures go to new
+    `candidate_site.pipeline_error` (no more sentinel row overwriting a good Territory result);
+  - resume keyed on new `candidate_site.analyzed_at` (any single row used to mark a site done);
+  - errors outside a site mark the run `failed` (never stuck `analyzing`); all-empty run → `failed`;
+  - `runPipeline(runId, { refresh })` recomputes a finished run and drops stale AI write-ups.
+- **Stale scores cleared on re-run:** `?? undefined` → `?? null` in siteFit/p2p3/lease persist.
+- **Outlet leak closed:** new `outlet.intake_submission_id`. Typed outlets belong to their intake;
+  Territory Guard, White-Space, the site map, the Territory page and intake prefill see only the reference
+  network + THIS run's outlets. `places.ts` re-ingest no longer deletes user-typed outlets.
+- **Intake versioning:** `parentIntakeId` must belong to the user (or staff) — no attaching to another
+  user's lineage.
+- **Dashboard:** "Re-run analysis" button (`RunPipelineButton`, sends `refresh` then rewrites analyses per
+  site); per-site "Some modules did not complete" alert; AI row excluded from truth mix.
+- N+1 removed in `buildScorecardsForRun`. Migration `20260923000002_pipeline_integrity` (additive; backfills
+  `analyzed_at` for existing analysed sites, carries old sentinel errors to `pipeline_error`, links existing
+  typed outlets to their intake by creation time ≤5 min after the intake).
+- Docs: `DATA_DICTIONARY.md` (new columns + pipeline_usage). Tests: new `tests/unit/scoringIntegrity.test.ts`
+  (13 cases). **320/320 pass, typecheck clean** (cloud).
+
+**⚠️ ACTION REQUIRED:** `npx prisma generate` → `npx prisma migrate deploy` → redeploy → open an existing run
+and click **↻ Re-run analysis** (old runs keep old scores/confidence until re-run).
+
+**Noted, not changed (Batch 4/5 candidates):** mall scored against the nearest mall at ANY distance;
+daypart `allday` match can't go below 50; land zoning compares raw city strings; informal counts every
+competitor POI regardless of concept; White-Space scans every POI per site (perf).
+
+---
+
+## 2026-09-23 — Fix Batch 2: AI runtime (timeouts, double-billing, safe errors) — CODE COMPLETE (needs migrate)
+
+Skills loaded: 10 AI Systems, 03 API, 04 Security. Owner confirmed Batch 1 pushed; GitHub history
+verified clean of `bsa_dev.dump` (only local `refs/original` backups still reference it).
+
+- **Run route no longer waits on AI.** `app/api/runs/[id]/run` only runs the time-boxed pipeline.
+  The old `Promise.all` of live VectorShift calls (45s each) inside that request is gone.
+- **One site per request.** When the run completes, `SteppedIntakeWizard` calls
+  `POST /api/analysis-report` for each site sequentially (non-fatal). The Analysis tab generates
+  on demand for anything missing.
+- **Per-site lock = no double-billing.** `lib/ai/analysisReport.ts` rewritten: the `analysis`
+  module_result row is cache AND lock (`status: ready|generating`, `lockId`, `startedAt`). Claims via
+  create (P2002 = lost race) or a conditional JSON-path update; abandoned claims expire after 90s
+  (`lib/ai/analysisCache.ts`, pure). On failure the previous report is restored or the placeholder
+  removed. Finished text is written only while the lock is still ours.
+- **Regenerate** button on the Analysis tab; capped at 3 per site per 24h on the live provider
+  (`pipeline_usage.trigger='regenerate'`) → 429.
+- **Read-only endpoints:** new `GET /api/analysis-report` (status for polling, never bills). The tab
+  polls it every 4s while another request is generating. `GET /api/analysis-report/pdf` NEVER
+  generates any more (409 if not ready).
+- **Safe errors:** `AiGenerationError(code, detail)` in `vectorshiftProvider.ts`; `detail` (may hold the
+  provider's response body) goes to server logs only. Clients get generic 502/503 messages.
+- **Timeouts:** VectorShift default timeout 45s → 24s; `maxDuration = 26` on the analysis route.
+- **Strict provider config:** `aiProviderName()` in `lib/ai/index.ts` accepts only `stub|vectorshift`;
+  a typo now throws instead of silently shipping echoed stub text. Dead `anthropic` env line removed.
+- **Usage log:** `pipeline_usage` gains `status`, `error_code`, `latency_ms`, `trigger` + index
+  (migration `20260923000001_pipeline_usage_status`, additive). Failed/timed-out calls are logged too.
+- **Orchestrator:** the `analysis` row is excluded from "site done" detection and from the run
+  confidence roll-up (AI narrative is not evidence).
+- Docs: `docs/API_REFERENCE.md` updated (auth limits, admin roles, run route, analysis endpoints).
+- **Verified (cloud):** typecheck clean; 308/308 tests (new `tests/unit/analysisRuntime.test.ts`, 9 cases).
+
+**⚠️ ACTION REQUIRED (owner):** `npx prisma generate` → `npx prisma migrate deploy` (applies BOTH Batch 1
+and Batch 2 migrations) → check the Netlify function timeout (Site configuration → Functions). If it is below
+26s, lower `VECTORSHIFT_TIMEOUT_MS` to ~2s under it → redeploy → submit one intake and confirm
+the Analysis tab shows the report (or "Analysing…" then the report).
+
+**Still open (Batch 4):** the VectorShift path still ignores the retrieved interpretation chunks, and
+nothing checks the model output for invented numbers or price-verdict wording.
+
+---
+
 ## 2026-09-23 — Fix Batch 1: Security hardening — CODE COMPLETE (needs migrate on neon)
 
 Skills loaded: 04 Security, 03 API, 02 Database.

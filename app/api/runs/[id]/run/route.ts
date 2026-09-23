@@ -5,15 +5,20 @@ import { canAccessRun, canRunPipeline } from '@/lib/auth/auth';
 import { isUuid } from '@/lib/util/uuid';
 import { ok, errors } from '@/lib/api/respond';
 import { runPipeline } from '@/lib/modules/orchestrator';
-import { generateAnalysisReport } from '@/lib/ai/analysisReport';
 import { audit } from '@/lib/audit/audit';
 
 /**
- * POST /api/runs/[id]/run — execute the deterministic pipeline for a run.
- * Sequences the vertical's modules across all candidate sites, writes results,
- * and sets run status + confidence. Returns the per-site summary.
+ * POST /api/runs/[id]/run — execute one time-boxed slice of the deterministic pipeline.
+ * The client re-invokes until `complete: true`. Body `{ refresh: true }` restarts a finished
+ * run (also clears its cached AI analyses, which would no longer match the new figures).
+ *
+ * AI generation is deliberately NOT done here (Batch 2): fanning out one live-model call per
+ * site inside this request blew through the serverless function limit. When the run
+ * completes, the client requests each site's analysis separately via
+ * POST /api/analysis-report (one site per invocation, locked against double-billing), and the
+ * Analysis tab generates on demand for any site still missing one.
  */
-export async function POST(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getSession();
   if (!session) return errors.unauthorized();
   if (!canRunPipeline(session)) return errors.forbidden();
@@ -23,24 +28,17 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
   if (!run) return errors.notFound('Run');
   if (!canAccessRun(session, run)) return errors.forbidden();
 
-  const result = await runPipeline(run.id);
+  // Body `{ refresh: true }` (first call of a manual re-run) recomputes a finished run from
+  // scratch; later calls (no body) resume the time-boxed slices.
+  const body = (await req.json().catch(() => null)) as { refresh?: unknown } | null;
+  const refresh = body?.refresh === true;
 
-  // When the run finalizes (every site's modules are computed), pre-generate the AI Analysis
-  // Report for EVERY candidate site so it's ready on the analysis page and never re-run. Blocks
-  // until done (product choice). Each site is an independent, brand-new AI run; a per-site failure
-  // is logged and skipped so one bad call can't fail the whole submission.
-  if (result.complete) {
-    const sites = await prisma.candidateSite.findMany({
-      where: { pipelineRunId: run.id },
-      select: { id: true },
-    });
-    await Promise.all(
-      sites.map((s) =>
-        generateAnalysisReport(run.id, s.id, { actorId: session.id }).catch((e) => {
-          console.error(`[analysis] generation failed for site ${s.id}:`, e instanceof Error ? e.message : e);
-        }),
-      ),
-    );
+  let result;
+  try {
+    result = await runPipeline(run.id, { refresh });
+  } catch {
+    // Logged + run marked `failed` inside runPipeline. Generic message to the client.
+    return errors.server('The analysis could not be completed. Please try again.');
   }
 
   await audit({

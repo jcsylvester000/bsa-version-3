@@ -45,7 +45,8 @@ export default async function SiteReportPage({ searchParams }: { searchParams: {
   // Own outlets (for the Territory map) + every module result for this one site.
   const [outlets, rows] = await Promise.all([
     prisma.outlet.findMany({
-      where: { franchisorId: run.franchisorId, status: 'open' },
+      // Reference network + this run's own typed outlets (never another user's).
+      where: { franchisorId: run.franchisorId, status: 'open', OR: [{ intakeSubmissionId: null }, { intakeSubmissionId: run.intakeSubmissionId }] },
       select: { id: true, outletName: true, lat: true, lon: true, format: true },
     }),
     prisma.moduleResult.findMany({
