@@ -5,6 +5,70 @@ The cross-thread state record. Read this (with the Master Instruction and the cu
 
 ---
 
+## 2026-09-24 — R-07: Malls + traffic seasonality for Cavite/Batangas — CODE COMPLETE (owner data)
+
+Skills: 01 Web/App, 02 Database, 07 Broker. Feeds the Mall Match module and the Daypart &
+Seasonality read for provincial sites. No migration (uses existing columns / tables).
+
+- **Malls (`db:load-malls -- --region --file|--url`):** tolerant CSV mapper `lib/geo/mallRow.ts`
+  (`mallRowFrom`/`canonicalTier`/`canonicalFootfall`) → existing `loadMalls`. Stamps the region PSA
+  code + province (existing `mall_property` columns from R-01), builds geom from lat/lon. A row with
+  no name/tier/footfall band is **skipped** (never fabricated). `RawMall` + `loadMalls` extended to
+  persist region/province (backward-compatible; NCR json unaffected). The Mall Match query is a
+  nearest-by-geom lookup, so a loaded provincial mall is used automatically. README:
+  `prisma/data/malls/README.md`.
+- **Traffic (`db:load-traffic -- [--region] --file|--url`):** JSON loader (nested seasonal blob)
+  → pure normaliser `lib/geo/trafficRow.ts` (`trafficRowFrom`) → upsert on `traffic_corridor`.
+  Corridor names match R-06, so the daypart `inferCorridor` lookup resolves them. Ships Projected
+  seasonal **templates** `prisma/data/traffic/{cavite,batangas}.template.json` with `aadtRef: null`
+  (owner fills from **DPWH ATTAS**). The seasonal shape encodes the province direction vs NCR: Undas
+  = province **inflow spike** (not the NCR dip); Holy Week = tourism corridors (Tagaytay–Silang,
+  Batangas City port) **peak** while commuter/industrial corridors (Bacoor–Imus, Sto. Tomas–Tanauan)
+  **dip**. Base AADT band stays the empirical part (owner-supplied). README:
+  `prisma/data/traffic/README.md`.
+- **Guardrail:** footfall bands + seasonal multipliers are modelled (Projected/Assumed), never live
+  counts; nothing is fabricated for a bare row. **400/400 tests** (new: `mallRow` 6, `trafficRow` 5),
+  typecheck clean, `next build` compiles.
+
+**⚠️ ACTION REQUIRED (owner, any time):** (1) mall roster CSV → `npm run db:load-malls -- --region=cavite
+--file=prisma/data/malls/cavite.csv` (and batangas). (2) Review the traffic templates, fill `aadtRef`
+from DPWH ATTAS, then `npm run db:load-traffic -- --region=cavite --file=prisma/data/traffic/cavite.template.json`
+(and batangas). Until loaded, a provincial site's Mall Match reads "no mall data" and its seasonality
+falls back to the vertical term-time note only.
+
+---
+
+## 2026-09-24 — R-06: Provincial lease corridors + comps loader for Cavite/Batangas — CODE COMPLETE (owner CSV)
+
+Skills: 01 Web/App, 02 Database, 07 Broker. Gives the Lease Benchmark a real corridor read for
+Cavite/Batangas sites (rent range, median, percentile, negotiating room) instead of only the
+BIR-zonal indicative band. Guardrail intact — comps are broker/published, never invented; BSA
+reports *position vs the corridor*, never a price verdict (RA 9646 framing unchanged).
+
+- **Corridors (config, `lib/geo/regions.ts`):** Cavite → `Bacoor–Imus`, `Dasmariñas–General Trias`,
+  `Tagaytay–Silang`; Batangas → `Sto. Tomas–Tanauan`, `Lipa`, `Batangas City`. Adding/splitting a
+  corridor is a registry edit, not code.
+- **Region-first corridor inference:** `inferCorridor` now scans the site's own region first (by LGU),
+  so a Cavite/Batangas site hits its provincial corridor instead of a border NCR corridor
+  (Bacoor → `Bacoor–Imus`, not NCR `Las Piñas`). **NCR/Davao behaviour unchanged** — their region is
+  scanned first exactly as before; a shared-token NCR site (e.g. Zapote) still resolves to NCR.
+- **Loader:** `prisma/loadLeaseCsv.ts` (`db:load-lease -- --region --file|--url`) → tolerant mapper
+  `lib/geo/leaseRow.ts` (`leaseRowFrom`/`canonicalCorridor`/`canonicalFormat`) → existing `loadLease`
+  (idempotent per format+corridor). Maps an LGU/barangay to its corridor, normalises the store format,
+  strips ₱/commas, defaults a broker point to `assumed`, and **drops any row with no numeric term**
+  (never fabricates a comp). Unit-tested (`tests/unit/leaseRow.test.ts`, 9 cases; `regions.test.ts`
+  updated for the new R-06 behaviour).
+- **Docs:** `prisma/data/lease/README.md` (corridors, sourcing — Colliers/Leechiu/KMC CALABARZON
+  briefs + listings + mall GLA, CSV columns, ≥5 comps/corridor target). CSVs git-ignored.
+  **No migration.** **389/389 tests, typecheck clean, `next build` compiles.**
+
+**⚠️ ACTION REQUIRED (owner, any time):** assemble Cavite/Batangas comps into a CSV (see the README)
+→ `npm run db:load-lease -- --region=cavite --file=prisma/data/lease/cavite.csv` (and batangas). Until
+loaded, a provincial site still gets the BIR-zonal indicative band (R-05); once loaded it gets the
+full corridor benchmark.
+
+---
+
 ## 2026-09-24 — R-05: BIR zonal values for Cavite/Batangas + region-aware zonal lookup — CODE COMPLETE (owner CSV)
 
 Skills: 02 Database, 07 Broker. Makes the Lease zonal cross-check and the Land zoning screen work

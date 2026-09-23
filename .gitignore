@@ -52,3 +52,13 @@ prisma/data/demographics/*.csv
 
 # BIR zonal CSVs (owner-provided per R-05 README)
 prisma/data/zonal/*.csv
+
+# Provincial lease-comp CSVs (owner-provided per R-06 README)
+prisma/data/lease/*.csv
+
+# Provincial mall rosters (owner-provided per R-07 README)
+prisma/data/malls/*.csv
+
+# Local traffic files with real AADT (owner-filled per R-07 README); templates stay tracked
+prisma/data/traffic/*.json
+!prisma/data/traffic/*.template.json

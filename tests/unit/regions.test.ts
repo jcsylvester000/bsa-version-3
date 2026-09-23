@@ -32,11 +32,26 @@ describe('inferCorridor — NCR/Davao behaviour preserved', () => {
   it.each(cases)('%s / %s → %s', (city, label, corridor) => {
     expect(inferCorridor(city, label)).toBe(corridor);
   });
-  it('Bacoor still maps to the Las Piñas corridor until Cavite comps land (R-06)', () => {
-    expect(inferCorridor('Bacoor', 'Molino Blvd')).toBe('Las Piñas');
-  });
   it('an unknown/foreign city yields null (caller falls back to a default corridor)', () => {
     expect(inferCorridor('Cebu City', 'Ayala Center Cebu')).toBeNull();
+  });
+});
+
+describe('inferCorridor — provincial corridors (R-06), region-first', () => {
+  it('a Cavite site hits its own corridor instead of the border NCR corridor', () => {
+    // Pre-R-06 this returned NCR "Las Piñas" (a border-town token); now region-first picks Cavite.
+    expect(inferCorridor('Bacoor', 'Molino Blvd')).toBe('Bacoor–Imus');
+    expect(inferCorridor('Imus', 'Bayan')).toBe('Bacoor–Imus');
+    expect(inferCorridor('General Trias', 'Gentri')).toBe('Dasmariñas–General Trias');
+    expect(inferCorridor('Tagaytay', 'Ridge')).toBe('Tagaytay–Silang');
+  });
+  it('a Batangas site resolves its corridor', () => {
+    expect(inferCorridor('Lipa City', 'Ayala Highway')).toBe('Lipa');
+    expect(inferCorridor('Sto. Tomas', 'SLEX')).toBe('Sto. Tomas–Tanauan');
+    expect(inferCorridor('Batangas City', 'Poblacion')).toBe('Batangas City');
+  });
+  it('a shared-token NCR site is unchanged (Zapote → NCR Las Piñas)', () => {
+    expect(inferCorridor('Zapote', 'Las Piñas')).toBe('Las Piñas');
   });
 });
 
@@ -96,8 +111,9 @@ describe('regionForSite — LGU name wins over the coarse box', () => {
 });
 
 describe('corridorsForRegion', () => {
-  it('lists NCR corridors and none yet for Cavite (R-06)', () => {
+  it('lists NCR and (R-06) provincial corridors', () => {
     expect(corridorsForRegion('ncr')).toContain('BGC');
-    expect(corridorsForRegion('cavite')).toEqual([]);
+    expect(corridorsForRegion('cavite')).toEqual(['Bacoor–Imus', 'Dasmariñas–General Trias', 'Tagaytay–Silang']);
+    expect(corridorsForRegion('batangas')).toContain('Lipa');
   });
 });

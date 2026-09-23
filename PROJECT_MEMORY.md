@@ -90,7 +90,20 @@ _Last updated: 2026-09-23 — after Fix Batch 5 (review programme complete)._
   **R-05 done** (code): zonal lookup (lease + land zoning) now region-aware (`canonicalCity` + PSA region,
   NCR unchanged); `prisma/loadZonalCsv.ts` + `lib/geo/zonalRow.ts` load a BIR zonal CSV (RDO 54A/54B/58/59;
   see `prisma/data/zonal/README.md`). Also hardened R-03: tiled sweep splits+retries on Overpass 504/timeout,
-  resumable. Next: R-06 (provincial lease corridors + comps) — then R-07 (mall/traffic), R-08 (QA).
+  resumable.
+  **R-06 done** (code): Cavite/Batangas lease corridors added to the registry (Cavite: Bacoor–Imus,
+  Dasmariñas–General Trias, Tagaytay–Silang; Batangas: Sto. Tomas–Tanauan, Lipa, Batangas City);
+  `inferCorridor` is now region-first (Cavite/Batangas sites hit their own corridor, NCR/Davao unchanged);
+  `prisma/loadLeaseCsv.ts` + `lib/geo/leaseRow.ts` load a broker/published lease-comp CSV (see
+  `prisma/data/lease/README.md`), dropping any comp with no numeric term (no fabrication). No migration.
+  **R-07 done** (code): `db:load-malls` (region-aware CSV → `mall_property`, tolerant tier/footfall,
+  region stamped, geom from lat/lon; Mall Match is nearest-by-geom so provincial malls just work) and
+  `db:load-traffic` (JSON → `traffic_corridor`, corridor names match R-06 so daypart resolves them).
+  Ships Projected seasonal templates `prisma/data/traffic/{cavite,batangas}.template.json` (aadtRef null,
+  owner fills from DPWH ATTAS); province seasonal direction differs from NCR (Undas=inflow spike, Holy
+  Week=tourism peak/commuter dip). No migration. Mappers `lib/geo/{mallRow,trafficRow}.ts`, tests added.
+  Next: R-08 (regional QA end-to-end for a Cavite + a Batangas site) — closes the R-series; then the
+  Data/scoring (D-01..), AI (I-01..), Architecture (A-01..), Ops, Security, UX backlog items.
   Region model: `lib/geo/regions.ts` is the single source of truth (bbox, Overpass areas, warm centres,
   corridors, LGU canonicalisers); `inferCorridor`/`canonicalNcrCity` are registry-backed (behaviour
   unchanged for NCR/Davao). A site's region = LGU name first, else pinned coordinate.

@@ -135,7 +135,7 @@ export async function loadLease(rows: RawLease[]): Promise<LoadReport> {
   return { received: rows.length, loaded, skipped, deduped };
 }
 
-/** Raw NCR mall roster row (malls.ncr.json shape). */
+/** Raw mall roster row (malls.ncr.json shape; region/province optional — R-07). */
 export interface RawMall {
   mall_name?: string | null;
   city?: string | null;
@@ -146,6 +146,8 @@ export interface RawMall {
   lat?: number | null;
   lon?: number | null;
   truth_layer?: string | null;
+  region?: string | null;
+  province?: string | null;
 }
 
 const MALL_TIERS = new Set(['A', 'B', 'C']);
@@ -176,6 +178,8 @@ export async function loadMalls(rows: RawMall[]): Promise<LoadReport> {
       cusaBand: r.cusa_band?.trim() || null,
       lat: r.lat ?? null,
       lon: r.lon ?? null,
+      region: r.region?.trim() || null,
+      province: r.province?.trim() || null,
       truthLayer: tl as 'verified' | 'assumed' | 'projected',
     };
     const existing = await prisma.mallProperty.findFirst({ where: { mallName: name }, select: { id: true } });

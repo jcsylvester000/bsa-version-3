@@ -1,0 +1,53 @@
+[
+  {
+    "corridor": "Sto. Tomas–Tanauan",
+    "baseBand": "high",
+    "aadtRef": null,
+    "truthLayer": "projected",
+    "notes": "SLEX/STAR industrial gateway (Sto. Tomas junction, Tanauan). Commuter + freight. aadtRef pending a DPWH ATTAS count.",
+    "source": "MODEL — validate against DPWH ATTAS (SLEX/STAR Sto. Tomas).",
+    "seasonal": {
+      "normal": { "low": 1.0, "high": 1.0, "truthLayer": "assumed", "label": "Ordinary weekday" },
+      "payday": { "low": 1.1, "high": 1.25, "truthLayer": "projected", "label": "Payday surge" },
+      "holiday": { "low": 1.1, "high": 1.4, "truthLayer": "projected", "label": "Long weekend — SLEX southbound getaway traffic through the gateway" },
+      "christmas": { "low": 1.25, "high": 1.6, "truthLayer": "projected", "label": "Christmas / ber-months peak" },
+      "undas": { "low": 1.15, "high": 1.5, "truthLayer": "projected", "label": "Undas — heavy southbound exodus through the SLEX gateway (spike, not dip)" },
+      "holy_week": { "low": 0.75, "high": 1.0, "truthLayer": "projected", "label": "Holy Week — commuter/industrial dip; through-traffic peaks on getaway days only" },
+      "school_open": { "low": 1.05, "high": 1.2, "truthLayer": "projected", "label": "School term-open uplift" }
+    }
+  },
+  {
+    "corridor": "Lipa",
+    "baseBand": "high",
+    "aadtRef": null,
+    "truthLayer": "projected",
+    "notes": "Regional urban commercial hub (Ayala Highway, Lipa CBD). Behaves NCR-like — a local-trade centre. aadtRef pending.",
+    "source": "MODEL — validate against DPWH ATTAS (Ayala Highway, Lipa).",
+    "seasonal": {
+      "normal": { "low": 1.0, "high": 1.0, "truthLayer": "assumed", "label": "Ordinary weekday" },
+      "payday": { "low": 1.1, "high": 1.25, "truthLayer": "projected", "label": "Payday surge" },
+      "holiday": { "low": 1.0, "high": 1.2, "truthLayer": "projected", "label": "Long weekend — steady local retail" },
+      "christmas": { "low": 1.25, "high": 1.6, "truthLayer": "projected", "label": "Christmas / ber-months peak" },
+      "undas": { "low": 1.1, "high": 1.4, "truthLayer": "projected", "label": "Undas — inbound province traffic lifts the CBD" },
+      "holy_week": { "low": 0.8, "high": 1.05, "truthLayer": "projected", "label": "Holy Week — modest urban dip" },
+      "school_open": { "low": 1.1, "high": 1.25, "truthLayer": "projected", "label": "School term-open — university-town uplift" }
+    }
+  },
+  {
+    "corridor": "Batangas City",
+    "baseBand": "high",
+    "aadtRef": null,
+    "truthLayer": "projected",
+    "notes": "Port + regional hub (Batangas Port, Diversion Rd). RoRo gateway to Mindoro/Visayas amplifies holiday swings. aadtRef pending.",
+    "source": "MODEL — validate against DPWH ATTAS (Batangas Diversion Rd) + Batangas Port throughput.",
+    "seasonal": {
+      "normal": { "low": 1.0, "high": 1.0, "truthLayer": "assumed", "label": "Ordinary weekday" },
+      "payday": { "low": 1.1, "high": 1.25, "truthLayer": "projected", "label": "Payday surge" },
+      "holiday": { "low": 1.15, "high": 1.45, "truthLayer": "projected", "label": "Long weekend — port/RoRo getaway traffic to Mindoro/Visayas" },
+      "christmas": { "low": 1.25, "high": 1.6, "truthLayer": "projected", "label": "Christmas / ber-months peak" },
+      "undas": { "low": 1.15, "high": 1.5, "truthLayer": "projected", "label": "Undas — inbound + port exodus spike" },
+      "holy_week": { "low": 1.1, "high": 1.5, "truthLayer": "projected", "label": "Holy Week — port getaway peak (spike, not dip)" },
+      "school_open": { "low": 1.05, "high": 1.2, "truthLayer": "projected", "label": "School term-open uplift" }
+    }
+  }
+]

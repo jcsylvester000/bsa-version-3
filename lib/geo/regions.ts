@@ -9,8 +9,9 @@
  *
  * NCR and Davao reproduce the previous hard-coded behaviour exactly (the corridor/city
  * resolvers are ported faithfully). Cavite and Batangas are registered with their bounds,
- * Overpass areas, warm centres and city canonicalisers now; their lease corridors are added
- * with the comps in R-06, and their boundary polygons + zonal/demographics in R-02/R-04/R-05.
+ * Overpass areas, warm centres, city canonicalisers and (R-06) lease corridors; their
+ * boundary polygons + zonal/demographics land in R-02/R-04/R-05. Comps for the provincial
+ * corridors are owner-loaded (prisma/data/lease/README.md) — the names here are the CSV keys.
  */
 
 export type RegionKey = 'ncr' | 'davao' | 'cavite' | 'batangas';
@@ -151,9 +152,14 @@ const CAVITE: RegionDef = {
     { lat: 14.3869, lon: 120.8817, label: 'General Trias' },
     { lat: 14.1153, lon: 120.9621, label: 'Tagaytay' },
   ],
-  // Corridors are added with comps in R-06. Until then a Cavite site uses the default
-  // corridor (flagged Projected) rather than a wrong NCR match.
-  corridors: [],
+  // R-06: provincial lease corridors. The names below are what the owner uses in the
+  // lease CSV (see prisma/data/lease/README.md); comps stay empty until that CSV loads,
+  // so resolveCorridorForSite still falls back to a default until real comps exist.
+  corridors: [
+    { name: 'Bacoor–Imus', tokens: /bacoor|molino|\bimus\b|kawit|noveleta/ },
+    { name: 'Dasmariñas–General Trias', tokens: /dasmari(ñ|n)as|dasma\b|general trias|gen\.? ?trias|gentri|trece|rosario, ?cavite|\btanza\b|cavite city/ },
+    { name: 'Tagaytay–Silang', tokens: /tagaytay|\bsilang\b/ },
+  ],
   psgcRegionCode: '400000000', // CALABARZON (Region IV-A)
   psgcProvinces: ['402100000'], // Cavite
   cities: [
@@ -185,7 +191,12 @@ const BATANGAS: RegionDef = {
     { lat: 14.1079, lon: 121.1416, label: 'Sto. Tomas' },
     { lat: 14.0863, lon: 121.1497, label: 'Tanauan' },
   ],
-  corridors: [],
+  // R-06: provincial lease corridors (names used in the lease CSV; comps empty until loaded).
+  corridors: [
+    { name: 'Sto. Tomas–Tanauan', tokens: /sto\.? ?tomas|santo tomas|tanauan|\bmalvar\b/ },
+    { name: 'Lipa', tokens: /\blipa\b/ },
+    { name: 'Batangas City', tokens: /batangas city|\bbauan\b/ },
+  ],
   psgcRegionCode: '400000000', // CALABARZON (Region IV-A)
   psgcProvinces: ['401000000'], // Batangas
   cities: [
@@ -254,15 +265,19 @@ export function regionForSite(site: { city?: string | null; label?: string | nul
 }
 
 /**
- * Infer the lease corridor for a site. Preserves the previous NCR/Davao behaviour exactly, and
- * extends to any region whose registry has corridors (Cavite/Batangas gain theirs in R-06).
- * Returns null when nothing matches; callers fall back to a default corridor that has comps.
+ * Infer the lease corridor for a site. Region-first (R-06): the site's own region (resolved by
+ * LGU name) is scanned before the others, so a Cavite/Batangas site hits its provincial corridor
+ * instead of a border NCR corridor (e.g. Bacoor → 'Bacoor–Imus', not NCR 'Las Piñas'). NCR/Davao
+ * sites are unaffected — their region is scanned first exactly as before. Returns null when
+ * nothing matches; callers fall back to a default corridor that has comps.
  */
 export function inferCorridor(city: string | null | undefined, label: string | null | undefined): string | null {
   const hay = `${city ?? ''} ${label ?? ''}`.toLowerCase();
-  // Region order preserves the historical resolution (NCR, then Davao); provincial corridors,
-  // once populated, are checked before the large-region fallbacks they belong to.
-  for (const k of ['ncr', 'cavite', 'batangas', 'davao'] as RegionKey[]) {
+  // Put the site's own region first (if identifiable), then the historical order for the rest.
+  const own = canonicalCity(city, label)?.region ?? null;
+  const base: RegionKey[] = ['ncr', 'cavite', 'batangas', 'davao'];
+  const order = own ? [own, ...base.filter((k) => k !== own)] : base;
+  for (const k of order) {
     for (const corr of REGISTRY[k].corridors) {
       if (corr.tokens.test(hay)) return corr.name;
     }

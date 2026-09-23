@@ -1,0 +1,53 @@
+[
+  {
+    "corridor": "Bacoor–Imus",
+    "baseBand": "high",
+    "aadtRef": null,
+    "truthLayer": "projected",
+    "notes": "NCR-gateway commuter corridor (Aguinaldo Hwy / CAVITEX / Molino). Base band is a placeholder until a DPWH ATTAS count is entered — set aadtRef and raise truthLayer to assumed/verified.",
+    "source": "MODEL — validate baseBand/aadtRef against DPWH ATTAS (Aguinaldo Hwy, CAVITEX).",
+    "seasonal": {
+      "normal": { "low": 1.0, "high": 1.0, "truthLayer": "assumed", "label": "Ordinary weekday" },
+      "payday": { "low": 1.1, "high": 1.25, "truthLayer": "projected", "label": "Payday (15th/30th/Fri) surge" },
+      "holiday": { "low": 1.05, "high": 1.3, "truthLayer": "projected", "label": "Long weekend — NCR outflow through the Cavite gateway lifts traffic" },
+      "christmas": { "low": 1.25, "high": 1.6, "truthLayer": "projected", "label": "Christmas / ber-months peak (Nov 15–Jan 6)" },
+      "undas": { "low": 1.1, "high": 1.4, "truthLayer": "projected", "label": "Undas — province receives the NCR exodus; gateway corridors spike (opposite of the NCR dip)" },
+      "holy_week": { "low": 0.7, "high": 0.95, "truthLayer": "projected", "label": "Holy Week — commuters leave for the provinces/beaches; local commercial quieter" },
+      "school_open": { "low": 1.05, "high": 1.2, "truthLayer": "projected", "label": "School term-open uplift" }
+    }
+  },
+  {
+    "corridor": "Dasmariñas–General Trias",
+    "baseBand": "high",
+    "aadtRef": null,
+    "truthLayer": "projected",
+    "notes": "Industrial-estate + university corridor (Governor's Dr / Dasma–GenTri). aadtRef pending a DPWH count.",
+    "source": "MODEL — validate against DPWH ATTAS (Governor's Drive).",
+    "seasonal": {
+      "normal": { "low": 1.0, "high": 1.0, "truthLayer": "assumed", "label": "Ordinary weekday" },
+      "payday": { "low": 1.1, "high": 1.25, "truthLayer": "projected", "label": "Payday surge" },
+      "holiday": { "low": 1.0, "high": 1.2, "truthLayer": "projected", "label": "Long weekend — mixed (industrial slows, retail lifts)" },
+      "christmas": { "low": 1.2, "high": 1.55, "truthLayer": "projected", "label": "Christmas / ber-months peak" },
+      "undas": { "low": 1.05, "high": 1.35, "truthLayer": "projected", "label": "Undas — inbound province traffic lifts local roads" },
+      "holy_week": { "low": 0.8, "high": 1.05, "truthLayer": "projected", "label": "Holy Week — industrial dip, some local retail holds" },
+      "school_open": { "low": 1.1, "high": 1.25, "truthLayer": "projected", "label": "School term-open — university-town uplift (DLSU-D, others)" }
+    }
+  },
+  {
+    "corridor": "Tagaytay–Silang",
+    "baseBand": "medium",
+    "aadtRef": null,
+    "truthLayer": "projected",
+    "notes": "Tourism ridge (Tagaytay–Nasugbu / Sta. Rosa–Tagaytay roads). Weekend- and holiday-driven, not commuter. aadtRef pending.",
+    "source": "MODEL — validate against DPWH ATTAS (Tagaytay–Nasugbu Rd) + DOT arrivals.",
+    "seasonal": {
+      "normal": { "low": 1.0, "high": 1.0, "truthLayer": "assumed", "label": "Ordinary weekday" },
+      "payday": { "low": 1.15, "high": 1.35, "truthLayer": "projected", "label": "Payday weekend day-trip surge" },
+      "holiday": { "low": 1.3, "high": 1.8, "truthLayer": "projected", "label": "Long weekend — heavy Metro Manila day-trip inflow" },
+      "christmas": { "low": 1.35, "high": 1.9, "truthLayer": "projected", "label": "Christmas / New Year — peak tourism" },
+      "undas": { "low": 1.1, "high": 1.4, "truthLayer": "projected", "label": "Undas long weekend — getaway inflow" },
+      "holy_week": { "low": 1.4, "high": 2.0, "truthLayer": "projected", "label": "Holy Week — peak getaway; tourism corridors spike (opposite of urban dip)" },
+      "school_open": { "low": 0.95, "high": 1.05, "truthLayer": "projected", "label": "School term-open — weekday tourism eases slightly" }
+    }
+  }
+]
