@@ -23,6 +23,7 @@ import { prisma } from '@/lib/db/prisma';
 import type { RealPlace } from './placesService';
 import { establishmentsNear, osmTagToPoiCategory, type OsmPlace } from './osmService';
 import { conceptFor, filterRelevantCompetitors } from './competitorRelevance';
+import { regionForPoint } from '@/lib/geo/regions';
 
 /** NCR centre grid — the busy corridors the deliberate warm pass sweeps per vertical.
  *  Mirrors the ingest NCR_GRID; kept here so the warm endpoint has no cross-import. */
@@ -87,6 +88,9 @@ async function persistPois(places: OsmPlace[]): Promise<number> {
       lon: p.lon,
       city: null as string | null,
       barangay: null as string | null,
+      // Coarse region from the coordinate (refined to real polygons in R-02).
+      region: regionForPoint(p.lat, p.lon) as string | null,
+      province: null as string | null,
       truthLayer: 'verified' as const,
     };
     let id: bigint | null = null;

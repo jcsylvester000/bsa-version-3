@@ -76,8 +76,12 @@ _Last updated: 2026-09-23 — after Fix Batch 5 (review programme complete)._
 
 ## Workflow conventions
 
-- **Awaiting owner approval:** `docs/BSA_Improvement_Backlog.xlsx` (36 items, Approval column; includes the
-  Cavite–Batangas Overpass/Neon data plan). Build ONLY approved rows, in batches, P1 first.
+- **Backlog approved (all 36):** `docs/BSA_Improvement_Backlog.xlsx`. Building in dependency order, P1 first.
+  Progress: **R-01 done** (region registry `lib/geo/regions.ts` + region/province columns + region-aware
+  ingest; migration `20260923000004_region_columns`). Next: R-02 (PSGC boundary polygons → admin_boundary).
+  Region model: `lib/geo/regions.ts` is the single source of truth (bbox, Overpass areas, warm centres,
+  corridors, LGU canonicalisers); `inferCorridor`/`canonicalNcrCity` are registry-backed (behaviour
+  unchanged for NCR/Davao). A site's region = LGU name first, else pinned coordinate.
 - Next (not started): see `docs/HANDOFF.md` §4 — pgvector hybrid retrieval, White-Space SQL-side tiering,
   API-first page data, nonce CSP, session revocation, S3/R2 only if uploads return. Skill 12
   (`3 - Skills/12 - Orchestration and Delivery Lead/SKILL.md`) now exists and encodes this workflow

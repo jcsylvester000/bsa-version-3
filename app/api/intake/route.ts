@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db/prisma';
 import { getSession } from '@/lib/auth/session';
 import { canSeeFranchisor } from '@/lib/auth/auth';
+import { regionForSite } from '@/lib/geo/regions';
 import { isMockUser } from '@/lib/auth/mockUsers';
 import { intakeSubmitSchema } from '@/lib/validation/schemas';
 import { computeCompleteness, REQUIRED_SECTIONS } from '@/lib/modules/completeness';
@@ -177,7 +178,8 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    // 4) candidate sites — geom via trigger
+    // 4) candidate sites — geom via trigger. Tag the region (LGU name first, else pinned
+    // coordinate) so region-scoped reference reads (lease corridor, zonal, mall) resolve.
     for (const c of input.candidateSites) {
       await prisma.candidateSite.create({
         data: {
@@ -189,6 +191,7 @@ export async function POST(req: NextRequest) {
           lat: c.lat,
           lon: c.lon,
           siteType: c.siteType,
+          region: regionForSite({ city: c.city, label: c.label, lat: c.lat, lon: c.lon }) ?? undefined,
         },
       });
     }

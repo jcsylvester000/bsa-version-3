@@ -21,6 +21,8 @@
     "db:populate:davao": "tsx --tsconfig tsconfig.scripts.json prisma/populate.ts --region=davao",
     "db:reset": "prisma migrate reset --force",
     "db:ingest:osm": "tsx --tsconfig tsconfig.scripts.json prisma/ingestOsm.ts",
+    "db:ingest:osm:cavite": "tsx --tsconfig tsconfig.scripts.json prisma/ingestOsm.ts --region=cavite",
+    "db:ingest:osm:batangas": "tsx --tsconfig tsconfig.scripts.json prisma/ingestOsm.ts --region=batangas",
     "db:validate": "tsx --tsconfig tsconfig.scripts.json scripts/validateData.ts",
     "db:fix-outliers": "tsx --tsconfig tsconfig.scripts.json scripts/findOutliers.ts",
     "db:seed-cannibalization": "tsx --tsconfig tsconfig.scripts.json prisma/seedCompetitorSets.ts",

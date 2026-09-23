@@ -298,6 +298,9 @@ model CandidateSite {
   siteType       String?         @map("site_type")
   compositeScore Decimal?        @map("composite_score") @db.Decimal(6, 2)
   verdict        Verdict?
+  /// Region this site resolves to (LGU name first, else pinned coordinate). Drives region-scoped data.
+  region         String?
+  province       String?
   /// Set when the pipeline has FINISHED this site (every module attempted). NULL = still to do.
   /// The resumable pipeline processes sites where this is NULL — a module_result row alone
   /// no longer marks a site done (a killed invocation could leave it half-analysed).
@@ -310,6 +313,7 @@ model CandidateSite {
   results        ModuleResult[]
 
   @@index([pipelineRunId])
+  @@index([region])
   @@map("candidate_site")
 }
 
@@ -328,11 +332,15 @@ model Poi {
   geom       Unsupported("geography(Point, 4326)")?
   city       String?
   barangay   String?
+  /// Region key (ncr|davao|cavite|batangas) + province, tagged on ingest for region-scoped reads.
+  region     String?
+  province   String?
   source     PoiSource   @default(osm)
   truthLayer TruthLayer  @default(verified) @map("truth_layer")
   osmId      BigInt?     @unique @map("osm_id")
 
   @@index([category])
+  @@index([region])
   @@map("poi")
 }
 
@@ -417,6 +425,8 @@ model MallProperty {
   lat           Float?       @db.DoublePrecision
   lon           Float?       @db.DoublePrecision
   geom          Unsupported("geography(Point, 4326)")?
+  region        String?
+  province      String?
   truthLayer    TruthLayer   @default(assumed) @map("truth_layer")
 
   @@index([tier])

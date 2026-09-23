@@ -18,11 +18,11 @@
 import 'dotenv/config';
 import { loadPoi } from '../lib/ingest/loaders';
 import type { RawPoi } from '../lib/ingest/normalize';
+import { getRegion, type RegionKey, REGION_KEYS } from '../lib/geo/regions';
 import {
   establishmentsInBbox,
   brandBranchesInBbox,
   osmTagToPoiCategory,
-  NCR_BBOX,
   type OsmPlace,
 } from '../lib/places/osmService';
 
@@ -76,14 +76,19 @@ const BRAND_PULL = [
   'Go Hotels', 'Red Planet', 'RedDoorz', 'Kumon',
 ];
 
-interface Args { quick: boolean; competitors: boolean; brands: boolean; }
+interface Args { quick: boolean; competitors: boolean; brands: boolean; region: RegionKey; }
 
 function parseArgs(argv: string[]): Args {
-  const a: Args = { quick: false, competitors: false, brands: false };
+  const a: Args = { quick: false, competitors: false, brands: false, region: 'ncr' };
   for (const x of argv) {
     if (x === '--quick') a.quick = true;
     else if (x === '--competitors') a.competitors = true;
     else if (x === '--brands') a.brands = true;
+    else if (x.startsWith('--region=')) {
+      const r = x.slice('--region='.length) as RegionKey;
+      if (REGION_KEYS.includes(r)) a.region = r;
+      else { console.error(`Unknown --region=${r}; use one of ${REGION_KEYS.join(', ')}`); process.exit(1); }
+    }
   }
   // If neither flag is set, do both.
   if (!a.competitors && !a.brands) { a.competitors = true; a.brands = true; }
@@ -91,22 +96,26 @@ function parseArgs(argv: string[]): Args {
 }
 
 /** OsmPlace → RawPoi (loadPoi input). Category from the OSM tag; source stays 'osm'. */
-function toRawPoi(p: OsmPlace, categoryOverride?: string): RawPoi {
+function toRawPoi(p: OsmPlace, region: RegionKey, categoryOverride?: string): RawPoi {
   return {
     osm_id: p.osmId,
     name: p.name,
     category: categoryOverride ?? osmTagToPoiCategory(p.osmTag),
     lat: p.lat,
     lon: p.lon,
-    city: null, // barangay/city snap is a later enhancement; coord is what matters here
+    city: null, // barangay/city snap lands with R-02 boundaries; coord is what matters here
     barangay: null,
+    region, // the whole sweep is within one region
   };
 }
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  console.log(`OSM (Overpass) NCR ingest — competitors:${args.competitors} brands:${args.brands} quick:${args.quick}`);
-  console.log('Source: OpenStreetMap via public Overpass API (no key, no billing).\n');
+  const region = getRegion(args.region)!;
+  const REGION_BBOX = region.bbox;
+  console.log(`OSM (Overpass) ${region.name} ingest — competitors:${args.competitors} brands:${args.brands} quick:${args.quick}`);
+  console.log('Source: OpenStreetMap via public Overpass API (no key, no billing).');
+  console.log('Note: single-bbox sweep is capped and can truncate dense verticals — the tiled sweep (R-03) is the complete path.\n');
 
   let totalLoaded = 0;
   const failed: string[] = [];
@@ -118,8 +127,8 @@ async function main() {
     console.log(`[1] Competitor sweep — ${verticals.length} verticals across NCR…`);
     for (const v of verticals) {
       try {
-        const places = await establishmentsInBbox(v, NCR_BBOX, { max: args.quick ? 150 : 600 });
-        const rows = places.map((p) => toRawPoi(p, 'competitor'));
+        const places = await establishmentsInBbox(v, REGION_BBOX, { max: args.quick ? 150 : 600 });
+        const rows = places.map((p) => toRawPoi(p, args.region, 'competitor'));
         const rep = await loadPoi(rows);
         totalLoaded += rep.loaded;
         console.log(`   ${v}: ${places.length} found → ${rep.loaded} loaded (${rep.deduped} dedup, ${rep.skipped} skip)`);
@@ -137,8 +146,8 @@ async function main() {
     console.log(`\n[2] Brand-branch pull — ${brands.length} brands across NCR…`);
     for (const b of brands) {
       try {
-        const places = await brandBranchesInBbox(b, NCR_BBOX, { max: 200 });
-        const rows = places.map((p) => toRawPoi(p, 'competitor'));
+        const places = await brandBranchesInBbox(b, REGION_BBOX, { max: 200 });
+        const rows = places.map((p) => toRawPoi(p, args.region, 'competitor'));
         const rep = await loadPoi(rows);
         totalLoaded += rep.loaded;
         console.log(`   ${b}: ${places.length} found → ${rep.loaded} loaded`);

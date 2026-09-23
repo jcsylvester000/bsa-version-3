@@ -48,6 +48,8 @@ export async function loadPoi(rows: RawPoi[]): Promise<LoadReport> {
       lon: n.lon,
       city: n.city,
       barangay: n.barangay,
+      region: n.region,
+      province: n.province,
       truthLayer: n.truthLayer,
     };
     if (n.osmId != null) {

@@ -14,6 +14,7 @@
  *
  * No number is invented: everything here is derived from the comps passed in.
  */
+import { canonicalCity, inferCorridor } from '@/lib/geo/regions';
 import type { TruthLayer } from '@/lib/truth/truthLayer';
 
 /** Minimum comps for a term before its benchmark is considered reliable. */
@@ -232,44 +233,11 @@ function round1(n: number): number {
   return Math.round(n * 10) / 10;
 }
 
-/**
- * Corridor inference from a site's city/label → a corridor that has lease_comp data.
- *
- * This is the SINGLE source of truth for mapping a candidate site to its rent
- * corridor. It lives here (pure, no server-only imports) so BOTH the pipeline
- * orchestrator and the client-side Lease Benchmark tool resolve a site to the
- * same corridor — a BGC site benchmarks against BGC comps in every surface, not
- * an alphabetically-first corridor.
- *
- * Order matters: check the most specific tokens (BGC) before city fallbacks.
- * Returns null when nothing matches (missing/foreign city); callers fall back to
- * a default corridor that has comps so Lease still returns an honest benchmark.
- */
-export function inferCorridor(city: string | null | undefined, label: string | null | undefined): string | null {
-  const hay = `${city ?? ''} ${label ?? ''}`.toLowerCase();
-  // Most-specific corridor tokens first.
-  if (hay.includes('bgc') || hay.includes('bonifacio') || hay.includes('taguig')) return 'BGC';
-  if (hay.includes('ortigas') || hay.includes('pasig') || hay.includes('kapitolyo') || hay.includes('capitol') || hay.includes('san antonio')) return 'Ortigas';
-  if (hay.includes('makati')) return 'Makati CBD';
-  // City-level fallbacks to corridors that have comps in the dataset.
-  if (hay.includes('greenhills') || hay.includes('san juan') || hay.includes('wack') || hay.includes('little baguio')) return 'San Juan';
-  if (hay.includes('pateros')) return 'Pateros';
-  if (hay.includes('pasay') || hay.includes('moa') || hay.includes('mall of asia') || hay.includes('bay area')) return 'Pasay Bay Area';
-  // Parañaque shares the Bay Area / Aseana + Alabang-Zapote retail belt; use Pasay Bay Area comps.
-  if (hay.includes('parañaque') || hay.includes('paranaque') || hay.includes('bf homes') || hay.includes('sucat') || hay.includes('bicutan') || hay.includes('aseana')) return 'Pasay Bay Area';
-  if (hay.includes('quezon city') || hay.includes(' qc') || hay.startsWith('qc') || hay.includes('cubao') || hay.includes('timog') || hay.includes('katipunan') || hay.includes('araneta')) return 'Quezon City';
-  if (hay.includes('alabang') || hay.includes('muntinlupa') || hay.includes('festival') || hay.includes('filinvest')) return 'Alabang';
-  if (hay.includes('mandaluyong') || hay.includes('boni') || hay.includes('shaw')) return 'Mandaluyong';
-  if (hay.includes('marikina')) return 'Marikina';
-  if (hay.includes('manila') || hay.includes('divisoria') || hay.includes('binondo') || hay.includes('espana') || hay.includes('españa') || hay.includes('ermita') || hay.includes('sampaloc')) return 'Manila';
-  // North CAMANAVA + south fringe (secondary markets).
-  if (hay.includes('caloocan') || hay.includes('valenzuela') || hay.includes('malabon') || hay.includes('navotas') || hay.includes('camanava')) return 'CAMANAVA';
-  if (hay.includes('las pinas') || hay.includes('las piñas') || hay.includes('bacoor') || hay.includes('zapote')) return 'Las Piñas';
-  // --- Region XI (Davao) ---
-  if (hay.includes('davao city') || hay.includes('lanang') || hay.includes('matina') || hay.includes('buhangin') || hay.includes('bajada') || hay.includes('toril') || hay.includes('agdao') || hay.includes('ecoland') || hay.includes('abreeza')) return 'Davao City';
-  if (hay.includes('tagum') || hay.includes('digos') || hay.includes('panabo') || hay.includes('samal') || hay.includes('igacos') || hay.includes('mati')) return 'Davao Provinces';
-  return null;
-}
+// inferCorridor now lives in lib/geo/regions (the region registry) so a province is
+// configuration, not code. Imported above for local use (resolveCorridorForSite) and
+// re-exported here unchanged for the orchestrator, the Lease Benchmark tool and tests.
+export { inferCorridor };
+
 
 /**
  * Resolve the corridor to preselect for a site in the Lease Benchmark tool.
@@ -384,29 +352,11 @@ export function indicativeRentFromZonal(zonalMid: number | null): IndicativeRent
 }
 
 /**
- * Map a site's city/label to the canonical NCR city name used by the zonal dataset
- * (e.g. "City of Pasig" / "Ortigas, Pasig" → "Pasig"). Pure, so the zonal lookup and
- * any test resolve a site the same way. Returns null for a non-NCR / unknown city.
+ * Canonical NCR city for the zonal lookup. A thin wrapper over the region registry's
+ * `canonicalCity`, returning the LGU only when the site resolves to NCR (behaviour
+ * unchanged). Province-aware callers use `canonicalCity` / `regionForSite` from lib/geo/regions.
  */
 export function canonicalNcrCity(city: string | null | undefined, label?: string | null): string | null {
-  const hay = `${city ?? ''} ${label ?? ''}`.toLowerCase();
-  if (!hay.trim()) return null;
-  if (/parañaque|paranaque|\bbf homes\b|sucat|bicutan|aseana/.test(hay)) return 'Parañaque';
-  if (/las ?pi(ñ|n)as|zapote/.test(hay)) return 'Las Piñas';
-  if (/quezon city|\bqc\b|cubao|novaliches|diliman|katipunan|commonwealth|fairview|timog|araneta/.test(hay)) return 'Quezon City';
-  if (/makati/.test(hay)) return 'Makati';
-  if (/taguig|\bbgc\b|bonifacio|fort bonifacio|mckinley/.test(hay)) return 'Taguig';
-  if (/pasig|ortigas|kapitolyo|capitol commons/.test(hay)) return 'Pasig';
-  if (/mandaluyong|shaw|\bboni\b/.test(hay)) return 'Mandaluyong';
-  if (/muntinlupa|alabang|filinvest|festival/.test(hay)) return 'Muntinlupa';
-  if (/pasay|\bmoa\b|mall of asia|bay area/.test(hay)) return 'Pasay';
-  if (/marikina/.test(hay)) return 'Marikina';
-  if (/valenzuela/.test(hay)) return 'Valenzuela';
-  if (/malabon/.test(hay)) return 'Malabon';
-  if (/navotas/.test(hay)) return 'Navotas';
-  if (/caloocan/.test(hay)) return 'Caloocan';
-  if (/pateros/.test(hay)) return 'Pateros';
-  if (/san juan/.test(hay)) return 'San Juan';
-  if (/manila|binondo|ermita|malate|intramuros|sampaloc|quiapo|sta\.? ?cruz|sta\.? ?mesa|\bpaco\b|pandacan|tondo|santa ana|san andres|divisoria|espa(ñ|n)a/.test(hay)) return 'Manila';
-  return null;
+  const r = canonicalCity(city, label);
+  return r && r.region === 'ncr' ? r.city : null;
 }

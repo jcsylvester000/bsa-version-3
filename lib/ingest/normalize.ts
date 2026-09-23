@@ -1,3 +1,4 @@
+import { regionForPoint } from '@/lib/geo/regions';
 /**
  * Pure normalization + dedup helpers for reference-data ingestion. No server
  * imports so they're unit-testable. Each loader normalizes source rows to the table
@@ -20,6 +21,8 @@ export interface RawPoi {
   lon?: number | null;
   city?: string | null;
   barangay?: string | null;
+  region?: string | null;
+  province?: string | null;
 }
 export interface NormPoi {
   osmId: number | null;
@@ -29,6 +32,8 @@ export interface NormPoi {
   lon: number;
   city: string | null;
   barangay: string | null;
+  region: string | null;
+  province: string | null;
   truthLayer: TruthLayer;
 }
 
@@ -54,6 +59,10 @@ export function normalizePoi(raw: RawPoi): NormPoi | null {
     city: raw.city?.trim() || null,
     // Coordinate is Verified from OSM; barangay derived by snap → Assumed.
     barangay: raw.barangay?.trim() || null,
+    // Region: explicit when the caller knows it, else coarse from the coordinate (region tagging
+    // is refined to real polygons in R-02).
+    region: raw.region?.trim() || regionForPoint(lat, lon) || null,
+    province: raw.province?.trim() || null,
     truthLayer: 'verified',
   };
 }

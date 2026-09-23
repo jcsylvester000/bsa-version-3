@@ -5,6 +5,34 @@ The cross-thread state record. Read this (with the Master Instruction and the cu
 
 ---
 
+## 2026-09-24 — R-01: Region registry + region-aware schema — CODE COMPLETE (needs migrate)
+
+First approved backlog item; foundation for R-03/R-05/R-06/R-07/R-08/A-02/U-02. Skills: 02 Database, 01 Senior Web.
+
+- **New `lib/geo/regions.ts`** — one registry for ncr, davao, cavite, batangas: bbox, Overpass area names,
+  warm centres, lease corridors and LGU canonicalisers. Pure/client-safe. Adding a province = a registry
+  entry + its data, not code changes. Helpers: `getRegion`, `listRegions`, `REGION_KEYS`, `regionForPoint`
+  (coarse bbox), `canonicalCity` (LGU + region), `regionForSite` (LGU name first, else coordinate),
+  `inferCorridor`, `corridorsForRegion`.
+- **`inferCorridor` and `canonicalNcrCity` refactored to consume the registry** — behaviour identical for
+  NCR/Davao (ported token lists verbatim; Bacoor still → Las Piñas corridor until R-06). `leaseMath` imports
+  from the registry and re-exports both, so every existing importer/test is unchanged.
+- **Schema:** `region` + `province` on `poi`, `candidate_site`, `mall_property` (+ region indexes). Migration
+  `20260923000004_region_columns` (additive, idempotent, bbox backfill of existing NCR/Davao rows).
+- **Tagging:** intake write sets `candidate_site.region` via `regionForSite`; `normalizePoi` and the
+  on-demand cache (`poiCache.persistPois`) set `poi.region` from the coordinate; province stays NULL until
+  R-02 gives real polygons.
+- **Ingest:** `prisma/ingestOsm.ts` gains `--region=<key>` (bbox from the registry; defaults ncr; prints a
+  note that the single-bbox sweep truncates dense verticals — R-03 is the complete tiled path). New scripts
+  `db:ingest:osm:cavite` / `:batangas`.
+- **Tests:** new `tests/unit/regions.test.ts` (20 cases: NCR/Davao unchanged, Cavite/Batangas resolve,
+  regionForPoint/regionForSite, corridors). **354/354 pass, typecheck clean, `next build` compiles.**
+
+**⚠️ ACTION REQUIRED:** `npx prisma migrate deploy` (applies region columns + backfill). No data load needed
+for R-01; Cavite/Batangas data arrives in R-02→R-07.
+
+---
+
 ## 2026-09-23 — Improvement backlog workbook (for owner approval) — DOC ONLY
 
 `docs/BSA_Improvement_Backlog.xlsx` — 36 open items (11 P1 / 19 P2 / 6 P3) across Regional expansion,
