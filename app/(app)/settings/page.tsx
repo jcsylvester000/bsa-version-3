@@ -1,7 +1,6 @@
 import Link from 'next/link';
 import { getSession } from '@/lib/auth/session';
-import { prisma } from '@/lib/db/prisma';
-import { isUuid } from '@/lib/util/uuid';
+import { getAccountCreatedAt } from '@/lib/services/account';
 import { isMockUser } from '@/lib/auth/mockUsers';
 import { ChangePasswordForm } from '@/components/ChangePasswordForm';
 import { manilaLongStamp } from '@/lib/util/manilaTime';
@@ -18,18 +17,14 @@ export default async function SettingsPage() {
   if (!session) return null;
 
   const demo = isMockUser(session);
-  const row = isUuid(session.id)
-    ? await prisma.appUser
-        .findUnique({ where: { id: session.id }, select: { createdAt: true } })
-        .catch(() => null)
-    : null;
+  const createdAt = await getAccountCreatedAt(session);
 
   // A bare-username account stores its login as "<name>@local"; show the friendly part.
   const displayName = session.email.endsWith('@local') ? session.email.replace(/@local$/, '') : session.email;
   // Demo accounts have no created-at row; show a meaningful label instead of a bare "—"
   // (which reads as broken/missing data to a viewer).
-  const memberSince = row?.createdAt
-    ? manilaLongStamp(new Date(row.createdAt)).split(' at ')[0] // ICU-free (Netlify has no tz data)
+  const memberSince = createdAt
+    ? manilaLongStamp(new Date(createdAt)).split(' at ')[0] // ICU-free (Netlify has no tz data)
     : 'Demo account';
 
   return (

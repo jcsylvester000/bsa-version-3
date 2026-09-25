@@ -5,6 +5,83 @@ The cross-thread state record. Read this (with the Master Instruction and the cu
 
 ---
 
+## 2026-09-25 — Code-health subset: F-47 done; F-43/F-44/F-46 progressed (⏳ awaiting push)
+
+Scope confirmed with the user: safe, build-verifiable work now; infra-bound parts (integration DB, Playwright, full component split) documented as follow-ups.
+
+### F-47 — service layer (DONE)
+- New `lib/services/{runs,sites,reports,account}.ts` — the one authorized data path per resource, each
+  enforcing `canAccessRun` / visibility and returning typed data (discriminated results for the empty
+  states). All five app pages (`runs`, `site`, `reports`, `intake`, `settings`) now call the services;
+  **no `app/(app)/*/page.tsx` imports `@/lib/db/prisma` any more** (verified). API routes can reuse the
+  same functions. Behaviour preserved (same queries, same safeQuery resilience, same access checks).
+
+### F-46 — lint/consistency (partial, safe items)
+- PDF route: `renderToBuffer(element as any)` → cast to the function's own parameter type
+  (`Parameters<typeof renderToBuffer>[0]`), eslint-disable removed — typed, not `any`.
+- `ModuleKind` unused values (`financial`/`risk`/`calibration`) documented as RESERVED extension points
+  (dropping a Postgres enum value is destructive).
+- Settings date already uses `manilaLongStamp` (ICU-free) — confirmed, nothing to change.
+- LEFT (deliberate, documented): the 7 `react-hooks/exhaustive-deps` disables (fixing blind, with no
+  runtime to test the effects, risks re-render bugs) and `font-mono` in AnalysisSequence (a stylistic
+  progress read-out). Owner/dev to revisit with the app running + ESLint configured.
+
+### F-43 — tests (partial)
+- The verdict-agreement test (summariseSite ↔ scorecard band) already exists (`siteVerdict.test.ts`),
+  and this fix programme added source-level guard tests covering previously-untested modules' critical
+  paths: `whiteSpaceScope`, `pipelineIntegrity`, `batchLoaders`, `serverClientBoundary`,
+  `securityHardening`, `sessionRevocation`, `accessibility`. Parse helpers already covered.
+- REMAINS (needs infra): integration tests against a Neon test branch / local PostGIS in CI, and
+  Playwright smoke (login → intake → run → site tabs → PDF). These need a database and a browser the
+  build sandbox doesn't have — carried as an owner/CI task.
+
+### F-44 — large components (partial)
+- The shared primitives are already extracted to `components/ui/` (`Chips`, `StatTile`, `Panel`) by the
+  design pass; the local `Chip` is a thin wrapper over the shared `StatusText`.
+- REMAINS: splitting `SiteIntelligenceTabs` (~1.26k lines), `SteppedIntakeWizard` (~820),
+  `FranchiseScreeningView` (~650) into per-tab/per-step files. Deferred as it needs visual regression
+  checks the sandbox can't run; the shared-token extraction the audit named is done.
+
+- **469 tests pass**, typecheck clean, build compiles (Middleware 32.8 kB).
+- Workbook: F-47 → Done; F-43/F-44/F-46 → In progress; also corrected F-12 & F-42 (completed earlier)
+  from In progress → Done. **41 Done, 3 In progress, 8 Open** (the 8 are owner data/creds/ops: F-16,
+  F-17, F-19, F-25, F-31, F-51, F-52 and the like).
+
+---
+
+## 2026-09-25 — Security: F-26 session revocation + F-30 middleware/CSP nonce (⏳ awaiting push; NEW MIGRATION)
+
+**Skills:** 04 Security (owner), 01 Senior Web & App, 11 Code QA.
+
+### F-26 — sessions can be revoked; role/franchisor changes take effect immediately
+- Schema + migration `20260927000002_session_revocation`: `app_user.sessions_valid_after`.
+- `getSession` (`lib/auth/session.ts`) now reads the user row (deduped per request with React `cache()`):
+  rejects the token if the user is gone or the token was issued before `sessions_valid_after`
+  (pure `isTokenRevoked`, second-precision), and refreshes role/franchisor from the DB so a change
+  applies without re-login. `verifySession` now returns the JWT `iat`.
+- Triggers bump the cut-off: logout (`revokeUserSessions` → all devices), password change (revokes all,
+  then RE-ISSUES the current device's cookie so only OTHER sessions drop). `lib/auth/revoke.ts` exposes
+  `revokeUserSessions(userId)` for a future role-change endpoint.
+- Mock/demo (non-UUID) sessions skip the DB path entirely.
+- Test: `tests/unit/sessionRevocation.test.ts` (+5) covers the same-second boundary.
+
+### F-30 — central auth guard + per-request CSP nonce
+- New `middleware.ts` (edge): (1) a fresh nonce per request → `script-src 'self' 'nonce-…'
+  'strict-dynamic'` with NO `'unsafe-inline'` (Next applies the nonce to its scripts; bundled maplibre
+  loads via them; styles keep inline for maplibre/Tailwind). (2) coarse auth guard — unauthenticated app
+  pages redirect to /login, APIs get 401; `/login` + the login/register APIs are public. getSession stays
+  the fine-grained authority (roles, per-run ownership, F-26 revocation).
+- `next.config.mjs`: the static CSP header is removed (middleware owns CSP now; two would conflict);
+  the other security headers stay. `BSA_CSP_REPORT_ONLY=1` still switches to report-only, now in middleware.
+- **469 tests pass**, typecheck clean, build compiles (Middleware bundle 32.8 kB).
+- Workbook: F-26, F-30 → Done (38 Done total).
+- **Owner actions:** deploy migration `20260927000002_session_revocation`. After deploy, sanity-check in a
+  browser that the map still renders and there are no CSP violations in the console (the nonce CSP is the
+  one change I could not run here); if a new third-party host is ever added, flip `BSA_CSP_REPORT_ONLY=1`
+  first. **F-25 remains open** (Google API quotas) — not in this batch.
+
+---
+
 ## 2026-09-25 — UX & accessibility set: F-36, F-37, F-39, F-40, F-41 (⏳ awaiting push)
 
 **Skills:** 01 Senior Web & App, 07 PH Broker (older-user legibility), 09 User Journey QA, 11 Code QA.

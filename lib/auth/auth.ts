@@ -19,6 +19,8 @@ export interface SessionUser {
   email: string;
   role: UserRole;
   franchisorId: string | null;
+  /** JWT issued-at (epoch seconds), when known. Used by getSession to honour a revocation cut-off. */
+  iat?: number;
 }
 
 const SESSION_COOKIE = 'bsa_session';
@@ -57,6 +59,7 @@ export async function verifySession(token: string): Promise<SessionUser | null> 
       email: String(payload.email ?? ''),
       role: payload.role as UserRole,
       franchisorId: (payload.franchisorId as string | null) ?? null,
+      iat: typeof payload.iat === 'number' ? payload.iat : undefined,
     };
   } catch {
     return null;

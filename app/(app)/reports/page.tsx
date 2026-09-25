@@ -1,14 +1,12 @@
 import Link from 'next/link';
-import { prisma } from '@/lib/db/prisma';
 import { getSession } from '@/lib/auth/session';
-import { canAccessRun } from '@/lib/auth/auth';
 import { isMockUser } from '@/lib/auth/mockUsers';
-import { isUuid } from '@/lib/util/uuid';
+import { getReportForView } from '@/lib/services/reports';
 import { resolveDefaultRunId } from '@/lib/modules/defaultRun';
 import { ReportView } from '@/components/ReportView';
 import { mockReport } from '@/lib/mock/mockCompute';
 import { TruthChip } from '@/components/TruthChip';
-import type { Confidence, TruthLayer } from '@/lib/truth/truthLayer';
+import type { TruthLayer } from '@/lib/truth/truthLayer';
 
 export const dynamic = 'force-dynamic';
 
@@ -38,19 +36,15 @@ export default async function ReportsPage({ searchParams }: { searchParams: { ru
     );
   }
 
-  if (!isUuid(runId)) return <EmptyState message="Open a real run from the Runs list to generate its report." />;
-  const run = await prisma.pipelineRun.findUnique({
-    where: { id: runId },
-    include: { franchisor: { select: { brandName: true } }, report: true },
-  });
-  if (!run) return <EmptyState message="Run not found." />;
-  if (!session || !canAccessRun(session, run)) {
-    return <EmptyState message="You do not have access to this run." />;
+  const result = await getReportForView(session, runId);
+  if (result.kind !== 'ok') {
+    const message =
+      result.kind === 'not_uuid' ? 'Open a real run from the Runs list to generate its report.'
+        : result.kind === 'not_found' ? 'Run not found.'
+          : 'You do not have access to this run.';
+    return <EmptyState message={message} />;
   }
-
-  // Reports are built on demand (no stored file) — the row only records that one was generated.
-  const existing: { confidence: Confidence } | null =
-    run.report?.confidence ? { confidence: run.report.confidence as Confidence } : null;
+  const { run, existing } = result;
 
   return (
     <div>
@@ -58,7 +52,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: { ru
         <Link href="/runs" className="text-sm text-accent hover:underline">
           ← Runs
         </Link>
-        <h1 className="mt-2 text-2xl font-bold">Run Report (all sites) — {run.franchisor.brandName}</h1>
+        <h1 className="mt-2 text-2xl font-bold">Run Report (all sites) — {run.brandName}</h1>
         <p className="text-sm text-ink-muted">
           Nine sections covering every candidate site in this run, composed from the module results. Every number keeps
           its Truth Layer; the cover carries the confidence read. For one site&apos;s written analysis, open the site and

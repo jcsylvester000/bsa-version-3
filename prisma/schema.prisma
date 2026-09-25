@@ -111,6 +111,9 @@ enum Verdict {
 
 /// Each analysis module writes a typed module_result row keyed by this enum.
 /// New features plug in by adding a value here — no core-schema reshape.
+/// RESERVED (F-46): `financial`, `risk` and `calibration` are placeholders for planned modules and
+/// are not written by any current pipeline. Kept (not dropped) because removing a Postgres enum value
+/// is destructive; they document the intended extension points.
 enum ModuleKind {
   site_fit
   financial
@@ -646,6 +649,10 @@ model AppUser {
   franchisorId String?   @map("franchisor_id") @db.Uuid
   /// First-run onboarding tour seen? Drives the guided shout-outs for new users.
   hasOnboarded Boolean   @default(false) @map("has_onboarded")
+  /// Session cut-off (F-26): any JWT issued before this instant is rejected by getSession. Bumped on
+  /// logout, password change and role change, so those take effect immediately instead of waiting out
+  /// the 8-hour token. NULL = never revoked.
+  sessionsValidAfter DateTime? @map("sessions_valid_after") @db.Timestamptz(6)
   createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
   franchisor   Franchisor? @relation(fields: [franchisorId], references: [id], onDelete: SetNull)

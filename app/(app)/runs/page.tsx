@@ -1,10 +1,8 @@
 import Link from 'next/link';
-import { prisma } from '@/lib/db/prisma';
 import { getSession } from '@/lib/auth/session';
-import { canAccessRun } from '@/lib/auth/auth';
 import { isMockUser } from '@/lib/auth/mockUsers';
 import { isUuid } from '@/lib/util/uuid';
-import { safeQuery } from '@/lib/db/safeQuery';
+import { getRunDashboard, listRunsForUser, getRunSiteSummaries } from '@/lib/services/runs';
 import { manilaShortStampYear } from '@/lib/util/manilaTime';
 import { DEMO_RUNS } from '@/lib/mock/demoData';
 import { DEMO_RUN_ID, mockTerritoryGuard, mockLeaseBenchmark } from '@/lib/mock/mockCompute';
@@ -12,7 +10,6 @@ import { buildDashboard, type ModuleResultLite } from '@/lib/modules/dashboard';
 import { siteCompositeFromModules, type ModuleScore } from '@/lib/modules/scorecard';
 import { RunDashboard } from '@/components/RunDashboard';
 import { humanizeVertical } from '@/lib/modules/verticalConfig';
-import type { TruthLayer } from '@/lib/truth/truthLayer';
 
 export const dynamic = 'force-dynamic';
 
@@ -38,36 +35,11 @@ export default async function RunsPage({ searchParams }: { searchParams: { runId
     );
   }
 
-  // --- DB mode ---------------------------------------------------------------
-  // Only hit the DB when runId is a real UUID. A stray non-UUID (e.g. the demo run id
-  // reaching a real account) would otherwise crash the page on a UUID parse error.
+  // --- DB mode: a specific run's dashboard (F-47: one authorized service path) --------------
   if (runId && isUuid(runId)) {
-    const run = await prisma.pipelineRun.findUnique({
-      where: { id: runId },
-      include: { franchisor: { select: { brandName: true } }, _count: { select: { sites: true } }, intake: { select: { id: true, version: true } } },
-    });
-    if (run && session && canAccessRun(session, run)) {
-      const rows = await prisma.moduleResult.findMany({
-        where: { pipelineRunId: runId, module: { not: 'analysis' } },
-        include: { site: { select: { id: true, label: true, city: true, compositeScore: true, verdict: true, pipelineError: true } } },
-      });
-      const lite: ModuleResultLite[] = rows.map((r) => ({
-        module: r.module,
-        score: r.score != null ? Number(r.score) : null,
-        truthLayer: r.truthLayer as TruthLayer,
-        flags: r.flags,
-        payload: (r.payload ?? {}) as Record<string, unknown>,
-        site: {
-          id: r.site.id, label: r.site.label, city: r.site.city,
-          composite: r.site.compositeScore != null ? Number(r.site.compositeScore) : null,
-          verdict: r.site.verdict,
-          pipelineError: r.site.pipelineError,
-        },
-      }));
-      const dash = buildDashboard(lite, { runConfidence: run.confidence ?? null });
-      const analysedSites = run.status === 'ready'
-        ? run._count.sites
-        : await prisma.candidateSite.count({ where: { pipelineRunId: run.id, analyzedAt: { not: null } } }).catch(() => null);
+    const dash = await getRunDashboard(session, runId);
+    if (dash) {
+      const { run, data, analysedSites } = dash;
       return (
         <>
           <RunDashboard
@@ -77,7 +49,7 @@ export default async function RunsPage({ searchParams }: { searchParams: { runId
             brandName={run.franchisor?.brandName ?? 'Unknown brand'}
             vertical={run.vertical}
             siteCount={run._count.sites}
-            data={dash}
+            data={data}
             intakeId={run.intake?.id ?? null}
             version={run.intake?.version ?? 1}
             status={run.status}
@@ -89,37 +61,16 @@ export default async function RunsPage({ searchParams }: { searchParams: { runId
   }
 
   // --- Run picker (no run selected) -----------------------------------------
-  // Staff (admin/analyst) see everything. Every other account sees STRICTLY the runs it
-  // created — nothing else. (We deliberately dropped the old "also show unowned/legacy
-  // runs for my franchisor" fallback: it caused ownerless test/debris runs to appear in
-  // every account. Real runs always carry createdByUserId from the intake flow.)
-  const scoped =
-    session!.role === 'admin' || session!.role === 'analyst'
-      ? {}
-      : { createdByUserId: session!.id };
-  const { data: dbRuns } = await safeQuery(
-    () =>
-      prisma.pipelineRun.findMany({
-        where: scoped, orderBy: { createdAt: 'desc' }, take: 50,
-        include: { franchisor: { select: { brandName: true } }, _count: { select: { sites: true } }, intake: { select: { version: true, parentIntakeId: true, id: true } } },
-      }),
-    [] as Awaited<ReturnType<typeof getRunsType>>,
-  );
+  // Staff see all; everyone else only the runs they created (the service enforces this).
+  const dbRuns = await listRunsForUser(session!);
   const usingMock = isMockUser(session) && dbRuns.length === 0;
   const allRuns = usingMock
     ? DEMO_RUNS.map((r) => ({ id: r.id, name: null as string | null, franchisor: { brandName: r.brandName }, vertical: r.vertical, status: r.status as string, _count: { sites: r.siteCount }, createdAt: null as Date | null, intake: null as { version: number } | null }))
     : dbRuns.map((r) => ({ id: r.id, name: r.name as string | null, franchisor: r.franchisor ?? { brandName: 'Unknown brand' }, vertical: r.vertical, status: r.status as string, _count: r._count, createdAt: r.createdAt as Date | null, intake: r.intake ? { version: r.intake.version } : null }));
 
-  // Per-run result counts + area (design v2 · B3). One flat read of the listed runs' sites
-  // (≤ 50 runs × 5 sites) — no include/transaction, safe under the Neon HTTP adapter.
-  const runIds = allRuns.map((r) => r.id).filter(isUuid);
-  const { data: siteRows } = await safeQuery(
-    () =>
-      runIds.length
-        ? prisma.candidateSite.findMany({ where: { pipelineRunId: { in: runIds } }, select: { pipelineRunId: true, verdict: true, city: true } })
-        : Promise.resolve([] as Array<{ pipelineRunId: string; verdict: string | null; city: string | null }>),
-    [] as Array<{ pipelineRunId: string; verdict: string | null; city: string | null }>,
-  );
+  // Per-run result counts + area (design v2 · B3). One flat read of the listed runs' sites via the
+  // service (≤ 50 runs × 5 sites) — no include/transaction, safe under the Neon HTTP adapter.
+  const siteRows = await getRunSiteSummaries(allRuns.map((r) => r.id));
   const summary = new Map<string, { go: number; caution: number; nogo: number; cities: string[] }>();
   for (const s of siteRows) {
     const e = summary.get(s.pipelineRunId) ?? { go: 0, caution: 0, nogo: 0, cities: [] };
@@ -239,12 +190,6 @@ export default async function RunsPage({ searchParams }: { searchParams: { runId
     </div>
   );
 }
-
-// helper type for safeQuery fallback
-const getRunsType = () =>
-  prisma.pipelineRun.findMany({
-    include: { franchisor: { select: { brandName: true } }, _count: { select: { sites: true } }, intake: { select: { version: true, parentIntakeId: true, id: true } } },
-  });
 
 /** Build the dashboard data for the mock demo run from mock compute. */
 async function buildMockDashboard() {

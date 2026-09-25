@@ -1,12 +1,10 @@
 import Link from 'next/link';
-import { prisma } from '@/lib/db/prisma';
 import { getSession } from '@/lib/auth/session';
-import { canAccessRun } from '@/lib/auth/auth';
+import { getSiteReport } from '@/lib/services/sites';
 import { SiteIntelligenceTabs, type SiteModulePayloads } from '@/components/SiteIntelligenceTabs';
 // Server-safe tab keys. NEVER import runtime values (like TAB_KEYS) from a 'use client' module into
 // this Server Component — they arrive as client-reference proxies and throw on use (the #329 crash).
 import { isSiteTabKey, type SiteTabKey } from '@/lib/ui/siteTabs';
-import { corridorsForRegion } from '@/lib/geo/regions';
 import { RunPipelineButton } from '@/components/RunPipelineButton';
 import { manilaShortStampYear } from '@/lib/util/manilaTime';
 import type { TruthLayer } from '@/lib/truth/truthLayer';
@@ -26,67 +24,22 @@ export default async function SiteReportPage({ searchParams }: { searchParams: {
   // the known keys so an arbitrary value can never reach the client component.
   const initialTab: SiteTabKey = isSiteTabKey(searchParams.tab) ? searchParams.tab : 'analysis';
 
-  if (!runId || !siteId) {
-    return <Empty msg="Pick a site from the Ranked Site Shortlist on the dashboard." />;
+  // One authorized data path (F-47). The service resolves + access-checks the run/site and returns a
+  // discriminated result; each case maps to its own empty-state copy here.
+  const result = await getSiteReport(session, runId, siteId);
+  if (result.kind !== 'ok') {
+    const msg =
+      result.kind === 'need_params' ? 'Pick a site from the Ranked Site Shortlist on the dashboard.'
+        : result.kind === 'not_uuid' ? 'The full per-site report opens on a real run. Submit an intake (or Load a demo scenario) and open a site from the Ranked Site Shortlist.'
+          : result.kind === 'not_found' ? 'Run not found.'
+            : result.kind === 'forbidden' ? 'You do not have access to this run.'
+              : 'Site not found in this run.';
+    return <Empty msg={msg} />;
   }
-
-  // The DB `id` columns are UUIDs. In mock/demo mode the IDs are placeholders like
-  // "mock-run-…" — querying with those makes Prisma throw an invalid-UUID error, so
-  // guard the format first and show a friendly note instead of crashing.
-  if (!isUuid(runId) || !isUuid(siteId)) {
-    return <Empty msg="The full per-site report opens on a real run. Submit an intake (or Load a demo scenario) and open a site from the Ranked Site Shortlist." />;
-  }
-
-  const run = await prisma.pipelineRun.findUnique({
-    where: { id: runId },
-    include: { franchisor: { select: { brandName: true } } },
-  });
-  if (!run) return <Empty msg="Run not found." />;
-  if (!session || !canAccessRun(session, run)) {
-    return <Empty msg="You do not have access to this run." />;
-  }
-
-  const site = await prisma.candidateSite.findUnique({
-    where: { id: siteId },
-    select: { id: true, label: true, city: true, siteType: true, lat: true, lon: true, pipelineRunId: true, verdict: true, compositeScore: true, analyzedAt: true, region: true },
-  });
-  if (!site || site.pipelineRunId !== runId) return <Empty msg="Site not found in this run." />;
-
-  // Own outlets (for the Territory map) + every module result for this one site + the run's site
-  // scores (for "Rank n of N" on the Final Report — same ordering as the dashboard shortlist).
-  const [outlets, rows, runSites] = await Promise.all([
-    prisma.outlet.findMany({
-      // Reference network + this run's own typed outlets (never another user's).
-      where: { franchisorId: run.franchisorId, status: 'open', OR: [{ intakeSubmissionId: null }, { intakeSubmissionId: run.intakeSubmissionId }] },
-      select: { id: true, outletName: true, lat: true, lon: true, format: true },
-    }),
-    prisma.moduleResult.findMany({
-      where: { candidateSiteId: siteId },
-      select: { module: true, score: true, truthLayer: true, flags: true, payload: true },
-    }),
-    prisma.candidateSite.findMany({
-      where: { pipelineRunId: runId },
-      select: { id: true, compositeScore: true },
-    }),
-  ]);
+  const { run, site, outlets, rows, runSites, leaseCorridors } = result.data;
 
   const byModule: Record<string, unknown> = {};
   for (const r of rows) byModule[r.module] = r.payload;
-
-  // F-40: corridors the broker can re-benchmark the Lease tab against — every corridor that has
-  // comps for this site's format, with the site's own region's registry corridors listed first
-  // (the ones most likely to be the right local match). Only needed when the pipeline fell back to
-  // a proxy corridor, but cheap to always provide.
-  const compCorridors = await prisma.leaseComp.findMany({
-    where: site.siteType ? { format: site.siteType } : {},
-    select: { corridor: true },
-    distinct: ['corridor'],
-    orderBy: { corridor: 'asc' },
-  });
-  const compSet = compCorridors.map((c) => c.corridor).filter((c): c is string => !!c);
-  const regionCorridors = corridorsForRegion(site.region).filter((c) => compSet.includes(c));
-  // Region corridors that have comps first, then any other corridor with comps. Every option has data.
-  const leaseCorridors = Array.from(new Set([...regionCorridors, ...compSet]));
 
   // Final Report hero context (design v2, README §4). Rank uses the dashboard's ordering
   // (composite desc, unscored last). Truth mix = this site's module-level Truth Layers, the same
@@ -113,7 +66,7 @@ export default async function SiteReportPage({ searchParams }: { searchParams: {
     analysedAt: site.analyzedAt ? manilaShortStampYear(site.analyzedAt) : null,
     truthPct,
   };
-  const pdfHref = `/api/analysis-report/pdf?runId=${encodeURIComponent(runId)}&siteId=${encodeURIComponent(siteId)}`;
+  const pdfHref = `/api/analysis-report/pdf?runId=${encodeURIComponent(run.id)}&siteId=${encodeURIComponent(site.id)}`;
 
   const payloads: SiteModulePayloads = {
     territory: (byModule.territory as SiteModulePayloads['territory']) ?? null,
@@ -127,13 +80,13 @@ export default async function SiteReportPage({ searchParams }: { searchParams: {
     <div className="space-y-6">
       <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
         <div className="flex flex-col gap-2">
-          <Link href={`/runs?runId=${runId}`} className="link inline-flex min-h-tap items-center self-start text-body">← Site Dashboard</Link>
+          <Link href={`/runs?runId=${run.id}`} className="link inline-flex min-h-tap items-center self-start text-body">← Site Dashboard</Link>
           <p className="overline">{run.franchisor?.brandName ?? 'Unknown brand'}{site.city ? ` · ${site.city}` : ''}</p>
           <h1 className="text-h1">{site.label}</h1>
           <p className="text-body text-ink-muted">Full site intelligence — one site, every module.</p>
         </div>
         <div className="flex flex-wrap gap-3">
-          <RunPipelineButton runId={runId} />
+          <RunPipelineButton runId={run.id} />
           <a href={pdfHref} target="_blank" rel="noopener noreferrer" className="btn-primary btn-lg">Export site PDF</a>
         </div>
       </div>
@@ -143,7 +96,7 @@ export default async function SiteReportPage({ searchParams }: { searchParams: {
         payloads={payloads}
         vertical={run.vertical}
         verdict={site.verdict ?? null}
-        runId={runId}
+        runId={run.id}
         initialTab={initialTab}
         report={report}
         leaseCorridors={leaseCorridors}
@@ -159,9 +112,4 @@ function Empty({ msg }: { msg: string }) {
       <Link href="/runs" className="link inline-flex min-h-tap items-center">← Back to Site Dashboard</Link>
     </div>
   );
-}
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-function isUuid(v: string): boolean {
-  return UUID_RE.test(v);
 }

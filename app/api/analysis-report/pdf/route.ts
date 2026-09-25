@@ -75,8 +75,9 @@ export async function GET(req: NextRequest) {
       schemaText: `Modules included: ${modulesIncluded}.`,
       checkWarning: null,
     });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const buffer = await renderToBuffer(element as any);
+    // @react-pdf/renderer types renderToBuffer's arg as ReactElement<DocumentProps>; React.createElement
+    // widens to ReactElement. Cast to the function's OWN parameter type (not `any`) so it stays typed.
+    const buffer = await renderToBuffer(element as unknown as Parameters<typeof renderToBuffer>[0]);
 
     const safe = site.label.replace(/[^a-z0-9]+/gi, '_').replace(/^_+|_+$/g, '') || 'site';
     return new Response(new Uint8Array(buffer), {

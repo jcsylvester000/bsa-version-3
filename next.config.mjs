@@ -45,11 +45,12 @@ const csp = [
   "form-action 'self'",
 ].join('; ');
 
+// NOTE (F-30): the Content-Security-Policy is now emitted by middleware.ts, which adds a per-request
+// nonce so script-src no longer needs 'unsafe-inline'. It is intentionally NOT set here — two CSP
+// headers would combine and the static one (without the nonce) would break Next's inline scripts.
+// The `csp` string above is kept only as documentation of the non-nonce baseline.
+void csp;
 const securityHeaders = [
-  {
-    key: process.env.BSA_CSP_REPORT_ONLY === '1' ? 'Content-Security-Policy-Report-Only' : 'Content-Security-Policy',
-    value: csp,
-  },
   { key: 'X-Frame-Options', value: 'DENY' },
   { key: 'X-Content-Type-Options', value: 'nosniff' },
   { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
