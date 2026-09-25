@@ -115,7 +115,7 @@ Batch 0 needs no further commit.
 - [x] `tsc --noEmit` 0 errors (2026-09-25, cloud sandbox — batches 1–4, and again after 5–8)
 - [x] `vitest run` 36 files · 426/426 passing (Prisma-engine "unhandled" notices are sandbox-only)
 - [x] `next build` compiles every route
-- [ ] Browser check by owner after deploy (batches 1–4 live on `f82716d`; 5–8 pending push) (keyboard: skip link → rail → tabs ← → → content → footer;
+- [ ] Browser check by owner after deploy (all batches live on `df39955`) (keyboard: skip link → rail → tabs ← → → content → footer;
       44px targets; every verdict = icon + word; compare with `design-reference/*.dc.html`)
 
 ## Deferred / not in scope
@@ -135,10 +135,10 @@ Commands are PowerShell 5-safe (one per line). Run them from `4 - Final Applicat
 | 2 | Shell + dashboard | `design v2 batch 2: app shell, sidebar, mobile dialog nav, dashboard verdict strip` | ✅ pushed | `60404b1` |
 | 3 | Site page + Final Report | `design v2 batch 3: Final Report hero + findings, underline tabs, neutral lease cues` | ✅ pushed | `da9afc5` |
 | 4 | Login, intake, maps + logs | `design v2 batch 4: login two-column, intake stepper + submit checklist, map markers + legend` | ✅ pushed | `f82716d` |
-| 5 | All runs + run states | `design v2 batch 5: all-runs table with results, search/filter, empty + in-progress states` | ready to push | — |
-| 6 | Franchise Screening | `design v2 batch 6: franchise screening cards, filter chips, start intake with brand` | ready to push | — |
-| 7 | Site tab content | `design v2 batch 7: lease position + zonal floor card, daypart tiles, findings figures` | ready to push | — |
-| 8 | Settings + states + logs | `design v2 batch 8: settings restyle, error boundary, loading skeleton` | ready to push | — |
+| 5 | All runs + run states | `design v2 batch 5: all-runs table with results, search/filter, empty + in-progress states` | ✅ pushed | `1fc780c` |
+| 6 | Franchise Screening | `design v2 batch 6: franchise screening cards, filter chips, start intake with brand` | ✅ pushed | `89deb3c` |
+| 7 | Site tab content | `design v2 batch 7: lease position + zonal floor card, daypart tiles, findings figures` | ✅ pushed | `12ab500` |
+| 8 | Settings + states + logs | `design v2 batch 8: settings restyle, error boundary, loading skeleton` | ✅ pushed | `df39955` |
 
 ### Batch 0
 Already committed (`0ecddcd`). If `git status` says "Your branch is ahead of 'origin/main'", push it with the Batch 1 push.

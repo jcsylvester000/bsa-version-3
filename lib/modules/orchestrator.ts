@@ -120,8 +120,6 @@ async function runPipelineSlice(runId: string, opts: { refresh?: boolean }): Pro
       where: { pipelineRunId: runId },
       data: { analyzedAt: null, pipelineError: null },
     });
-    // Cached AI write-ups describe the OLD figures — drop them so they're regenerated.
-    await prisma.moduleResult.deleteMany({ where: { pipelineRunId: runId, module: 'analysis' } });
     for (const s of sites) s.analyzedAt = null;
   }
 

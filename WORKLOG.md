@@ -5,7 +5,7 @@ The cross-thread state record. Read this (with the Master Instruction and the cu
 
 ---
 
-## 2026-09-25 — DESIGN v2 (cont.): remaining mockup screens, batches 5–8 (CODE COMPLETE — pending push)
+## 2026-09-25 — DESIGN v2 (cont.): remaining mockup screens, batches 5–8 (✅ PUSHED — 1fc780c, 89deb3c, 12ab500, df39955)
 
 Batches 1–4 confirmed pushed (`75fcd15`, `60404b1`, `da9afc5`, `f82716d`; batch 0 = `0ecddcd`).
 This pass covers mockup screens the bundle drew but shipped no code for. Tracker: `docs/DESIGN_V2_CHECKLIST.md`.
@@ -168,6 +168,31 @@ compiles. Also rode along earlier (still-undeployed) fixes: hydration #418/#423 
 **⚠️ To actually clear the error the owner must REDEPLOY** (Netlify) / restart the local dev server —
 the identical error + run/site id suggests the previous build was still running. Test on a fresh site,
 and clear any site stuck in `generating` by regenerating.
+
+---
+
+## 2026-09-26 — Audit fixes batch 3 (F-34, F-42 partial) + design pass reconciliation
+
+Re-baselined against the completed DESIGN_V2 pass (theme tokens, redesigned nav/layout, native-dialog
+mobile nav, focus system). All batch 1–2 logic fixes survived; tree green (typecheck, 426 tests, build).
+
+- **F-34 — orphaned pages removed.** Deleted `app/(app)/{explore,modules,scorecard}/page.tsx` and their
+  exclusive components (`ModulesView`, `PlacesExplorer`, `PrintButton`). `/reports` + `ReportView` kept
+  (still linked from the dashboard). No dangling refs; 38→35 routes.
+- **F-42 — leftover AI cleanup (partial).** Removed the orphaned `moduleResult.deleteMany(module:
+  'analysis')` in the orchestrator refresh path (nothing writes those rows any more), and replaced the
+  whole VectorShift section in `.env.example` with a short "no external AI" note (dropped the
+  real-looking pipeline id). LEFT (inert, needs coordinated env/migration/test change): the `lib/ai`
+  stub files, the `PipelineUsage` model, and `SUPPORTED_AI_PROVIDERS` still listing 'vectorshift'
+  (kept so a deploy that still has AI_PROVIDER=vectorshift set doesn't hard-fail). The `analysis`
+  payload type is intentionally kept as a legacy-run fallback by the redesign.
+
+**Resolved by the design pass (verified, marked Done in the audit workbook):** F-35 (tab
+role/aria-selected/arrow-key handling), F-38 (branded `loading.tsx` + `error.tsx`). Also large
+improvement on F-39 (tiny text 63→21 uses via the new type scale) — left open pending a full check.
+
+**426/426 tests, typecheck clean, `next build` compiles (35 routes).** Audit workbook: 13 Done, F-42
+In progress. No DB migration.
 
 ---
 

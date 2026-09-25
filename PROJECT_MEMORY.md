@@ -5,7 +5,7 @@ always-current snapshot. `WORKLOG.md` is the full history (newest first). This f
 rewritten at the end of every work batch — if it disagrees with older notes (e.g.
 `2 - Data Intake/Migration Guide/PROJECT_MEMORY_EXPORT.md`, 2026-08-10), **this file wins**.
 
-_Last updated: 2026-09-25 — Design v2 batches 1–4 pushed; batches 5–8 code-complete, pending push._
+_Last updated: 2026-09-25 — Design v2 batches 0–8 all pushed (HEAD `df39955`)._
 
 ---
 
@@ -41,7 +41,7 @@ Tracker: **`docs/DESIGN_V2_CHECKLIST.md`** (item checklist + push log — update
 - Rent is never coloured good/bad (lease tones muted, neutral asking bar, "Distance from corridor median").
 - Batches 0–4 pushed (`0ecddcd` … `f82716d`). Batches 5–8 (all-runs table + run states, Franchise Screening
   cards + "Start intake with this brand", site-tab content + zonal card + findings figures, Settings + error/
-  loading states) code-complete and verified — **pending push** (commands in the checklist).
+  loading states) pushed: `1fc780c`, `89deb3c`, `12ab500`, `df39955` (HEAD = origin/main, tree clean).
 - Open design items: PRC licence field (schema decision), light-theme switch (deferred), legacy pages
   /reports /scorecard /modules /explore still pre-v2, broker review of the lease finding tone.
 
