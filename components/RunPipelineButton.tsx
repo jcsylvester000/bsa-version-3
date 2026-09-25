@@ -11,7 +11,12 @@ import { useRouter } from 'next/navigation';
  * The first POST sends `{ refresh: true }` (recompute every site); later POSTs resume the
  * time-boxed slices until the server reports `complete`.
  */
-export function RunPipelineButton({ runId, className = 'btn-secondary btn-lg' }: { runId: string; className?: string }) {
+export function RunPipelineButton({ runId, className = 'btn-secondary btn-lg', resume = false }: {
+  runId: string;
+  className?: string;
+  /** Continue an unfinished run (no restart) instead of recomputing a finished one. */
+  resume?: boolean;
+}) {
   const router = useRouter();
   const [state, setState] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
 
@@ -22,7 +27,7 @@ export function RunPipelineButton({ runId, className = 'btn-secondary btn-lg' }:
         const res = await fetch(`/api/runs/${runId}/run`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(i === 0 ? { refresh: true } : {}),
+          body: JSON.stringify(i === 0 && !resume ? { refresh: true } : {}),
         });
         const json = await res.json().catch(() => null);
         if (!json?.ok) { setState('error'); router.refresh(); return; }
@@ -44,7 +49,7 @@ export function RunPipelineButton({ runId, className = 'btn-secondary btn-lg' }:
       aria-live="polite"
       title="Recompute every module for every site in this run with the latest data"
     >
-      {state === 'running' ? '⏳ Analysing sites…' : state === 'error' ? '↻ Retry' : '↻ Re-run analysis'}
+      {state === 'running' ? '⏳ Analysing sites…' : state === 'error' ? '↻ Retry' : resume ? '↻ Continue analysis' : '↻ Re-run analysis'}
     </button>
   );
 }

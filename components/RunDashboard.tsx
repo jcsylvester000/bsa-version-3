@@ -27,6 +27,8 @@ export function RunDashboard({
   mock = false,
   intakeId = null,
   version = 1,
+  status = 'ready',
+  analysedSites = null,
 }: {
   runId: string;
   runName?: string | null;
@@ -38,7 +40,12 @@ export function RunDashboard({
   mock?: boolean;
   intakeId?: string | null;
   version?: number;
+  /** pipeline_run.status — anything other than ready/failed shows the in-progress card (H2). */
+  status?: string;
+  /** Sites with analyzed_at set (progress for the in-progress card). */
+  analysedSites?: number | null;
 }) {
+  const inProgress = !mock && status !== 'ready' && status !== 'failed';
   const conf = data.confidence ?? 'med';
   const confLabel = conf === 'high' ? 'High' : conf === 'low' ? 'Low' : 'Medium';
   const count = (v: 'go' | 'caution' | 'nogo') => data.ranked.filter((s) => s.verdict === v).length;
@@ -70,6 +77,29 @@ export function RunDashboard({
           <Link href={`/reports?runId=${runId}`} className="btn-primary btn-lg">Run report (all sites)</Link>
         </div>
       </div>
+
+      {/* H2 — run still in progress (e.g. the browser was closed mid-analysis). */}
+      {inProgress && (
+        <section className="card flex flex-col gap-4 p-6 sm:flex-row sm:items-center sm:justify-between" aria-live="polite">
+          <div className="flex flex-col gap-1.5">
+            <p className="text-title">Analysing {siteCount} site{siteCount === 1 ? '' : 's'}…</p>
+            {analysedSites != null && (
+              <>
+                <div className="h-2 w-64 max-w-full overflow-hidden rounded-full bg-ink-panel-2" role="progressbar" aria-valuemin={0} aria-valuemax={siteCount} aria-valuenow={analysedSites} aria-label="Sites analysed">
+                  <div className="h-full bg-accent" style={{ width: `${siteCount ? Math.round((analysedSites / siteCount) * 100) : 0}%` }} />
+                </div>
+                <p className="text-label font-normal text-ink-muted">{analysedSites} of {siteCount} done · results below fill in as each site finishes.</p>
+              </>
+            )}
+          </div>
+          <RunPipelineButton runId={runId} resume className="btn-primary btn-lg" />
+        </section>
+      )}
+      {!mock && status === 'failed' && (
+        <div role="alert" className="error-state flex-row items-center justify-between gap-4 p-4">
+          <p className="text-body"><span className="font-bold text-nogo">✕</span> The last analysis did not finish. Your inputs are safe.</p>
+        </div>
+      )}
 
       {/* Verdict strip — the 5-second read */}
       <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-[minmax(0,1.5fr)_repeat(3,minmax(0,1fr))]">
