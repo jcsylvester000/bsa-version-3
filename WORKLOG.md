@@ -5,6 +5,29 @@ The cross-thread state record. Read this (with the Master Instruction and the cu
 
 ---
 
+## 2026-09-25 — White-Space local scoping: F-11, F-20 (⏳ awaiting push)
+
+**Skills:** 02 Database (PostGIS scoping), 01 Senior Web & App, 07 PH Broker (local relevance), 11 Code QA.
+
+- **F-11 + F-20** `lib/modules/runWhiteSpace`: every geographic read is now scoped to a 15 km radius
+  around the proposed site (`WHITESPACE_SCAN_RADIUS_M`), via `ST_DWithin`:
+  - competitor POIs: read out to `scanR + catchment` (an edge area's 1 km catchment still fully covered);
+  - demographic_cell candidate areas: within `scanR`;
+  - POI-fallback clusters: within `scanR`;
+  - own outlets: within `scanR + 2× catchment` (beyond that the overlap proxy is 0).
+- **F-11 result:** recommendations are always local — an NCR site can no longer surface a Davao barangay.
+  Distance (not a hard region tag) is the guarantee, so a border site (e.g. Las Piñas) still sees nearby
+  cross-border areas (Bacoor, Cavite). `scanRadiusM` is now in the payload.
+- **F-20 result:** the in-memory areas × POIs loop runs over a small local set instead of the national
+  dataset, so cost is bounded by local density and stays flat as more provinces load. The tier-weighting
+  (name-based `tierFor`/`weightedCompetitorCount`) has to stay in JS, so reads are scoped rather than
+  rewritten as a pure PostGIS GROUP BY — same effect, no scoring rewrite.
+- Test: `tests/unit/whiteSpaceScope.test.ts` (+5) guards that each read keeps its ST_DWithin scope.
+  **447 tests pass**, typecheck clean, build compiles.
+- Workbook: F-11, F-20 → Done (25 Done total).
+
+---
+
 ## 2026-09-25 — Audit security batch: F-24, F-27, F-28, F-29 (⏳ awaiting push)
 
 **Skills:** 04 Security (owner), 03 API, 11 Code QA.

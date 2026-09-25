@@ -9,7 +9,7 @@
  */
 import 'server-only';
 import { prisma } from '@/lib/db/prisma';
-import type { ModuleKind } from '@prisma/client';
+import { Prisma, type ModuleKind } from '@prisma/client';
 import type { TruthLayer } from '@/lib/truth/truthLayer';
 import {
   scoreDaypart, scoreInformal, scoreMall, scoreHealthcare,
@@ -235,6 +235,14 @@ export async function runMall(runId: string, siteId: string, targetTier?: string
 /** Beyond this, the nearest mall is not this site's mall context. */
 const MALL_MAX_DISTANCE_M = 3000;
 
+/**
+ * White-Space local scan radius (F-11 / F-20). Candidate areas and competitors are read only
+ * within this distance of the proposed site, so recommendations stay local and actionable and the
+ * scan cost is bounded by local density rather than the national dataset. 15 km spans a metro
+ * corridor (and reaches across a provincial border) without pulling in another region's cities.
+ */
+const WHITESPACE_SCAN_RADIUS_M = 15_000;
+
 /** Extract an A/B/C target tier from the intake mall-tier string. */
 function parseTargetTier(s: string | null | undefined): 'A' | 'B' | 'C' | null {
   if (!s) return null;
@@ -377,12 +385,26 @@ export async function runWhiteSpace(
     where: { id: siteId }, select: { lat: true, lon: true, label: true, city: true },
   });
 
+  // F-11 / F-20: scope EVERY read to a local scan radius around the proposed site instead of
+  // loading the whole country. This guarantees recommendations are always local and actionable
+  // for the broker (an NCR site can never surface a Davao barangay), and keeps the in-memory
+  // scoring loop small and constant-time as more provinces are loaded. Distance — not a hard
+  // region tag — is the guarantee, so a site near a provincial border still sees genuinely
+  // nearby cross-border areas (e.g. a Las Piñas site seeing Bacoor, Cavite).
+  const sitePoint = () => Prisma.sql`ST_SetSRID(ST_MakePoint(${site.lon}, ${site.lat}),4326)::geography`;
+  // Competitor POIs must cover any candidate area's catchment, so read out to scanR + catchment.
+  const poiScanM = WHITESPACE_SCAN_RADIUS_M + catchmentM;
+  // Own outlets only matter within 2× catchment of a candidate area (the overlap proxy is 0
+  // beyond that), so anything past scanR + 2× catchment can't change a result.
+  const ownScanM = WHITESPACE_SCAN_RADIUS_M + 2 * catchmentM;
+
   // Own outlets (coords). Nearest-own distance drives the self-cannibalization proxy, computed in
   // code so it works for both demographic and POI-derived candidate areas.
   const ownOutlets = await prisma.$queryRaw<Array<{ lat: number; lon: number }>>`
     SELECT lat, lon FROM outlet
     WHERE franchisor_id = ${franchisorId}::uuid AND status = 'open' AND geom IS NOT NULL
-      AND (intake_submission_id IS NULL OR intake_submission_id = ${intakeSubmissionId}::uuid)`;
+      AND (intake_submission_id IS NULL OR intake_submission_id = ${intakeSubmissionId}::uuid)
+      AND ST_DWithin(geom, ${sitePoint()}, ${ownScanM})`;
   const nearestOwnDist = (lat: number, lon: number): number | null => {
     if (ownOutlets.length === 0) return null;
     let m = Infinity;
@@ -397,7 +419,9 @@ export async function runWhiteSpace(
   // per-area scan stays cheap). The brand's OWN branches are excluded — that's self-cannibalization,
   // already captured by the own-branch proxy.
   const pois = await prisma.$queryRaw<Array<{ name: string; lat: number; lon: number }>>`
-    SELECT name, lat, lon FROM poi WHERE category = 'competitor' AND geom IS NOT NULL`;
+    SELECT name, lat, lon FROM poi
+    WHERE category = 'competitor' AND geom IS NOT NULL
+      AND ST_DWithin(geom, ${sitePoint()}, ${poiScanM})`;
   const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '');
   const ownNeedle = norm(ownBrandName ?? '');
   const isOwnBrand = (name: string) => ownNeedle.length >= 4 && norm(name).includes(ownNeedle);
@@ -453,7 +477,8 @@ export async function runWhiteSpace(
            ST_Y(ST_Centroid(d.geom::geometry)) AS lat,
            ST_X(ST_Centroid(d.geom::geometry)) AS lon
     FROM demographic_cell d
-    WHERE d.geom IS NOT NULL`).map((c) => ({
+    WHERE d.geom IS NOT NULL
+      AND ST_DWithin(d.geom, ${sitePoint()}, ${WHITESPACE_SCAN_RADIUS_M})`).map((c) => ({
       psgc: c.psgc, brgy: c.brgy, city: c.city, pop: Number(c.pop) || 0,
       lat: c.lat != null ? Number(c.lat) : null, lon: c.lon != null ? Number(c.lon) : null,
     }));
@@ -468,6 +493,7 @@ export async function runWhiteSpace(
              AVG(lat)::float8 AS lat, AVG(lon)::float8 AS lon, COUNT(*)::int AS cnt
       FROM poi
       WHERE lat IS NOT NULL AND lon IS NOT NULL AND (barangay IS NOT NULL OR city IS NOT NULL)
+        AND ST_DWithin(geom, ${sitePoint()}, ${WHITESPACE_SCAN_RADIUS_M})
       GROUP BY COALESCE(NULLIF(TRIM(barangay), ''), city), city
       HAVING COUNT(*) >= 3`;
     raw = clusters.map((r) => ({
@@ -486,6 +512,7 @@ export async function runWhiteSpace(
   if (raw.length === 0) {
     await persist(runId, siteId, 'whitespace', null, {
       recommendations: [], scanned: 0, threshold: WHITESPACE_CANNIBALIZATION_MAX, catchmentM,
+      scanRadiusM: WHITESPACE_SCAN_RADIUS_M,
       concept: { key: concept.key, label: concept.label }, competitorSet, proposed: null, source,
     }, 'projected', ['no_area_data']);
     return;
@@ -531,6 +558,7 @@ export async function runWhiteSpace(
     scanned: areas.length,
     threshold: WHITESPACE_CANNIBALIZATION_MAX,
     catchmentM,
+    scanRadiusM: WHITESPACE_SCAN_RADIUS_M,
     concept: { key: concept.key, label: concept.label },
     competitorSet,
     proposed,
