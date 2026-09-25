@@ -13,6 +13,7 @@ import { LeaseDistributionChart } from '@/components/LeaseDistributionChart';
 import { GapsMap } from '@/components/GapsMap';
 import { catchmentRadius } from '@/lib/modules/territoryMath';
 import { daypartCurve } from '@/lib/modules/p2p3Math';
+import { MIN_SAMPLE } from '@/lib/modules/leaseMath';
 import { isPrimaryModule } from '@/lib/modules/verticalConfig';
 import type { Vertical, ModuleKind } from '@prisma/client';
 
@@ -153,6 +154,14 @@ function tl(v: string | null | undefined, fallback: TL): TL {
 /** Missing numbers display as "—", never as a fabricated 0. */
 const fmtPct = (v: number | null | undefined): string => (v == null ? '—' : `${v}%`);
 const fmtPeso = (v: number | null | undefined): string => (v == null ? '—' : `₱${fmtInt(v)}`);
+
+/** 0–23 → "12 NN", "3 PM", "6 AM" (Manila convention; no locale/ICU dependence). */
+function fmtHour(h: number): string {
+  const hr = ((Math.round(h) % 24) + 24) % 24;
+  if (hr === 12) return '12 NN';
+  if (hr === 0) return '12 MN';
+  return hr < 12 ? `${hr} AM` : `${hr - 12} PM`;
+}
 
 function ordinal(n: number): string {
   const s = ['th', 'st', 'nd', 'rd'], v = n % 100;
@@ -316,7 +325,7 @@ function TerritoryTab({ site, outlets, p, primary = true }: { site: { lat: numbe
           candidate={{ id: 'site', label: 'This site', lat: site.lat, lon: site.lon, catchmentM, verdict }}
         />
         {comps > 0 && (
-          <p className="text-xs text-ink-muted">
+          <p className="text-label font-normal text-ink-muted">
             {comps} nearby establishments from the database
             {mix ? ` · ${mix.direct} direct competitor${mix.direct === 1 ? '' : 's'} and ${mix.adjacent} adjacent format${mix.adjacent === 1 ? '' : 's'} inside the catchment` : same > 0 ? ` · ${same} same-concept` : ''}
             {p.conceptLabel ? `, matched against ${p.conceptLabel}` : ''}.
@@ -326,8 +335,8 @@ function TerritoryTab({ site, outlets, p, primary = true }: { site: { lat: numbe
       </div>
       <div className="space-y-3">
         <div className="card p-5">
-          <p className="text-xs uppercase tracking-wide text-ink-muted">Verdict</p>
-          <p className="mt-1 text-xl font-bold"><Chip tone={T_VERDICT[verdict].tone}>{T_VERDICT[verdict].label}</Chip></p>
+          <p className="overline">Territory call</p>
+          <p className="mt-2 text-title"><Chip tone={T_VERDICT[verdict].tone}>{T_VERDICT[verdict].label}</Chip></p>
           {p.headlineSource === 'competitive' && (
             <p className="mt-2 text-xs text-ink-muted">Driven by competitive saturation, not your own branches.</p>
           )}
@@ -368,28 +377,28 @@ function TerritoryTab({ site, outlets, p, primary = true }: { site: { lat: numbe
         {/* Who you compete with — named from the Cannibalization Map. */}
         {p.competitorSet && p.competitorSet.competitors.length > 0 && (
           <div className="card p-5">
-            <p className="mb-1 text-sm font-medium text-ink-text">Competes with</p>
-            <p className="mb-2 text-[11px] text-ink-muted">
+            <p className="mb-1 font-body text-title">Competes with</p>
+            <p className="mb-2 text-label font-normal text-ink-muted">
               {p.competitorSet.subjectBrand
                 ? `Competitor set for ${p.competitorSet.subjectBrand} — ${p.competitorSet.anchorBrand}-class rivals (${p.competitorSet.truthLayer})`
                 : `Reference competitor set — ${p.competitorSet.anchorBrand}-class (${p.competitorSet.truthLayer})`}
             </p>
             <div className="flex flex-wrap gap-1.5">
               {p.competitorSet.competitors.slice(0, 10).map((c, i) => (
-                <span key={`${c}-${i}`} className="rounded-full bg-ink-panel-2 px-2 py-0.5 text-[11px] text-ink-muted">{c}</span>
+                <span key={`${c}-${i}`} className="rounded-chip border border-ink-border bg-ink-panel-2 px-2 py-0.5 text-label font-normal text-ink-text">{c}</span>
               ))}
             </div>
           </div>
         )}
 
         <div className="card p-5">
-          <p className="mb-2 text-sm font-medium text-ink-text">Affected outlets</p>
+          <p className="mb-2 font-body text-title">Affected outlets</p>
           {(p.affectedOutlets?.length ?? 0) === 0 ? (
-            <p className="text-sm text-ink-muted">No existing branch overlaps this catchment.</p>
+            <p className="text-body text-ink-muted">No existing branch overlaps this catchment.</p>
           ) : (
-            <ul className="space-y-1 text-sm text-ink-muted">
+            <ul className="divide-y divide-ink-border text-body">
               {dedupeOutlets(p.affectedOutlets!).map((a, i) => (
-                <li key={`${a.outletName}-${i}`} className="flex justify-between"><span>{a.outletName}</span><span>{a.overlapPct}% · {Math.round(a.distanceM)} m</span></li>
+                <li key={`${a.outletName}-${i}`} className="flex min-h-[44px] items-center justify-between gap-3"><span className="text-ink-text">{a.outletName}</span><span className="tabular-nums text-ink-muted">{a.overlapPct}% · {Math.round(a.distanceM)} m</span></li>
               ))}
             </ul>
           )}
@@ -439,6 +448,7 @@ function LeaseTab({ p, primary = true, siteId }: { p: SiteModulePayloads['lease'
   }
   if (!p) return <RerunNote module="Lease Benchmark" />;
   const v = p.verdict ?? 'insufficient_data';
+  const lZonalBand = ((p as SiteModulePayloads['lease'] & { zonal?: LeaseZonal }).zonal ?? null)?.band ?? null;
   const n = p.sampleSize ?? p.comps?.length ?? 0;
 
   // Corridor comp rents → let the user drop their asking rent in and see, client-side,
@@ -465,21 +475,40 @@ function LeaseTab({ p, primary = true, siteId }: { p: SiteModulePayloads['lease'
     {!primary && <ContextualNote module="Lease Benchmark" />}
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
       <div className="card p-5 sm:col-span-2">
-        <p className="text-xs uppercase tracking-wide text-ink-muted">Verdict</p>
-        <p className="mt-1 text-xl font-bold"><Chip tone={L_VERDICT[v].tone}>{L_VERDICT[v].label}</Chip></p>
-        <p className="mt-2 text-sm text-ink-muted">
-          {v === 'insufficient_data'
-            ? `Only ${n} comparable lease${n === 1 ? '' : 's'} in ${p.corridor ?? 'this corridor'} — treat any range as indicative.`
-            : v === 'corridor_benchmark'
-              ? `This ran automatically with your analysis: the ${p.corridor ?? 'corridor'} benchmark from ${n} comparable lease${n === 1 ? '' : 's'}. Enter your asking rent below to see instantly where it sits in the corridor spread (below / within / above the median range).`
-              : `Asking rate sits ${p.baseRentPercentile != null ? `at the ${ordinal(p.baseRentPercentile)} percentile` : 'within the range'} of the ${p.corridor ?? 'corridor'} spread across ${n} comps.`}
-        </p>
+        <p className="overline">Position vs {p.corridor ?? 'the'} corridor</p>
+        {v === 'insufficient_data' ? (
+          // H3 — not enough comparable leases to position a rent.
+          <>
+            <p className="mt-2 text-title text-ink-muted">— Not enough data yet</p>
+            <p className="mt-1 text-body text-ink-text">
+              Only {n} comparable lease{n === 1 ? '' : 's'} on {p.corridor ?? 'this corridor'}
+            </p>
+            <p className="mt-1 text-label font-normal text-ink-muted">
+              We need at least {MIN_SAMPLE} to position a rent, so no percentile is shown.
+              {lZonalBand ? ' The BIR zonal floor is still shown below for tax reference.' : ''}
+            </p>
+          </>
+        ) : (
+          <>
+            <p className="mt-2 text-title text-ink-text">
+              {L_VERDICT[v].label}
+              {v !== 'corridor_benchmark' && p.baseRentPercentile != null && (
+                <span className="font-normal text-ink-muted"> · {ordinal(p.baseRentPercentile)} percentile of {n} comparable leases</span>
+              )}
+            </p>
+            <p className="mt-1 text-label font-normal text-ink-muted">
+              {v === 'corridor_benchmark'
+                ? `The ${p.corridor ?? 'corridor'} benchmark from ${n} comparable lease${n === 1 ? '' : 's'}. Enter the asking rent below to see where it sits in the spread.`
+                : 'Where the asking rent sits among comparable leases. A reference point, not a price opinion.'}
+            </p>
+          </>
+        )}
 
-        {/* Inline asking-rent check — the input the call-to-action promised. */}
+        {/* Asking rent — preview in the browser, then save to count it in the site score. */}
         {compRents.length > 0 && (
-          <div className="mt-4 border-t border-ink-border pt-3">
-            <label htmlFor="asking-rent" className="field-label">Your asking rent (₱/sqm/mo)</label>
-            <div className="mt-1 flex items-center gap-2">
+          <div className="mt-4 border-t border-ink-border pt-4">
+            <label htmlFor="asking-rent" className="field-label">Asking rent for this site (₱ per sqm / month)</label>
+            <div className="mt-1.5 flex flex-wrap items-center gap-3">
               <input
                 id="asking-rent"
                 type="number"
@@ -487,34 +516,35 @@ function LeaseTab({ p, primary = true, siteId }: { p: SiteModulePayloads['lease'
                 value={askingRent}
                 onChange={(e) => setAskingRent(e.target.value)}
                 placeholder={median != null ? `corridor median ≈ ${fmtInt(median)}` : 'e.g. 1450'}
+                aria-describedby="asking-help"
                 className="field w-56"
               />
               {enteredPct != null && (
-                <span className="text-sm text-ink-text">
+                <span className="text-body text-ink-text" aria-live="polite">
                   → <span className="font-semibold">{ordinal(enteredPct)} percentile</span>{' '}
-                  <span className="font-semibold text-ink-text">
-                    ({enteredPct >= 60 ? 'above' : enteredPct <= 40 ? 'below' : 'around'} corridor median)
-                  </span>
+                  <span className="text-ink-muted">({enteredPct >= 60 ? 'above' : enteredPct <= 40 ? 'below' : 'around'} the corridor median)</span>
                 </span>
               )}
             </div>
+            <p id="asking-help" className="field-help mt-1.5">
+              Saving updates the site score. It describes where the rent sits among {compRents.length} comparable leases — it is not a price opinion.
+            </p>
             {enteredPct != null && (
-              <p className="mt-1 text-label font-normal text-ink-muted">
-                {`Where this rent sits among ${compRents.length} comparable leases. This is a reference point, not a price opinion.`}
-              </p>
-            )}
-            {enteredPct != null && (
-              <div className="mt-2 flex flex-wrap items-center gap-2">
+              <div className="mt-3 flex flex-wrap items-center gap-3">
                 <button
                   onClick={useInScore}
                   disabled={saveState === 'saving'}
                   type="button"
-                  className="btn-secondary"
+                  className="btn-primary"
                   title="Store this asking rent so the Lease criterion counts in the site score"
                 >
-                  {saveState === 'saving' ? 'Saving…' : 'Use this rent in the site score'}
+                  {saveState === 'saving' ? 'Saving…' : 'Save & use in score'}
                 </button>
-                {saveMsg && <span className={`text-[11px] ${saveState === 'error' ? 'text-nogo' : 'text-ink-muted'}`}>{saveMsg}</span>}
+                {saveMsg && (
+                  <span role={saveState === 'error' ? 'alert' : 'status'} className={`text-label font-normal ${saveState === 'error' ? 'text-nogo' : 'text-go'}`}>
+                    {saveState === 'error' ? '✕ ' : '✓ '}{saveMsg}
+                  </span>
+                )}
               </div>
             )}
           </div>
@@ -544,7 +574,12 @@ function LeaseTab({ p, primary = true, siteId }: { p: SiteModulePayloads['lease'
         Reuses the same chart the standalone Lease Benchmark page uses. */}
     {compRents.length > 0 && (
       <div className="card p-5">
-        <p className="mb-3 text-sm font-medium text-ink-text">Base rent vs corridor comps</p>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h3 className="font-body text-title">Corridor rent distribution (₱ / sqm / month)</h3>
+          <span className="inline-flex items-center gap-2 text-label font-normal text-ink-muted">
+            <TruthChip layer={tk(tl(p.truth?.comps, 'Assumed'))} /> n={compRents.length}
+          </span>
+        </div>
         <LeaseDistributionChart
           comps={compRents}
           median={median}
@@ -556,17 +591,31 @@ function LeaseTab({ p, primary = true, siteId }: { p: SiteModulePayloads['lease'
       </div>
     )}
 
+    {/* BIR zonal value — a tax-reference FLOOR, never a market price or valuation (Grid guardrail). */}
+    {lZonalBand && (
+      <div className="card flex flex-col gap-2 p-5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 className="font-body text-title">BIR zonal value · tax-reference floor</h3>
+          <TruthChip layer={tk(tl(p.truth?.zonalBand, 'Verified'))} />
+        </div>
+        <p className="text-body font-semibold tabular-nums">
+          {lZonalBand.classification ?? 'CR'} · {fmtPeso(lZonalBand.lowPhpSqm)} – {fmtPeso(lZonalBand.highPhpSqm)} /sqm
+        </p>
+        <p className="text-label font-normal text-ink-muted">{ZONAL_FLOOR_NOTE}</p>
+      </div>
+    )}
+
     {/* Comparable-leases table. */}
     {compRents.length > 0 && (
       <div className="card p-5">
-        <p className="mb-3 text-sm font-medium text-ink-text">Comparable leases in {p.corridor ?? 'this corridor'} ({compRents.length})</p>
-        <div className="overflow-hidden rounded-lg border border-ink-border">
-          <table className="w-full text-sm">
+        <h3 className="mb-3 font-body text-title">Comparable leases in {p.corridor ?? 'this corridor'} ({compRents.length})</h3>
+        <div className="overflow-hidden rounded-control border border-ink-border">
+          <table className="w-full text-body">
             <thead>
-              <tr className="bg-ink-panel-2 text-left text-xs uppercase tracking-wide text-ink-muted">
-                <th className="px-3 py-2 font-medium">#</th>
-                <th className="px-3 py-2 font-medium">Base rent (₱/sqm/mo)</th>
-                <th className="px-3 py-2 font-medium">vs median</th>
+              <tr className="table-head text-left">
+                <th scope="col" className="px-3 py-2.5 font-semibold">#</th>
+                <th scope="col" className="px-3 py-2.5 font-semibold">Base rent (₱/sqm/mo)</th>
+                <th scope="col" className="px-3 py-2.5 font-semibold">vs median</th>
               </tr>
             </thead>
             <tbody>
@@ -618,12 +667,12 @@ function DaypartTab({ p, primary = true }: { p: SiteModulePayloads['daypart']; p
     <div className="grid gap-5 lg:grid-cols-3">
       {noData ? (
         <div className="card p-5 lg:col-span-2">
-          <p className="mb-2 text-sm font-medium text-ink-text">Demand across the day</p>
-          <p className="text-sm text-ink-muted">The daytime-vs-residential split for this catchment isn&apos;t derived — the demographic (daytime-population) layer isn&apos;t loaded for this location. Rather than show a false 0% curve, the app withholds the daypart mix here. Load a demographic layer to compute it. Seasonality (right) is modelled from corridor data and still applies.</p>
+          <p className="mb-2 font-body text-title">Demand across the day</p>
+          <p className="text-body text-ink-muted">The daytime-vs-residential split for this catchment isn&apos;t derived — the demographic (daytime-population) layer isn&apos;t loaded for this location. Rather than show a false 0% curve, the app withholds the daypart mix here. Load a demographic layer to compute it. Seasonality (right) is modelled from corridor data and still applies.</p>
         </div>
       ) : (
         <div className="card p-5 lg:col-span-2">
-          <p className="mb-3 text-sm font-medium text-ink-text">Demand across the day · {officeLed ? 'office-led (midday peak)' : 'residential (evening peak)'}</p>
+          <p className="mb-3 font-body text-title">Demand across the day · {officeLed ? 'office-led (midday peak)' : 'residential (evening peak)'}</p>
           <DaypartCurve data={data} />
         </div>
       )}
@@ -632,8 +681,18 @@ function DaypartTab({ p, primary = true }: { p: SiteModulePayloads['daypart']; p
           <Stat label="Catchment mix" value="Not derived" sub="demographic layer not loaded" truth="projected" />
         ) : (
           <>
-        <Stat label="Peak-hour demand captured" value={fmtPct(p.windowMatchPct)} sub="falls inside the format's target window" truth="projected" />
-        <Stat label="Catchment mix" value={`${daytimePct}% daytime`} sub={`${residentialPct}% residential · peaks ${officeLed ? '11:00–14:00' : '17:00–20:00'}`} />
+        <Stat label="Window match" value={fmtPct(p.windowMatchPct)} sub="of demand falls inside the format's target window" truth="projected" />
+        {p.windowMatchPct != null && (
+          <p className="-mt-1 px-1 text-label">
+            {p.windowMatchPct >= 60
+              ? <StatusText tone="go">Strong window match</StatusText>
+              : p.windowMatchPct >= 40
+                ? <StatusText tone="caution">Partial window match</StatusText>
+                : <StatusText tone="nogo">Weak window match</StatusText>}
+          </p>
+        )}
+        <Stat label="Catchment mix" value={`${daytimePct}% daytime`} sub={`${residentialPct}% residential · ${officeLed ? 'office-led' : 'residential-led'}`} truth="projected" />
+        <Stat label="Peak window" value={officeLed ? '11 AM – 2 PM' : '5 PM – 8 PM'} sub={p.peakHour != null ? `busiest hour ≈ ${fmtHour(p.peakHour)} · Manila time` : 'Manila time'} truth="projected" />
           </>
         )}
 
@@ -643,21 +702,21 @@ function DaypartTab({ p, primary = true }: { p: SiteModulePayloads['daypart']; p
           <div className="card p-5">
             <div className="mb-1 flex items-center justify-between gap-2"><p className="stat-label">Seasonality</p><TruthChip layer="projected" /></div>
             {p.seasonality.peakSeason && (
-              <p className="text-sm text-ink-text">
+              <p className="text-body text-ink-text">
                 Peaks in <span className="font-semibold">{p.seasonality.peakSeason.label}</span>
-                <span className="text-go"> (×{p.seasonality.peakSeason.low}–{p.seasonality.peakSeason.high})</span>
+                <span className="text-ink-muted"> (×{p.seasonality.peakSeason.low}–{p.seasonality.peakSeason.high})</span>
               </p>
             )}
             {p.seasonality.troughSeason && (
-              <p className="text-sm text-ink-text">
+              <p className="text-body text-ink-text">
                 Softest in <span className="font-semibold">{p.seasonality.troughSeason.label}</span>
-                <span className="text-nogo"> (×{p.seasonality.troughSeason.low}–{p.seasonality.troughSeason.high})</span>
+                <span className="text-ink-muted"> (×{p.seasonality.troughSeason.low}–{p.seasonality.troughSeason.high})</span>
               </p>
             )}
             {p.seasonality.termTimeNote && (
-              <p className="mt-1 text-[11px] text-ink-muted">{p.seasonality.termTimeNote}</p>
+              <p className="mt-1 text-label font-normal text-ink-muted">{p.seasonality.termTimeNote}</p>
             )}
-            {p.corridor && <p className="mt-1 text-[11px] text-ink-muted">Corridor: {p.corridor}</p>}
+            {p.corridor && <p className="mt-1 text-label font-normal text-ink-muted">Corridor: {p.corridor}</p>}
           </div>
         )}
       </div>
@@ -733,7 +792,7 @@ function WhiteSpaceTab({ p }: { p: SiteModulePayloads['whitespace']; primary?: b
     <div className="space-y-4">
       {/* Header — what this tab now answers. */}
       <div className="card p-5">
-        <p className="text-xs uppercase tracking-wide text-ink-muted">Recommended locations</p>
+        <p className="overline">Recommended locations</p>
         <p className="mt-1 text-lg font-bold text-ink-text">
           Top {recs.length} area{recs.length === 1 ? '' : 's'} to open{brand ? ` a ${brand} branch` : ''}
         </p>
@@ -746,7 +805,7 @@ function WhiteSpaceTab({ p }: { p: SiteModulePayloads['whitespace']; primary?: b
 
       {/* Overview map: every recommended area pinned by its rank. */}
       <div className="card p-5">
-        <p className="mb-3 text-sm font-medium text-ink-text">Recommended areas · OpenStreetMap</p>
+        <p className="mb-3 font-body text-title">Recommended areas · OpenStreetMap</p>
         {mapPoints.length > 0 ? (
           <GapsMap gaps={mapPoints} />
         ) : (
@@ -759,15 +818,15 @@ function WhiteSpaceTab({ p }: { p: SiteModulePayloads['whitespace']; primary?: b
       {/* Named competitor set — WHO these areas would compete with (same source as Territory Guard). */}
       {p.competitorSet && p.competitorSet.competitors.length > 0 && (
         <div className="card p-5">
-          <p className="mb-1 text-sm font-medium text-ink-text">Competes with</p>
-          <p className="mb-2 text-[11px] text-ink-muted">
+          <p className="mb-1 font-body text-title">Competes with</p>
+          <p className="mb-2 text-label font-normal text-ink-muted">
             {brand
               ? `Competitor set for ${brand} — ${p.competitorSet.anchorBrand}-class rivals (${p.competitorSet.truthLayer})`
               : `Reference competitor set — ${p.competitorSet.anchorBrand}-class (${p.competitorSet.truthLayer})`}
           </p>
           <div className="flex flex-wrap gap-1.5">
             {p.competitorSet.competitors.slice(0, 12).map((c, i) => (
-              <span key={`${c}-${i}`} className="rounded-full bg-ink-panel-2 px-2 py-0.5 text-[11px] text-ink-muted">{c}</span>
+              <span key={`${c}-${i}`} className="rounded-chip border border-ink-border bg-ink-panel-2 px-2 py-0.5 text-label font-normal text-ink-text">{c}</span>
             ))}
           </div>
         </div>
@@ -780,7 +839,7 @@ function WhiteSpaceTab({ p }: { p: SiteModulePayloads['whitespace']; primary?: b
           return (
             <div key={`${r.barangay}-${r.rank}`} className="card p-5">
               <div className="flex flex-wrap items-center gap-3">
-                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-accent text-sm font-bold text-ink-bg">{r.rank}</span>
+                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-accent text-sm font-bold text-accent-on">{r.rank}</span>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-base font-semibold text-ink-text">{r.barangay ?? 'Unnamed area'}</p>
                   {r.city && <p className="truncate text-xs text-ink-muted">{r.city}</p>}
@@ -806,15 +865,15 @@ function WhiteSpaceTab({ p }: { p: SiteModulePayloads['whitespace']; primary?: b
 
               {/* The actual businesses in the area — the "exact or similar businesses" to weigh. */}
               <div className="mt-4">
-                <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-ink-muted">Businesses in the area</p>
+                <p className="overline mb-1.5">Businesses in the area</p>
                 {r.nearbyBusinesses.length > 0 ? (
                   <div className="flex flex-wrap gap-1.5">
                     {r.nearbyBusinesses.map((b, i) => (
-                      <span key={`${b}-${i}`} className="rounded-full bg-ink-panel-2 px-2 py-0.5 text-[11px] text-ink-text">{b}</span>
+                      <span key={`${b}-${i}`} className="rounded-chip border border-ink-border bg-ink-panel-2 px-2 py-0.5 text-label font-normal text-ink-text">{b}</span>
                     ))}
                   </div>
                 ) : (
-                  <p className="text-xs text-ink-muted">Open ground — no same-concept or adjacent businesses found in the catchment.</p>
+                  <p className="text-label font-normal text-ink-muted">Open ground — no same-concept or adjacent businesses found in the catchment.</p>
                 )}
               </div>
             </div>
@@ -946,6 +1005,25 @@ function AnalysisTab({
     return { verified: Math.round((legacyMix.verified / n) * 100), assumed: Math.round((legacyMix.assumed / n) * 100), projected: Math.round((legacyMix.projected / n) * 100) };
   })() : null);
 
+  // Headline figure per finding (FindingsList `figures`) — carried straight from the same payloads the
+  // module summaries below read, each with its own Truth Layer. A finding with no figure shows none.
+  const figures: Record<string, { value: string; truth: TruthKey } | undefined> = {
+    Cannibalization: t?.totalCannibalizedPhp != null
+      ? { value: `${fmtPeso(t.totalCannibalizedPhp)} / mo`, truth: tk(tl(t.truth?.cannibalizedPhp, 'Projected')) }
+      : undefined,
+    'Lease position': l?.baseRentPercentile != null
+      ? { value: `${ordinal(l.baseRentPercentile)} percentile`, truth: 'assumed' }
+      : l?.medianPhpSqm != null
+        ? { value: `median ₱${fmtInt(l.medianPhpSqm)}/sqm`, truth: tk(tl(l.truth?.comps, 'Assumed')) }
+        : undefined,
+    'Demand window': d && !dNoData && d.windowMatchPct != null
+      ? { value: `${Math.round(d.windowMatchPct)}% in window`, truth: 'projected' }
+      : undefined,
+    'White-space': wRecs && wRecs.length
+      ? { value: `${wRecs.length} area${wRecs.length === 1 ? '' : 's'}`, truth: 'projected' }
+      : undefined,
+  };
+
   return (
     <div className="space-y-5">
       {/* Final Report — the deterministic Proceed / Proceed with caution / No-Go call first, then what
@@ -962,7 +1040,7 @@ function AnalysisTab({
         limited={!(verdict === 'go' || verdict === 'caution' || verdict === 'nogo') && summary.coverage < 2}
       />
       {summary.findings.length > 0 && (
-        <FindingsList findings={summary.findings} keywords={summary.keywords} onOpenTab={onOpenTab} />
+        <FindingsList findings={summary.findings} keywords={summary.keywords} figures={figures} onOpenTab={onOpenTab} />
       )}
 
       <h2 className="pt-2 text-h2">Module summaries</h2>
@@ -1121,7 +1199,7 @@ function AnalysisTab({
 function NoData({ module, note }: { module: string; note?: string }) {
   return (
     <div className="card p-8 text-center">
-      <p className="text-sm text-ink-muted">{note ?? `${module} did not run for this site's vertical.`}</p>
+      <p className="text-body text-ink-muted">{note ?? `${module} did not run for this site's vertical.`}</p>
     </div>
   );
 }
