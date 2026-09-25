@@ -5,7 +5,7 @@ always-current snapshot. `WORKLOG.md` is the full history (newest first). This f
 rewritten at the end of every work batch — if it disagrees with older notes (e.g.
 `2 - Data Intake/Migration Guide/PROJECT_MEMORY_EXPORT.md`, 2026-08-10), **this file wins**.
 
-_Last updated: 2026-09-23 — after Fix Batch 5 (review programme complete)._
+_Last updated: 2026-09-25 — after Design v2 implementation (Claude Design bundle, 4 batches, pending push)._
 
 ---
 
@@ -24,6 +24,22 @@ _Last updated: 2026-09-23 — after Fix Batch 5 (review programme complete)._
   Per-site modules isolated; site done = `candidate_site.analyzed_at`. AI write-up is a SEPARATE
   per-site request (`POST /api/analysis-report`), locked against double-billing.
 - Tests: 331/331 (vitest). Typecheck 0 errors. `next build` passes.
+
+## Design v2 (2026-09-25) — Claude Design bundle implemented
+Source: `2 -  Data Intake/BSA Design System Overview/implementation/` (README + PATCHES + mockups).
+Tracker: **`docs/DESIGN_V2_CHECKLIST.md`** (item checklist + push log — update the log on every push).
+- Tokens are CSS variables (`app/globals.css`, `[data-theme]`); Tailwind colours resolve through them.
+  `<html data-theme="dark">` is the default. Light tokens + dual `GridLogo` exist; **no Settings toggle
+  yet (owner chose dark only)**.
+- Shared UI vocabulary: `components/ui/Chips.tsx` (TruthChip glyph+word/`compact`, TruthLegend,
+  VerdictPill icon+word, StatusText), `ui/Panel.tsx` (TruthMixBar), `ui/StatTile.tsx` (`truth`, honest gap),
+  `components/FinalReport.tsx` (hero + findings), `components/MapMarkers.tsx` (`.mk-*` markers, legend,
+  sr-only list). Status is never colour alone.
+- Site page opens on the **Final Report** tab (`?tab=` validated); Export PDF + Re-run in the page header.
+  Hero shows the composite, rank n of N, run confidence, analysed time (Manila, ICU-free), truth mix.
+  The hero never contradicts the dashboard: when the site has a composite band it shows that call.
+- Rent is never coloured good/bad (lease tones muted, neutral asking bar, "Distance from corridor median").
+- Batches 0–4 are code-complete and verified (tsc 0 · vitest 426/426 · next build OK) — **pending push**.
 
 ## Code-review fix programme (started 2026-09-23)
 

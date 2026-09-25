@@ -59,8 +59,8 @@ interface CandidateRow { label: string; address: string; city: string; lat: stri
 function Select({ label, value, onChange, options, placeholder }: { label: string; value: string; onChange: (v: string) => void; options: Option[]; placeholder?: string }) {
   return (
     <label className="block">
-      <span className="text-sm font-medium text-ink-muted">{label}</span>
-      <select value={value} onChange={(e) => onChange(e.target.value)} className="field mt-1">
+      <span className="field-label">{label}</span>
+      <select value={value} onChange={(e) => onChange(e.target.value)} className="field mt-1.5">
         <option value="">{placeholder ?? 'Select…'}</option>
         {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
@@ -78,11 +78,11 @@ function SelectOrManual({ label, value, onChange, options, placeholder }: { labe
   const manual = value !== '' && !isPreset;
   return (
     <label className="block">
-      <span className="text-sm font-medium text-ink-muted">{label}</span>
+      <span className="field-label">{label}</span>
       <select
         value={manual ? '__manual__' : value}
         onChange={(e) => onChange(e.target.value === '__manual__' ? ' ' : e.target.value)}
-        className="field mt-1"
+        className="field mt-1.5"
       >
         <option value="">{placeholder ?? 'Select…'}</option>
         {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -389,6 +389,22 @@ export function SteppedIntakeWizard({ franchisors, mockMode = false, mockRunId, 
   const canNext = step === 0 ? (!!vertical && bizReady) : step === 1 ? completeness.pct >= 80 : true;
   const gateMet = completeness.pct >= 80 && candidates.some((c) => c.label && c.lat && c.lon);
 
+  // "Before you submit" (step 4): one line per must-have section (from computeCompleteness) plus
+  // the business identity and each candidate site's pin, so the user sees exactly what's left.
+  const submitChecklist: Array<{ ok: boolean; label: string }> = [
+    { ok: bizReady, label: bizReady ? 'Business identified' : 'Choose a brand, or name your business (Step 1)' },
+    ...(['a', 'b', 'c', 'd', 'e', 'f', 'g', 'k'] as const).map((k) => {
+      const ok = !completeness.missing.includes(k);
+      const label = SECTION_LABELS[k] ?? k;
+      return { ok, label: ok ? label : `${label} — not filled in yet` };
+    }),
+    ...candidates
+      .map((c, i) => ({ c, i }))
+      .filter(({ c }) => c.label.trim() || c.address.trim() || c.lat)
+      .map(({ c, i }) => ({ ok: !!(c.lat && c.lon), label: c.lat && c.lon ? `${c.label || `Site ${i + 1}`} pinned` : `${c.label || `Site ${i + 1}`} needs a pinned location` })),
+    ...(candidates.some((c) => c.label && c.lat && c.lon) ? [] : [{ ok: false, label: 'Add at least one named, pinned candidate site' }]),
+  ];
+
   return (
     <div className="space-y-6">
       <AnalysisOverlay
@@ -396,34 +412,40 @@ export function SteppedIntakeWizard({ franchisors, mockMode = false, mockRunId, 
         active={animating}
         onDone={() => { setAnimating(false); setAnimDone(true); }}
       />
-      {/* progress */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2 text-sm">
-          {STEPS.map((s, i) => (
-            <div key={s} className="flex items-center gap-2">
-              <span className={`grid h-6 w-6 place-items-center rounded-full text-xs font-bold ${i <= step ? 'bg-accent text-ink-bg' : 'bg-ink-panel-2 text-ink-muted'}`}>{i + 1}</span>
-              <span className={i === step ? 'text-ink-text' : 'text-ink-muted'}>{s}</span>
-              {i < STEPS.length - 1 && <span className="text-ink-muted">·</span>}
-            </div>
-          ))}
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-ink-muted">⚡ Demo</span>
+      {/* Stepper — 4-column progress bar (design system): done = go, current = accent, ahead = border. */}
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <ol aria-label="Intake progress" className="grid flex-1 grid-cols-4 gap-3">
+          {STEPS.map((s, i) => {
+            const done = i < step;
+            const now = i === step;
+            return (
+              <li key={s} aria-current={now ? 'step' : undefined} className="flex min-w-0 flex-col gap-1.5">
+                <span className={`h-1 rounded ${done ? 'bg-go' : now ? 'bg-accent' : 'bg-ink-border'}`} aria-hidden />
+                <span className={`text-label ${done ? 'text-go' : now ? 'text-ink-text' : 'text-ink-muted'}`}>
+                  {done ? `✓ Step ${i + 1}` : now ? `Step ${i + 1} · now` : `Step ${i + 1}`}
+                </span>
+                <span className={`hidden truncate text-label font-normal sm:block ${now ? 'text-ink-text' : 'text-ink-muted'}`}>{s}</span>
+              </li>
+            );
+          })}
+        </ol>
+        <label className="flex items-center gap-2">
+          <span className="field-label whitespace-nowrap">⚡ Demo</span>
           <select
             defaultValue=""
             onChange={(e) => { if (e.target.value) loadDemo(e.target.value); }}
             title="Fill every field with a data-backed demo scenario"
-            className="field w-auto text-xs"
+            className="field w-auto"
           >
             <option value="">Load a scenario…</option>
             {DEMO_SCENARIOS.map((s) => (
               <option key={s.key} value={s.key}>{s.label}</option>
             ))}
           </select>
-        </div>
+        </label>
       </div>
 
-      <p className="text-xs uppercase tracking-wider text-ink-muted">Intake & brief · Step {step + 1} of 4</p>
+      <p className="overline">Intake & brief · Step {step + 1} of 4</p>
 
       {/* STEP 1 — vertical cards + module toggles */}
       {step === 0 && (
@@ -468,11 +490,11 @@ export function SteppedIntakeWizard({ franchisors, mockMode = false, mockRunId, 
                 <div className="grid gap-4 md:grid-cols-2">
                   <Select label="Exact vertical" value={vertical} onChange={setVertical} options={VERTICAL_GROUPS.flatMap((g) => g.options)} />
                   <label className="block">
-                    <span className="text-sm font-medium text-ink-muted">Franchise brand</span>
+                    <span className="field-label">Franchise brand</span>
                     <select
                       value={franchisorId}
                       onChange={(e) => { if (e.target.value === '__add__') { setAddingBrand(true); } else { setFranchisorId(e.target.value); } }}
-                      className="field mt-1"
+                      className="field mt-1.5"
                     >
                       <option value="">Select a brand…</option>
                       {visibleFranchisorGroups.map((g) => (
@@ -526,11 +548,11 @@ export function SteppedIntakeWizard({ franchisors, mockMode = false, mockRunId, 
                     <div className="grid gap-3 md:grid-cols-3">
                       <label className="block">
                         <span className="text-xs text-ink-muted">Brand name</span>
-                        <input value={newBrand.brandName} onChange={(e) => setNewBrand((b) => ({ ...b, brandName: e.target.value }))} placeholder="e.g. Kanto Freshcup" className="field mt-1" />
+                        <input value={newBrand.brandName} onChange={(e) => setNewBrand((b) => ({ ...b, brandName: e.target.value }))} placeholder="e.g. Kanto Freshcup" className="field mt-1.5" />
                       </label>
                       <label className="block">
                         <span className="text-xs text-ink-muted">Sector</span>
-                        <select value={newBrand.sector} onChange={(e) => setNewBrand((b) => ({ ...b, sector: e.target.value }))} className="field mt-1">
+                        <select value={newBrand.sector} onChange={(e) => setNewBrand((b) => ({ ...b, sector: e.target.value }))} className="field mt-1.5">
                           <option value="FnB">Food & Beverage</option>
                           <option value="Retail">Retail</option>
                           <option value="Services">Services</option>
@@ -538,7 +560,7 @@ export function SteppedIntakeWizard({ franchisors, mockMode = false, mockRunId, 
                       </label>
                       <label className="block">
                         <span className="text-xs text-ink-muted">Category (optional)</span>
-                        <input value={newBrand.subCategory} onChange={(e) => setNewBrand((b) => ({ ...b, subCategory: e.target.value }))} placeholder="e.g. Milk tea / beverages" className="field mt-1" />
+                        <input value={newBrand.subCategory} onChange={(e) => setNewBrand((b) => ({ ...b, subCategory: e.target.value }))} placeholder="e.g. Milk tea / beverages" className="field mt-1.5" />
                       </label>
                     </div>
                     {brandError && <p className="mt-2 text-xs text-nogo">{brandError}</p>}
@@ -553,12 +575,12 @@ export function SteppedIntakeWizard({ franchisors, mockMode = false, mockRunId, 
               <div className="space-y-3">
                 <div className="grid gap-4 md:grid-cols-2">
                   <label className="block">
-                    <span className="text-sm font-medium text-ink-muted">Your business name</span>
-                    <input value={indieName} onChange={(e) => setIndieName(e.target.value)} placeholder="e.g. BrewLab Tea" className="field mt-1" />
+                    <span className="field-label">Your business name</span>
+                    <input value={indieName} onChange={(e) => setIndieName(e.target.value)} placeholder="e.g. BrewLab Tea" className="field mt-1.5" />
                   </label>
                   <label className="block">
-                    <span className="text-sm font-medium text-ink-muted">Most similar established brand</span>
-                    <select value={comparableBrand} onChange={(e) => pickComparable(e.target.value)} className="field mt-1">
+                    <span className="field-label">Most similar established brand</span>
+                    <select value={comparableBrand} onChange={(e) => pickComparable(e.target.value)} className="field mt-1.5">
                       <option value="">Pick a comparable brand…</option>
                       {brandGroups.map((g) => (
                         <optgroup key={g.category} label={g.category}>
@@ -619,15 +641,15 @@ export function SteppedIntakeWizard({ franchisors, mockMode = false, mockRunId, 
           )}
           <div className="grid gap-4 md:grid-cols-2">
             <label className="block md:col-span-2">
-              <span className="text-sm font-medium text-ink-muted">Brand & concept</span>
-              <input value={sections.a ?? ''} onChange={(e) => setSection('a', e.target.value)} placeholder="e.g. Affordable premium milk tea" className="field mt-1" />
+              <span className="field-label">Brand & concept</span>
+              <input value={sections.a ?? ''} onChange={(e) => setSection('a', e.target.value)} placeholder="e.g. Affordable premium milk tea" className="field mt-1.5" />
             </label>
             <Select label="Target customer" value={sections.b ?? ''} onChange={(v) => setSection('b', v)} options={TARGET_CUSTOMER} />
             <Select label="Catchment income band" value={sections.b2 ?? ''} onChange={(v) => setSection('b2', v)} options={INCOME_BAND} placeholder="Optional…" />
             <Select label="Format & footprint" value={sections.c ?? ''} onChange={(v) => setSection('c', v)} options={FOOTPRINT} />
             <label className="block">
-              <span className="text-sm font-medium text-ink-muted">Unit economics</span>
-              <input value={sections.d ?? ''} onChange={(e) => setSection('d', e.target.value)} placeholder="e.g. Avg ticket ₱145" className="field mt-1" />
+              <span className="field-label">Unit economics</span>
+              <input value={sections.d ?? ''} onChange={(e) => setSection('d', e.target.value)} placeholder="e.g. Avg ticket ₱145" className="field mt-1.5" />
             </label>
             <Select label="Expansion goals" value={sections.e ?? ''} onChange={(v) => setSection('e', v)} options={EXPANSION_GOAL} />
             <Select label="Site preferences" value={sections.f ?? ''} onChange={(v) => setSection('f', v)} options={SITE_PREFERENCE} />
@@ -679,6 +701,7 @@ export function SteppedIntakeWizard({ franchisors, mockMode = false, mockRunId, 
 
       {/* STEP 4 — candidates */}
       {step === 3 && (
+        <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
         <div className="card p-5">
           <p className="mb-1 text-sm font-medium text-ink-text">Candidate sites to evaluate</p>
           <p className="mb-3 text-xs text-ink-muted"><span className="text-accent">Pin the exact spot on the map</span> (📍) for each site — the address is a label for your reference.</p>
@@ -703,9 +726,47 @@ export function SteppedIntakeWizard({ franchisors, mockMode = false, mockRunId, 
             <p className="mt-2 text-xs text-ink-muted">Maximum of 5 candidate sites per run reached.</p>
           )}
         </div>
+
+        {/* Right column — mockup E1: what happens next + the pre-submit checklist. */}
+        <div className="space-y-5">
+          <section className="card p-5">
+            <h3 className="font-body text-title">What happens next</h3>
+            <ol className="mt-3 space-y-3">
+              {[
+                'We run Territory Guard, Lease Benchmark, Daypart Demand and White-Space on each site.',
+                'Each site gets one call: Proceed, Proceed with caution or No-Go.',
+                'You land on the Site Dashboard with the ranked shortlist.',
+              ].map((t, i) => (
+                <li key={i} className="flex gap-3 text-body">
+                  <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-ink-hover text-label text-accent-text" aria-hidden>{i + 1}</span>
+                  <span className="text-ink-muted">{t}</span>
+                </li>
+              ))}
+            </ol>
+          </section>
+          <section className="card p-5" aria-labelledby="before-submit">
+            <h3 id="before-submit" className="font-body text-title">Before you submit</h3>
+            <ul className="mt-3 space-y-2 text-body">
+              {submitChecklist.map((c, i) => (
+                <li key={i} className={`flex gap-2 ${c.ok ? 'text-go' : 'text-nogo'}`}>
+                  <span aria-hidden className="font-bold">{c.ok ? '✓' : '✕'}</span>
+                  <span className="text-ink-text">
+                    <span className="sr-only">{c.ok ? 'Done: ' : 'To do: '}</span>{c.label}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-3 text-label font-normal text-ink-muted">Brand &amp; requirements: {completeness.pct}% complete — 80% needed to submit.</p>
+          </section>
+        </div>
+        </div>
       )}
 
-      {error && <p className="text-sm text-nogo">{error}</p>}
+      {error && (
+        <div role="alert" className="error-state flex-row items-start gap-2 p-3 text-body">
+          <span className="font-bold text-nogo" aria-hidden>✕</span> <span>{error}</span>
+        </div>
+      )}
 
       {/* Map-pin modal */}
       {pinTarget && (
@@ -728,12 +789,12 @@ export function SteppedIntakeWizard({ franchisors, mockMode = false, mockRunId, 
       )}
 
       {/* nav */}
-      <div className="flex items-center justify-between">
-        <button onClick={() => setStep((s) => Math.max(0, s - 1))} disabled={step === 0} className="btn-ghost disabled:opacity-40">← Back</button>
+      <div className="flex items-center gap-3">
+        <button type="button" onClick={() => setStep((s) => Math.max(0, s - 1))} disabled={step === 0} className="btn-secondary btn-lg flex-1">‹ Back</button>
         {step < 3 ? (
-          <button onClick={() => setStep((s) => s + 1)} disabled={!canNext} className="btn-accent disabled:opacity-50">Next →</button>
+          <button type="button" onClick={() => setStep((s) => s + 1)} disabled={!canNext} className="btn-primary btn-lg flex-[2]">Next ›</button>
         ) : (
-          <button onClick={submit} disabled={!gateMet || submitting || !bizReady} className="btn-accent disabled:opacity-50">{submitting ? 'Submitting…' : 'Submit & run'}</button>
+          <button type="button" onClick={submit} disabled={!gateMet || submitting || !bizReady} className="btn-primary btn-lg flex-[2]">{submitting ? 'Submitting…' : 'Submit & run'}</button>
         )}
       </div>
     </div>

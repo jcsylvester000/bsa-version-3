@@ -3,6 +3,7 @@
 import { useEffect, useRef } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
+import { markerElement, MapLegend, SrMarkerList, type LegendKind } from '@/components/MapMarkers';
 
 export interface GapPoint {
   rank: number;
@@ -65,14 +66,9 @@ export function GapsMap({ gaps, businesses = [] }: { gaps: GapPoint[]; businesse
       // Red = exact/direct same-concept rival · White = similar/adjacent-format business.
       for (const b of bizPlot) {
         const isDirect = b.tier === 'direct';
-        const dot = document.createElement('div');
+        // Design v2 marker vocabulary: red diamond = direct/exact, amber square = adjacent/similar.
+        const dot = markerElement(isDirect ? 'direct' : 'adjacent', `${b.name} — ${isDirect ? 'exact / same concept' : 'similar / adjacent'}`);
         dot.title = `${b.name} — ${isDirect ? 'exact / same concept' : 'similar / adjacent'}`;
-        dot.style.cssText =
-          `width:${isDirect ? 10 : 9}px;height:${isDirect ? 10 : 9}px;border-radius:50%;` +
-          (isDirect
-            ? 'background:#e5484d;border:1.5px solid #0b1426;'          // red = direct/exact
-            : 'background:#e6ebf5;border:1.5px solid #0b1426;') +       // white = adjacent/similar
-          'box-shadow:0 1px 2px rgba(0,0,0,.5);cursor:pointer';
         new maplibregl.Marker({ element: dot }).setLngLat([b.lon, b.lat]).addTo(map);
         bounds.extend([b.lon, b.lat]);
       }
@@ -88,8 +84,8 @@ export function GapsMap({ gaps, businesses = [] }: { gaps: GapPoint[]; businesse
         const popupHtml =
           `<div style="min-width:150px">` +
           `<div style="font-weight:700">#${g.rank} ${escapeHtml(g.label)}</div>` +
-          `<div style="color:#94A3BE;font-size:11px;margin-top:2px">Opportunity ${Math.round(g.score)}/100</div>` +
-          (g.reason ? `<div style="color:#94A3BE;font-size:11px;margin-top:2px">${escapeHtml(g.reason)}</div>` : '') +
+          `<div style="opacity:.8;font-size:13px;margin-top:2px">Opportunity ${Math.round(g.score)}/100</div>` +
+          (g.reason ? `<div style="opacity:.8;font-size:13px;margin-top:2px">${escapeHtml(g.reason)}</div>` : '') +
           `</div>`;
         new maplibregl.Marker({ element: el })
           .setLngLat([g.lon, g.lat])
@@ -119,7 +115,28 @@ export function GapsMap({ gaps, businesses = [] }: { gaps: GapPoint[]; businesse
     );
   }
 
-  return <div ref={ref} className="h-[360px] w-full overflow-hidden rounded-lg border border-ink-border" />;
+  const plotted = gaps.filter((g) => Number.isFinite(g.lat) && Number.isFinite(g.lon));
+  const direct = businesses.filter((b) => b.tier === 'direct').length;
+  const adjacent = businesses.length - direct;
+  const legend: Array<{ kind: LegendKind; text: string }> = [
+    { kind: 'area', text: 'Recommended area (by rank)' },
+    ...(direct ? [{ kind: 'direct' as const, text: `Direct / same concept (${direct})` }] : []),
+    ...(adjacent ? [{ kind: 'adjacent' as const, text: `Similar / adjacent (${adjacent})` }] : []),
+  ];
+
+  return (
+    <div className="relative h-[360px] w-full overflow-hidden rounded-xl border border-ink-border">
+      <div ref={ref} className="absolute inset-0 h-full w-full" aria-hidden />
+      <MapLegend items={legend} />
+      <SrMarkerList
+        title="Recommended White-Space areas"
+        items={[
+          ...plotted.map((g) => `#${g.rank} ${g.label} — opportunity ${Math.round(g.score)}/100${g.reason ? `. ${g.reason}` : ''}`),
+          ...businesses.map((b) => `${b.tier === 'direct' ? 'Direct rival' : 'Adjacent business'}: ${b.name}`),
+        ]}
+      />
+    </div>
+  );
 }
 
 function escapeHtml(s: string): string {

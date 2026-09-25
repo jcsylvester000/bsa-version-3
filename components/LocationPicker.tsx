@@ -14,6 +14,7 @@
 import { useEffect, useRef, useState } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
+import { markerElement, MapLegend } from '@/components/MapMarkers';
 
 export interface PickedLocation { lat: number; lon: number; address?: string }
 
@@ -70,9 +71,8 @@ export function LocationPicker({ title, initial, onPick, onClose }: Props) {
 
       const setPin = (lat: number, lon: number) => {
         if (!markerRef.current) {
-          const el = document.createElement('div');
-          el.style.cssText = 'width:16px;height:16px;border-radius:50% 50% 50% 0;background:#BE8562;border:2px solid #fff;transform:rotate(-45deg);box-shadow:0 1px 4px rgba(0,0,0,.5)';
-          markerRef.current = new maplibregl.Marker({ element: el, draggable: true }).setLngLat([lon, lat]).addTo(map);
+          const el = markerElement('site', 'Pinned location — drag to fine-tune');
+          markerRef.current = new maplibregl.Marker({ element: el, draggable: true, anchor: 'bottom' }).setLngLat([lon, lat]).addTo(map);
           markerRef.current.on('dragend', () => {
             const p = markerRef.current!.getLngLat();
             setPicked({ lat: round(p.lat), lon: round(p.lng) });
@@ -112,9 +112,8 @@ export function LocationPicker({ title, initial, onPick, onClose }: Props) {
       if (map) {
         map.flyTo({ center: [lon, lat], zoom: 15 });
         if (!markerRef.current) {
-          const el = document.createElement('div');
-          el.style.cssText = 'width:16px;height:16px;border-radius:50% 50% 50% 0;background:#BE8562;border:2px solid #fff;transform:rotate(-45deg);box-shadow:0 1px 4px rgba(0,0,0,.5)';
-          markerRef.current = new maplibregl.Marker({ element: el, draggable: true }).setLngLat([lon, lat]).addTo(map);
+          const el = markerElement('site', 'Pinned location — drag to fine-tune');
+          markerRef.current = new maplibregl.Marker({ element: el, draggable: true, anchor: 'bottom' }).setLngLat([lon, lat]).addTo(map);
           markerRef.current.on('dragend', () => { const p = markerRef.current!.getLngLat(); setPicked({ lat: round(p.lat), lon: round(p.lng) }); });
         } else {
           markerRef.current.setLngLat([lon, lat]);
@@ -125,10 +124,10 @@ export function LocationPicker({ title, initial, onPick, onClose }: Props) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
-      <div className="w-full max-w-2xl rounded-2xl border border-ink-border bg-ink-panel p-4" onClick={(e) => e.stopPropagation()}>
+      <div role="dialog" aria-modal="true" aria-labelledby="picker-title" className="w-full max-w-2xl rounded-modal border border-ink-border-strong bg-ink-panel p-5 shadow-e3" onClick={(e) => e.stopPropagation()}>
         <div className="mb-3 flex items-center justify-between">
-          <p className="text-sm font-semibold text-ink-text">{title}</p>
-          <button onClick={onClose} className="text-ink-muted hover:text-ink-text">✕</button>
+          <h2 id="picker-title" className="font-body text-title text-ink-text">{title}</h2>
+          <button type="button" onClick={onClose} aria-label="Close" className="btn min-w-tap px-0 text-ink-muted hover:text-ink-text">✕</button>
         </div>
         <div className="mb-3 flex gap-2">
           <input
@@ -136,22 +135,27 @@ export function LocationPicker({ title, initial, onPick, onClose }: Props) {
             onChange={(e) => setSearch(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && doSearch()}
             placeholder="Click the map to drop the pin (address search off in DB-only mode)"
-            className="field flex-1 px-3 py-2 text-sm"
+            aria-label="Search an address"
+            className="field flex-1"
           />
-          <button onClick={doSearch} disabled={searching} className="btn-ghost text-sm">{searching ? 'Searching…' : 'Search'}</button>
+          <button type="button" onClick={doSearch} disabled={searching} className="btn-secondary">{searching ? 'Searching…' : 'Search'}</button>
         </div>
-        {searchMsg && <p className="mb-2 text-xs text-caution">{searchMsg}</p>}
-        <div ref={ref} className="h-[360px] w-full overflow-hidden rounded-xl border border-ink-border" />
+        {searchMsg && <p role="status" className="mb-2 text-label font-normal text-caution">{searchMsg}</p>}
+        <div className="relative h-[360px] w-full overflow-hidden rounded-xl border border-ink-border">
+          <div ref={ref} className="absolute inset-0 h-full w-full" />
+          {picked && <MapLegend items={[{ kind: 'site', text: 'Your pin — drag to fine-tune' }]} />}
+        </div>
         <div className="mt-3 flex items-center justify-between">
-          <p className="text-xs text-ink-muted">
+          <p className="text-label font-normal text-ink-muted" aria-live="polite">
             {picked ? <>Pinned: <span className="text-go">{picked.lat}, {picked.lon}</span></> : 'Click the map or search to drop a pin.'}
           </p>
           <div className="flex gap-2">
-            <button onClick={onClose} className="btn-ghost text-sm">Cancel</button>
+            <button type="button" onClick={onClose} className="btn-secondary">Cancel</button>
             <button
+              type="button"
               onClick={() => { if (picked) { onPick(picked); onClose(); } }}
               disabled={!picked}
-              className="btn-accent text-sm disabled:opacity-50"
+              className="btn-primary"
             >
               Use this location
             </button>

@@ -5,6 +5,51 @@ The cross-thread state record. Read this (with the Master Instruction and the cu
 
 ---
 
+## 2026-09-25 — DESIGN v2: Claude Design bundle implemented (CODE COMPLETE — pending push, batches 0–4)
+
+**Skills loaded:** 12 Orchestration (plan/batches/log), 01 Senior Web & App Engineer (structure),
+07 PH Broker (guardrail wording on rent), 11 Code QA (verification). Tracker: `docs/DESIGN_V2_CHECKLIST.md`.
+**Owner decisions:** theme-ready but dark only (no light toggle yet) · one push per batch.
+
+- **Batch 0 — pending audit fixes** (uncommitted at thread start; the owner committed them mid-session as
+  `0ecddcd`, so nothing further to do): run route
+  `maxDuration = 26` (F-04), `prisma migrate deploy` in the Netlify build (F-49), build id (F-50), tour copy, CI.
+- **Batch 1 — foundation:** bundle `tailwind.config.ts` + `app/globals.css` (CSS-variable tokens, AA status
+  colours, component recipes, `.mk-*` markers, themed MapLibre), `ui/Chips`, `ui/Panel`, `ui/StatTile`,
+  `TruthChip` re-export; `GridLogo` dark/light pair; `<html data-theme="dark">`.
+- **Batch 2 — shell + dashboard:** bundle `(app)/layout.tsx` (sticky 248px rail, skip link, RA 9646 footer —
+  **build id kept**, the bundle had dropped it), `SidebarNav`, `LogoutButton`, `MobileNav` (native `<dialog>`,
+  replaces the F-32 drawer), `RunDashboard` (verdict strip; rows → Final Report). `RunPipelineButton` takes
+  `className` (default `btn-secondary btn-lg`). "Rent above median" tile made neutral (guardrail).
+- **Batch 3 — site page + Final Report (PATCHES §1):** `FinalReport.tsx`; `SiteIntelligenceTabs` 1a–1i
+  (underline tabs + roving tabindex + ← →, TruthLegend, StatusText chips, stat tiles with truth chips instead
+  of "(Projected)" text, compact chips in ReportRows, hero + findings + 2-col module summaries with "Open … ›",
+  lease judgement cues removed); `site/page.tsx` header (Re-run + Export site PDF), `?tab=` validated against
+  `TAB_KEYS`, hero context (composite from Decimal, rank via the dashboard ordering, run confidence,
+  `manilaShortStampYear(analyzedAt)`, truth mix of the site's module rows). Hero honours F-07: shows
+  "Not enough data" only when the site has no composite band. `LeaseDistributionChart` asking bar is one
+  neutral colour. "Negotiating room to median" → "Distance from corridor median".
+- **Batch 4 — login, intake, maps (PATCHES §2–4):** login two-column C1 layout, tablist, `field-label`,
+  alert error, confirm-field `field-error` + `aria-invalid`; wizard 4-column stepper, `field-label` + `mt-1.5`,
+  step-4 "What happens next" + "Before you submit" (from `computeCompleteness` + pins), Back/Submit
+  `btn-lg` with Submit `flex-[2]`; new `components/MapMarkers.tsx` used by Territory/Gaps/LocationPicker
+  (markers wrap the rotated shape so MapLibre's own transform isn't clobbered), legends, sr-only lists;
+  LocationPicker is a labelled dialog with 44px controls.
+
+**Verification (cloud sandbox copy):** `tsc --noEmit` 0 errors · `vitest run` 36 files / **426/426** pass
+(4 "unhandled" Prisma-engine-not-found rejections are sandbox-only — the engine download is blocked; same
+as prior batches) · `next build` compiles all routes. **Not verified:** a live browser session against Neon
+(visual match with `design-reference/*.dc.html`, keyboard pass, 44px targets).
+
+**⚠️ ACTION REQUIRED (owner):** run the per-batch push commands in `docs/DESIGN_V2_CHECKLIST.md` (also
+given in chat), then paste `git log --oneline -6` so the push-log hashes can be recorded. After Netlify
+deploys: open a run → a site (should land on Final Report), tab through with the keyboard, try the phone menu.
+
+**Noticed, not changed:** reports/scorecard/modules/explore/screening/settings pages still use pre-v2 markup
+(they inherit the new tokens, but not the new layouts); `FindingsList` `figures` left unwired; light toggle deferred.
+
+---
+
 ## 2026-09-25 — HOTFIX: React hydration #418/#423 (locale/timezone drift) + 502 triage
 
 Reported: console `Minified React error #418` + `#423`, and repeated `POST /api/analysis-report 502`.
