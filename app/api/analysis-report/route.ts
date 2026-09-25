@@ -5,7 +5,8 @@ import { getSession } from '@/lib/auth/session';
 import { canAccessRun, type SessionUser } from '@/lib/auth/auth';
 import { isUuid } from '@/lib/util/uuid';
 import { ok, fail, failValidation, errors } from '@/lib/api/respond';
-import { generateAnalysisReport, readAnalysis, REGENERATE_CAP_PER_DAY } from '@/lib/ai/analysisReport';
+import { claimAnalysisReport, executeAnalysisReport, readAnalysis, REGENERATE_CAP_PER_DAY } from '@/lib/ai/analysisReport';
+import { analysisAsyncEnabled, enqueueAnalysisJob } from '@/lib/ai/enqueue';
 import { AiGenerationError } from '@/lib/ai/vectorshiftProvider';
 
 // One site's generation must fit in ONE function invocation. Netlify synchronous functions
@@ -55,7 +56,25 @@ export async function GET(req: NextRequest) {
   const s = await readAnalysis(siteId);
   if (s.state === 'ready') return ok({ status: 'ready', report: s.result });
   if (s.state === 'generating') return ok({ status: 'generating', startedAt: s.startedAt });
+  // A recorded failure stops the poller and shows the reason (never the provider body).
+  if (s.state === 'failed') return ok({ status: 'error', reason: s.reason, message: failureMessage(s.reason) });
   return ok({ status: 'missing' });
+}
+
+/** Human message for a failure reason (mirrors the POST error mapping; never leaks provider detail). */
+function failureMessage(reason: string): string {
+  if (reason.startsWith('config_')) return 'The AI analysis service is not configured. Please contact Grid support.';
+  if (reason === 'db_migration_pending') return 'The analysis service needs a database update. Please contact Grid support.';
+  if (reason === 'timeout') return 'The AI analysis took too long to respond. Please try again in a minute.';
+  return 'The AI analysis could not be generated right now. Please try again in a minute.';
+}
+
+/** Map a failure reason to the right HTTP response for the INLINE path. */
+function failResponse(reason: string) {
+  const details = [{ path: 'reason', message: reason }];
+  if (reason.startsWith('config_')) return fail({ code: 'ai_not_configured', message: failureMessage(reason), details }, 503);
+  if (reason === 'db_migration_pending') return fail({ code: 'ai_unavailable', message: failureMessage(reason), details }, 503);
+  return fail({ code: 'ai_unavailable', message: failureMessage(reason), details }, 502);
 }
 
 export async function POST(req: NextRequest) {
@@ -69,35 +88,38 @@ export async function POST(req: NextRequest) {
   if (denied) return denied;
 
   try {
-    const out = await generateAnalysisReport(runId, siteId, { force: force === true, actorId: session.id });
-    if (out.status === 'ready') return ok({ status: 'ready', report: out.result });
-    if (out.status === 'generating') return ok({ status: 'generating', startedAt: out.startedAt }, { status: 202 });
-    return errors.tooMany(
-      60 * 60,
-      `This site's analysis has been regenerated ${REGENERATE_CAP_PER_DAY} times in the last 24 hours. Please try again later.`,
-    );
+    // 1) CLAIM (fast, no generation). Returns a cached report, an in-flight status, the cap, or
+    //    'claimed' (we now own the lock and must run it).
+    const claim = await claimAnalysisReport(runId, siteId, { force: force === true, actorId: session.id });
+    if (claim.status === 'ready') return ok({ status: 'ready', report: claim.result });
+    if (claim.status === 'generating') return ok({ status: 'generating', startedAt: claim.startedAt }, { status: 202 });
+    if (claim.status === 'regenerate_limit') {
+      return errors.tooMany(60 * 60, `This site's analysis has been regenerated ${REGENERATE_CAP_PER_DAY} times in the last 24 hours. Please try again later.`);
+    }
+
+    // 2) We hold the lock. On the live provider WITH async enabled, hand the slow work to the
+    //    Netlify Background Function and return immediately — the browser polls GET until ready.
+    if (claim.which === 'vectorshift' && analysisAsyncEnabled()) {
+      const queued = await enqueueAnalysisJob({
+        runId, siteId, which: claim.which, trigger: claim.trigger, lockId: claim.lockId,
+        actorId: session.id, restore: claim.restore,
+      });
+      if (queued) return ok({ status: 'generating', startedAt: claim.startedAt }, { status: 202 });
+      // Enqueue failed (misconfig / function down) → fall through to inline so nothing is lost.
+      console.error('[analysis-report] background enqueue failed — running inline');
+    }
+
+    // 3) Inline execution (stub provider, async disabled, or enqueue fell back). This can hit the
+    //    26s cap for a very slow live run — enable ANALYSIS_BACKGROUND to move it off-request.
+    const run = await executeAnalysisReport(runId, siteId, {
+      which: claim.which, trigger: claim.trigger, actorId: session.id, lockId: claim.lockId, restore: claim.restore,
+    });
+    if (run.status === 'ready') return ok({ status: 'ready', report: run.result });
+    return failResponse(run.reason);
   } catch (e) {
-    // Details were already logged server-side by the generator. The client gets a generic
-    // message plus a SHORT machine reason (e.g. timeout, http_401, db_migration_pending) —
-    // never the provider's response body — so operators can diagnose from the browser.
+    // claimAnalysisReport can throw only on an unsupported AI_PROVIDER (config) or a DB error.
     const reason = e instanceof AiGenerationError ? e.code : e instanceof Error && /AI_PROVIDER=/.test(e.message) ? 'config_ai_provider' : 'internal';
-    if (e instanceof Error && /AI_PROVIDER=/.test(e.message)) console.error('[analysis-report]', e.message);
-    const details = [{ path: 'reason', message: reason }];
-    if (reason.startsWith('config_')) {
-      return fail({ code: 'ai_not_configured', message: 'The AI analysis service is not configured. Please contact Grid support.', details }, 503);
-    }
-    if (reason === 'db_migration_pending') {
-      return fail({ code: 'ai_unavailable', message: 'The analysis service needs a database update (prisma migrate deploy). Please contact Grid support.', details }, 503);
-    }
-    return fail(
-      {
-        code: 'ai_unavailable',
-        message: reason === 'timeout'
-          ? 'The AI analysis took too long to respond. Please try again in a minute.'
-          : 'The AI analysis could not be generated right now. Please try again in a minute.',
-        details,
-      },
-      502,
-    );
+    if (e instanceof Error) console.error('[analysis-report]', e.message);
+    return failResponse(reason);
   }
 }

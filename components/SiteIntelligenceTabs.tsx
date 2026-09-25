@@ -874,12 +874,20 @@ function AnalysisTab({
         if (cancelled) return;
         const st = json?.data?.status;
         if (st === 'ready') { applyReport(json.data.report); setWaiting(false); return; }
-        if (st === 'missing') { setWaiting(false); return; } // the other attempt failed → Generate shows
+        // A recorded failure ends the wait immediately and shows why (async job persisted it).
+        if (st === 'error') {
+          setWaiting(false);
+          setError(`${json.data.message ?? 'The analysis could not be generated.'}${json.data.reason ? ` [reason: ${json.data.reason}]` : ''}`);
+          return;
+        }
+        if (st === 'missing') { setWaiting(false); return; } // no attempt in flight → Generate shows
       } catch { /* network blip — keep polling */ }
       if (cancelled) return;
-      if (pollTries.current >= 30) {
+      // ~5 min budget (75 × 4s) — the async background job (Netlify, up to 15 min) can outlive a
+      // slow VectorShift run; the lock TTL also covers this so a late finish still lands.
+      if (pollTries.current >= 75) {
         setWaiting(false);
-        setError('The analysis is taking longer than expected. Refresh the page in a minute.');
+        setError('The analysis is taking longer than expected. It may still finish — refresh in a minute.');
         return;
       }
       setPollTick((n) => n + 1);

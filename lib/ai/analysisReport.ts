@@ -16,7 +16,7 @@ import { prisma } from '@/lib/db/prisma';
 import type { ModuleKind } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { aiProviderName } from './index';
-import { isReadyPayload, isFreshLock, versionToken, type AnalysisPayload } from './analysisCache';
+import { isReadyPayload, isFreshLock, isFailedPayload, versionToken, type AnalysisPayload } from './analysisCache';
 import { checkAnalysisOutput, type OutputCheck } from './outputCheck';
 import { retrieve } from './retrieveThenGenerate';
 import { TRUTH_META } from '@/lib/truth/truthLayer';
@@ -76,6 +76,7 @@ type Payload = AnalysisPayload;
 export type AnalysisState =
   | { state: 'ready'; result: AnalysisReportResult }
   | { state: 'generating'; startedAt: string }
+  | { state: 'failed'; reason: string }
   | { state: 'missing' };
 
 export type GenerateOutcome =
@@ -109,6 +110,7 @@ export async function readAnalysis(siteId: string): Promise<AnalysisState> {
   const p = (row?.payload ?? null) as Payload | null;
   if (isReadyPayload(p)) return { state: 'ready', result: toResult(p, true) };
   if (isFreshLock(p)) return { state: 'generating', startedAt: String(p!.startedAt) };
+  if (isFailedPayload(p)) return { state: 'failed', reason: String(p.reason) };
   return { state: 'missing' };
 }
 
@@ -131,15 +133,42 @@ function isMissingSchemaError(err: unknown): boolean {
 }
 
 /**
- * Generate (or return the cached) Analysis Report for one site in a run.
- * `force` regenerates (capped per site per day on the live provider).
- * Throws AiGenerationError (code + server-only detail) when the provider fails.
+ * The outcome of claiming (but not yet running) a generation. `claimed` means THIS caller now
+ * owns the lock and must run `executeAnalysisReport` — inline (stub / async off) or by handing the
+ * job to the background function (async on). The others are terminal for the caller.
  */
-export async function generateAnalysisReport(
+export type ClaimOutcome =
+  | { status: 'ready'; result: AnalysisReportResult }
+  | { status: 'generating'; startedAt: string }
+  | { status: 'regenerate_limit'; cap: number }
+  | { status: 'claimed'; lockId: string; startedAt: string; which: AiProviderNameT; trigger: 'initial' | 'regenerate'; restore: Payload | null };
+
+/** Result of RUNNING a claimed job. `failed` is persisted so the poller can surface the reason. */
+export type ExecuteOutcome =
+  | { status: 'ready'; result: AnalysisReportResult }
+  | { status: 'failed'; reason: string };
+
+type AiProviderNameT = 'stub' | 'vectorshift';
+
+export interface AnalysisJob {
+  which: AiProviderNameT;
+  trigger: 'initial' | 'regenerate';
+  actorId?: string;
+  lockId: string;
+  /** The previous ready report to restore on failure (regenerate), else null. */
+  restore: Payload | null;
+}
+
+/**
+ * CLAIM the site's analysis lock — fast, no generation, no external call. Returns the cached report
+ * if ready, `generating` if another attempt holds a fresh lock, `regenerate_limit` if the cap is hit,
+ * or `claimed` (the caller now owns `lockId` and must execute). Safe to call from a short request.
+ */
+export async function claimAnalysisReport(
   runId: string,
   siteId: string,
   opts: { force?: boolean; actorId?: string } = {},
-): Promise<GenerateOutcome> {
+): Promise<ClaimOutcome> {
   const which = aiProviderName(); // throws on an unsupported AI_PROVIDER
   const row = await readRow(siteId);
   const prev = (row?.payload ?? null) as Payload | null;
@@ -150,8 +179,6 @@ export async function generateAnalysisReport(
   // Cost cap on user-forced regeneration (live provider only; the stub is free).
   if (opts.force && isReadyPayload(prev) && which === 'vectorshift') {
     const since = new Date(Date.now() - 24 * 60 * 60_000);
-    // Fails OPEN (logged) if the usage table can't be read — e.g. a pending migration —
-    // so a monitoring problem never blocks a broker's analysis.
     const n = await prisma.pipelineUsage
       .count({ where: { candidateSiteId: siteId, trigger: 'regenerate', createdAt: { gte: since } } })
       .catch((e) => { console.error('[analysis] regenerate-cap count failed (migration pending?)', e); return 0; });
@@ -181,41 +208,69 @@ export async function generateAnalysisReport(
     if (claimed.count === 0) return { status: 'generating', startedAt }; // lost the race
   }
 
-  // --- Generate (lock held) --------------------------------------------------------
   const trigger: 'initial' | 'regenerate' = opts.force && restore ? 'regenerate' : 'initial';
+  return { status: 'claimed', lockId, startedAt, which, trigger, restore };
+}
+
+/**
+ * RUN a claimed job (the slow part: retrieve → generate → persist). Runs inline on the stub path
+ * or inside the Netlify Background Function on the live path. On failure it persists either the
+ * previous report (regenerate) or a `failed` marker carrying the reason (so the poller stops and
+ * shows it), and returns `{ status:'failed' }` — it does NOT throw, so the background function has
+ * nothing to crash on. Inline callers map the reason to an HTTP status themselves.
+ */
+export async function executeAnalysisReport(runId: string, siteId: string, job: AnalysisJob): Promise<ExecuteOutcome> {
+  const { which, trigger, actorId, lockId, restore } = job;
   const t0 = Date.now();
   try {
-    const result = await generateLocked(runId, siteId, which, { actorId: opts.actorId, trigger }, lockId);
+    const result = await generateLocked(runId, siteId, which, { actorId, trigger }, lockId);
     return { status: 'ready', result };
   } catch (err) {
     const code = err instanceof AiGenerationError ? err.code
-      // A database that is behind the code → tell the operator to migrate/seed, not "internal".
-      // P2021 (table) / P2022 (column) come from the typed client; P2010 wraps a raw-SQL error
-      // whose Postgres code is 42P01 (undefined_table) / 42703 (undefined_column) — e.g. a missing
-      // or unseeded doc_chunk hit by the retrieval query. Match both shapes.
       : isMissingSchemaError(err) ? 'db_migration_pending'
       : 'internal';
     const detail = err instanceof AiGenerationError ? err.detail : err instanceof Error ? err.message : String(err);
     console.error(`[analysis] generation failed run=${runId} site=${siteId} code=${code}: ${detail}`);
     if (which === 'vectorshift') {
-      // Failed calls are logged too — a timed-out run may still be billed.
       await prisma.pipelineUsage.create({
         data: {
-          userId: opts.actorId ?? null, pipelineRunId: runId, candidateSiteId: siteId,
+          userId: actorId ?? null, pipelineRunId: runId, candidateSiteId: siteId,
           provider: 'vectorshift', model: 'vectorshift', status: 'error', errorCode: code,
           latencyMs: Date.now() - t0, trigger,
         },
       }).catch((e) => console.error('[analysis] usage log failed (migration pending?)', e));
     }
-    // Release the lock: put the previous report back, or remove the placeholder.
+    // Release the lock. Regenerate → restore the previous report. Initial → record a `failed`
+    // marker (with the reason) so the poller stops immediately instead of waiting out the TTL.
     const mine = { path: ['lockId'], equals: lockId };
     if (restore) {
-      await prisma.moduleResult.updateMany({ where: { candidateSiteId: siteId, module: 'analysis' as ModuleKind, payload: mine }, data: { payload: restore as object } });
+      await prisma.moduleResult.updateMany({ where: { candidateSiteId: siteId, module: 'analysis' as ModuleKind, payload: mine }, data: { payload: restore as object } }).catch(() => {});
     } else {
-      await prisma.moduleResult.deleteMany({ where: { candidateSiteId: siteId, module: 'analysis' as ModuleKind, payload: mine } });
+      await prisma.moduleResult
+        .updateMany({ where: { candidateSiteId: siteId, module: 'analysis' as ModuleKind, payload: mine }, data: { payload: { status: 'failed', reason: code, failedAt: new Date().toISOString() } as object } })
+        .catch(() => {});
     }
-    throw err instanceof AiGenerationError ? err : new AiGenerationError(code, detail);
+    return { status: 'failed', reason: code };
   }
+}
+
+/**
+ * Generate INLINE (claim + execute in the same request). Used for the stub path and whenever the
+ * async background path is disabled. `force` regenerates (capped per site per day on the live
+ * provider). Throws AiGenerationError (code) when generation fails, so the route maps it to HTTP.
+ */
+export async function generateAnalysisReport(
+  runId: string,
+  siteId: string,
+  opts: { force?: boolean; actorId?: string } = {},
+): Promise<GenerateOutcome> {
+  const claim = await claimAnalysisReport(runId, siteId, opts);
+  if (claim.status !== 'claimed') return claim;
+  const run = await executeAnalysisReport(runId, siteId, {
+    which: claim.which, trigger: claim.trigger, actorId: opts.actorId, lockId: claim.lockId, restore: claim.restore,
+  });
+  if (run.status === 'ready') return { status: 'ready', result: run.result };
+  throw new AiGenerationError(run.reason, 'analysis generation failed');
 }
 
 /** The retrieve-then-generate body. Runs only while this request holds the site's lock. */
@@ -226,14 +281,16 @@ async function generateLocked(
   opts: { actorId?: string; trigger: 'initial' | 'regenerate' },
   lockId: string,
 ): Promise<AnalysisReportResult> {
-  // Fetch the run and its two relations as SEPARATE flat queries — never via `include`.
-  // Prisma loads `include`d relations as multiple queries inside an IMPLICIT TRANSACTION, and
-  // the Neon HTTP adapter rejects that with "Transactions are not supported in HTTP mode"
-  // (the 502 `internal` on the live site). Sequential flat reads carry no transaction.
-  const run = await prisma.pipelineRun.findUniqueOrThrow({
+  // Fetch the run and its two relations as SEPARATE flat queries — never via `include`, and never
+  // via `findUniqueOrThrow`. Under the Neon HTTP adapter BOTH open an IMPLICIT TRANSACTION —
+  // `include` loads relations as multiple queries in one, and `findUniqueOrThrow` wraps its
+  // find-and-throw in one — which the HTTP adapter rejects: "Transactions are not supported in HTTP
+  // mode" (the 502 `internal`). Plain `findUnique` + an explicit null check carries no transaction.
+  const run = await prisma.pipelineRun.findUnique({
     where: { id: runId },
     select: { vertical: true, confidence: true, franchisorId: true, intakeSubmissionId: true },
   });
+  if (!run) throw new AiGenerationError('not_found', `Run ${runId} not found.`);
   const franchisor = run.franchisorId
     ? await prisma.franchisor.findUnique({ where: { id: run.franchisorId }, select: { brandName: true, subCategory: true } })
     : null;
@@ -243,10 +300,11 @@ async function generateLocked(
         select: { sectionA: true, sectionB: true, sectionC: true, sectionD: true, sectionE: true, sectionF: true, sectionH: true, sectionI: true, sectionJ: true },
       })
     : null;
-  const site = await prisma.candidateSite.findUniqueOrThrow({
+  const site = await prisma.candidateSite.findUnique({
     where: { id: siteId },
     select: { id: true, label: true, city: true, barangay: true, siteType: true, compositeScore: true, verdict: true },
   });
+  if (!site) throw new AiGenerationError('not_found', `Site ${siteId} not found.`);
   const rows = await prisma.moduleResult.findMany({
     where: { candidateSiteId: siteId, module: { in: ['territory', 'lease', 'daypart', 'whitespace'] } },
     select: { module: true, payload: true, truthLayer: true },

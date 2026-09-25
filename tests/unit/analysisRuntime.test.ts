@@ -3,7 +3,7 @@
  * AI_PROVIDER validation (no silent fallback to the stub).
  */
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { isReadyPayload, isFreshLock, versionToken, LOCK_TTL_MS } from '@/lib/ai/analysisCache';
+import { isReadyPayload, isFreshLock, isFailedPayload, versionToken, LOCK_TTL_MS } from '@/lib/ai/analysisCache';
 import { aiProviderName } from '@/lib/ai/index';
 
 afterEach(() => vi.unstubAllEnvs());
@@ -17,6 +17,14 @@ describe('analysis cache states', () => {
     expect(isReadyPayload({ status: 'generating', analysis: 'old text', lockId: 'x' })).toBe(false);
     expect(isReadyPayload(null)).toBe(false);
     expect(isReadyPayload({ status: 'ready' })).toBe(false);
+  });
+  it('a failed marker is neither ready nor a fresh lock, and carries its reason (async path)', () => {
+    const failed = { status: 'failed', reason: 'timeout', failedAt: new Date().toISOString() };
+    expect(isFailedPayload(failed)).toBe(true);
+    expect(isReadyPayload(failed)).toBe(false);
+    expect(isFreshLock(failed)).toBe(false);
+    expect(isFailedPayload({ status: 'ready', analysis: 'x' })).toBe(false);
+    expect(isFailedPayload({ status: 'failed' })).toBe(false); // needs a reason string
   });
 });
 

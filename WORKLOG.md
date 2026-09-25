@@ -51,6 +51,45 @@ same neon-http transaction error. A scan found none on other request paths (dash
 non-OrThrow `include`; the pipeline uses flat-select `findUniqueOrThrow`). If a new one is added, use
 sequential flat reads under the HTTP adapter.
 
+---
+
+## 2026-09-25 — Analysis 502 (transaction) FULL FIX + async polling + menu trim
+
+**1) Transaction 502 — the actual server error was `Transactions are not supported in HTTP mode`.**
+The Neon **HTTP** adapter can't transact, and Prisma opened an implicit transaction in `generateLocked`.
+Removed BOTH triggers on the analysis path: the multi-relation `include` (→ sequential flat
+`findUnique`s) AND `findUniqueOrThrow` (→ `findUnique` + explicit null check). That combination —
+OrThrow *with* a multi-relation include — was unique to this path, which is why only the Analysis
+Report 502'd while the pipeline (flat-select OrThrow) and dashboards (non-OrThrow include) worked.
+
+**2) Async polling (Netlify Background Function) — the requested "leave the channel open" pattern.**
+Removes the 26s sync-function ceiling so a slow-but-successful VectorShift run no longer times out.
+- Split the generator: `claimAnalysisReport` (fast lock claim) + `executeAnalysisReport` (the slow
+  retrieve→generate→persist; never throws — persists a `failed` marker with the reason).
+  `generateAnalysisReport` = claim+execute inline (stub / async-off path). New cache state `failed`
+  (`isFailedPayload`), `LOCK_TTL_MS` 90s→5min, `readAnalysis` returns `failed`.
+- `lib/ai/enqueue.ts` posts the job to the background function; `netlify/functions/
+  analysis-report-background.mts` runs `executeAnalysisReport` off-request (auth via
+  `INTERNAL_JOB_SECRET`). Bundling: `netlify/functions/tsconfig.json` (resolves `@/*`) +
+  `netlify.toml` `[functions]` esbuild + `included_files` (Prisma). POST now CLAIMS then enqueues
+  (202 generating) or runs inline; GET returns `error` on a failed job. The client already polled the
+  status endpoint — extended its budget to ~5 min and added `error` handling.
+- **OFF by default** (`ANALYSIS_BACKGROUND=1` to enable) → deploying this changes nothing until the
+  owner opts in and confirms the function deployed; enqueue failure falls back to inline. Full guide:
+  `docs/ASYNC_ANALYSIS.md`.
+
+**3) Menu trim (owner request):** removed **Explore Places**, **All Modules**, **Scorecard** from the
+left rail (`SidebarNav.tsx`) — only Workspace (Franchise Screening · Site Dashboard · New Intake)
+remains. Routes untouched; just unlinked.
+
+**416/416 tests** (added `format`, `analysisRuntime` failed-state cases), typecheck clean, `next build`
+compiles. Also rode along earlier (still-undeployed) fixes: hydration #418/#423 (deterministic number
++ Manila-time formatting) and fault-tolerant `retrieve()`.
+
+**⚠️ To actually clear the error the owner must REDEPLOY** (Netlify) / restart the local dev server —
+the identical error + run/site id suggests the previous build was still running. Test on a fresh site,
+and clear any site stuck in `generating` by regenerating.
+
 **Note:** the console still showed the SAME bundle hash `fd9d1056…` as before the hydration fix, so
 the earlier hotfix was not yet deployed — that is why #418/#423 persisted. Both fixes ship together in
 the next deploy.

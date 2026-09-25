@@ -8,6 +8,9 @@ import { NewTag } from '@/components/ui/Chips';
  * Left-rail navigation, grouped Workspace / Intelligence / Output like the mockup.
  * Feature links carry the current runId so the intelligence modules open in context.
  */
+// Explore Places, All Modules and Scorecard were retired from the left rail (the per-site
+// results view — SiteIntelligenceTabs — already surfaces the module intelligence and the
+// exportable report). Their routes may still exist but are no longer linked in the menu.
 const GROUPS: Array<{ heading: string; items: Array<{ href: string; label: string; isNew?: boolean; keepRun?: boolean; tour?: string }> }> = [
   {
     heading: 'Workspace',
@@ -15,26 +18,6 @@ const GROUPS: Array<{ heading: string; items: Array<{ href: string; label: strin
       { href: '/screening', label: 'Franchise Screening', isNew: true },
       { href: '/runs', label: 'Site Dashboard', tour: 'nav-runs' },
       { href: '/intake', label: 'New Intake', tour: 'nav-intake' },
-      { href: '/explore', label: 'Explore Places' },
-    ],
-  },
-  {
-    // The four per-module tools (Territory Guard, Lease Benchmark, Daypart, White-Space)
-    // are intentionally NOT listed here — every New Intake already surfaces them on the
-    // per-site results view (SiteIntelligenceTabs), so a standalone nav entry is redundant.
-    // Their routes still exist and remain reachable in-context; only the left-rail links
-    // are hidden to keep the menu focused on Workspace → All Modules → Output.
-    heading: 'Intelligence',
-    items: [
-      { href: '/modules', label: 'All Modules', keepRun: true, tour: 'nav-modules' },
-    ],
-  },
-  {
-    heading: 'Output',
-    items: [
-      // 'Site Report' removed — the per-site report now lives on the Analysis tab
-      // (SiteIntelligenceTabs), exportable to a branded PDF from there.
-      { href: '/scorecard', label: 'Scorecard', keepRun: true },
     ],
   },
 ];
