@@ -171,7 +171,17 @@ and clear any site stuck in `generating` by regenerating.
 
 ---
 
-## 2026-09-26 — F-45 (helper dedup) + harden a null-franchisor server crash
+## 2026-09-26 — HOTFIX: site page #329 (server-render crash) on older runs
+
+Symptom: opening a specific run's site page (?tab=analysis) 500'd with React #329 (server-render
+error) + #423 (hydration). Root cause: the verdict→label maps are indexed by a payload value that is
+only guarded for null (`t?.verdict ?? 'mixed'`), so an older run whose stored territory/lease
+`verdict` is outside the current `T_VERDICT` / `L_VERDICT` keys made `T_VERDICT[unknown]` undefined and
+`.label` / `.tone` throw during SSR. Fixed all four derivations to validate the value against the map
+before indexing (`x in T_VERDICT ? x : 'mixed'`), covering the 6 access points (TerritoryTab,
+LeaseTab, and the two AnalysisTab sections). Also hardened `run.franchisor?.brandName` on the runs +
+site pages (a franchisor-less run would 500 the same way). **433 tests, typecheck clean, build
+compiles.** No DB change.
 
 - **F-45:** `siteVerdict.ts` and `SiteIntelligenceTabs.tsx` now use the single shared `fmtPeso`
   (`lib/util/format.ts`) instead of local copies. `VERDICT_COLOR` was already single-source

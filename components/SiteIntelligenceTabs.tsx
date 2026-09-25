@@ -308,7 +308,9 @@ function dedupeOutlets(list: AffectedOutlet[]): AffectedOutlet[] {
 }
 function TerritoryTab({ site, outlets, p, primary = true }: { site: { lat: number; lon: number; siteType: string | null }; outlets: MapOutlet[]; p: SiteModulePayloads['territory']; primary?: boolean }) {
   if (!p) return <RerunNote module="Territory Guard" />;
-  const verdict = p.verdict ?? 'mixed';
+  // Validate against the map (not just ?? for null): an older run's payload can hold a verdict
+  // value outside T_VERDICT, and T_VERDICT[unknown].tone would throw during SSR (React #329).
+  const verdict = (p.verdict && p.verdict in T_VERDICT ? p.verdict : 'mixed') as keyof typeof T_VERDICT;
   const comps = p.mapCompetitors?.length ?? 0;
   const same = p.realCompetitors?.length ?? 0;
   const catchmentM = p.candidateCatchmentM ?? catchmentRadius(site.siteType);
@@ -449,7 +451,7 @@ function LeaseTab({ p, primary = true, siteId }: { p: SiteModulePayloads['lease'
     } catch { setSaveState('error'); setSaveMsg('The request failed — check your connection and try again.'); }
   }
   if (!p) return <RerunNote module="Lease Benchmark" />;
-  const v = p.verdict ?? 'insufficient_data';
+  const v = (p.verdict && p.verdict in L_VERDICT ? p.verdict : 'insufficient_data') as keyof typeof L_VERDICT;
   const lZonalBand = ((p as SiteModulePayloads['lease'] & { zonal?: LeaseZonal }).zonal ?? null)?.band ?? null;
   const n = p.sampleSize ?? p.comps?.length ?? 0;
 
@@ -965,12 +967,12 @@ function AnalysisTab({
   const ranCount = [t, l, d, w].filter(Boolean).length;
 
   // Territory read (carried from the Territory Guard tab).
-  const tVerdict = t?.verdict ?? 'mixed';
+  const tVerdict = (t?.verdict && t.verdict in T_VERDICT ? t.verdict : 'mixed') as keyof typeof T_VERDICT;
   const tMix = t?.competitorMix;
   const tOwn = t?.ownOutletOverlapPct ?? t?.maxOverlapPct ?? null;
 
   // Lease read (carried from the Lease Benchmark tab).
-  const lV = (l?.verdict ?? 'insufficient_data') as keyof typeof L_VERDICT;
+  const lV = (l?.verdict && l.verdict in L_VERDICT ? l.verdict : 'insufficient_data') as keyof typeof L_VERDICT;
   const lZonal = (l as (SiteModulePayloads['lease'] & { zonal?: LeaseZonal }) | null)?.zonal ?? null;
 
   // Daypart read (carried from the Daypart Demand tab). Verdict band from the already-computed
