@@ -171,6 +171,18 @@ and clear any site stuck in `generating` by regenerating.
 
 ---
 
+## 2026-09-26 — Audit fix F-14 (lease-comp freshness)
+
+`observedDate` was only used to sort comps — never surfaced. Added a pure `leaseFreshness()` in
+`leaseMath.ts` (data-as-of = newest comp date; `staleCompCount`; `isStale` when even the newest comp is
+older than `LEASE_STALE_MONTHS` = 18). `runLeaseBenchmark` selects `observedDate`, computes freshness,
+adds it to the result + payload, and raises a `lease_comps_stale` flag for an ageing corridor. The
+Lease read now shows a "Comps data as of <date>" row (with "· ageing" when stale). Scoring is
+unchanged — down-weighting/excluding old comps is a noted follow-up; this makes recency visible.
+New tests. **433 tests, typecheck clean, build compiles.** Audit workbook: 18 Done.
+
+---
+
 ## 2026-09-26 — Audit fixes batch 5 (F-21 done, F-12 partial — schema keys + indexes)
 
 New migration `20260926000000_schema_keys_indexes` (idempotent, non-destructive):

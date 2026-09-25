@@ -7,7 +7,28 @@ import {
   ZONAL_RENT_PER_1000_CENTRAL,
   ZONAL_RENT_PER_1000_LOW,
   ZONAL_RENT_PER_1000_HIGH,
+  leaseFreshness,
+  LEASE_STALE_MONTHS,
 } from '@/lib/modules/leaseMath';
+
+describe('leaseFreshness (audit F-14)', () => {
+  const now = new Date('2026-09-26T00:00:00Z');
+  it('reports the newest date as "data as of" and is not stale when recent', () => {
+    const f = leaseFreshness(['2026-06-01', '2025-01-01', null, '2026-08-15'], now);
+    expect(f.dataAsOf).toBe('2026-08-15');
+    expect(f.isStale).toBe(false);
+    expect(f.monthsSinceNewest).toBe(1);
+  });
+  it('flags an ageing set when even the newest comp is older than the threshold', () => {
+    const f = leaseFreshness(['2023-01-01', '2024-01-01'], now); // newest ~20+ months old
+    expect(f.isStale).toBe(true);
+    expect(f.monthsSinceNewest).toBeGreaterThan(LEASE_STALE_MONTHS);
+    expect(f.staleCompCount).toBe(2);
+  });
+  it('handles no dated comps', () => {
+    expect(leaseFreshness([null, undefined], now)).toEqual({ dataAsOf: null, monthsSinceNewest: null, staleCompCount: 0, isStale: false });
+  });
+});
 
 describe('region-aware rent-to-land calibration (audit F-08)', () => {
   it('withholds the cross-check for an un-calibrated region (band = null)', () => {

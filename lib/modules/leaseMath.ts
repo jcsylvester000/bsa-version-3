@@ -261,6 +261,46 @@ export function resolveCorridorForSite(
 }
 
 // ============================================================================
+// Lease-comp freshness (audit F-14) — surface how recent the comps are so a broker
+// knows whether the corridor read reflects the current market, and flag an ageing set.
+// ============================================================================
+
+/** A comp older than this (months) counts as stale; the set is flagged when its NEWEST comp is. */
+export const LEASE_STALE_MONTHS = 18;
+const MS_PER_MONTH = 1000 * 60 * 60 * 24 * 30.44;
+
+export interface LeaseFreshness {
+  /** ISO date (YYYY-MM-DD) of the most recent comp, or null when no comp carries a date. */
+  dataAsOf: string | null;
+  /** Whole months since the newest comp. */
+  monthsSinceNewest: number | null;
+  /** How many comps are older than LEASE_STALE_MONTHS. */
+  staleCompCount: number;
+  /** True when even the newest comp is older than LEASE_STALE_MONTHS — the whole set is ageing. */
+  isStale: boolean;
+}
+
+/** Freshness of a comp set from its observed dates. Pure; deterministic given `now`. */
+export function leaseFreshness(
+  observedDates: Array<Date | string | null | undefined>,
+  now: Date = new Date(),
+): LeaseFreshness {
+  const dates = observedDates
+    .map((d) => (d ? new Date(d) : null))
+    .filter((d): d is Date => d != null && !Number.isNaN(d.getTime()));
+  if (dates.length === 0) return { dataAsOf: null, monthsSinceNewest: null, staleCompCount: 0, isStale: false };
+  const monthsSince = (t: number) => (now.getTime() - t) / MS_PER_MONTH;
+  const newestMs = Math.max(...dates.map((d) => d.getTime()));
+  const monthsSinceNewest = Math.round(monthsSince(newestMs));
+  return {
+    dataAsOf: new Date(newestMs).toISOString().slice(0, 10),
+    monthsSinceNewest,
+    staleCompCount: dates.filter((d) => monthsSince(d.getTime()) > LEASE_STALE_MONTHS).length,
+    isStale: monthsSinceNewest > LEASE_STALE_MONTHS,
+  };
+}
+
+// ============================================================================
 // BIR ZONAL-VALUE cross-check + fallback rent anchor (Projected).
 // ----------------------------------------------------------------------------
 // Grid guardrail: BIR zonal values are a TAX-REFERENCE FLOOR, never a market price

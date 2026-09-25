@@ -16,7 +16,7 @@ import type { TruthLayer } from '@/lib/truth/truthLayer';
 import { canonicalCity, getRegion } from '@/lib/geo/regions';
 import {
   benchmarkLease, type Comp, type SiteTerms, type LeaseBenchmarkOutput,
-  bandMid, zonalRentCrossCheck, indicativeRentFromZonal,
+  bandMid, zonalRentCrossCheck, indicativeRentFromZonal, leaseFreshness, type LeaseFreshness,
   type ZonalBand, type ZonalCrossCheck, type IndicativeRent,
 } from './leaseMath';
 
@@ -43,6 +43,8 @@ export interface LeaseBenchmarkResult extends LeaseBenchmarkOutput {
   comps: Array<{ baseRentPhpSqm: number | null; truthLayer: TruthLayer; sampleSource: string | null }>;
   /** BIR zonal-value context (Verified band + Projected cross-check + fallback anchor). */
   zonal: LeaseZonalContext | null;
+  /** How recent the comps are (F-14): 'data as of' + whether the set is ageing. */
+  freshness: LeaseFreshness;
   truth: { comps: TruthLayer; fairRange: TruthLayer; zonalBand: TruthLayer };
   moduleTruthLayer: TruthLayer;
 }
@@ -125,6 +127,7 @@ const LEASE_COMP_SELECT = {
   cusaPhpSqm: true,
   leaseTermYears: true,
   fitoutMonths: true,
+  observedDate: true,
   truthLayer: true,
   sampleSource: true,
 } as const;
@@ -163,6 +166,11 @@ export async function runLeaseBenchmark(input: LeaseBenchmarkInput): Promise<Lea
 
   const output = benchmarkLease(input.siteTerms, comps);
 
+  // Freshness of the comp set (F-14): surface 'data as of' and flag an ageing corridor so the read
+  // is honest about how current it is. (Scoring is unchanged for now — down-weighting stale comps
+  // is a follow-up; here we make the recency visible.)
+  const freshness = leaseFreshness(compRows.map((c) => c.observedDate));
+
   // --- BIR zonal-value context ------------------------------------------------
   // Resolve the site's commercial zonal band (Verified), then cross-check the asking
   // rent against the underlying land value and, when comps are too thin to score,
@@ -198,6 +206,7 @@ export async function runLeaseBenchmark(input: LeaseBenchmarkInput): Promise<Lea
   const flags = [...output.flags];
   if (zonal?.usedAsFallback) flags.push('zonal_fallback_anchor');
   if (zonal?.crossCheck?.position === 'rich') flags.push('rent_rich_vs_zonal');
+  if (freshness.isStale) flags.push('lease_comps_stale');
 
   return {
     ...output,
@@ -212,6 +221,7 @@ export async function runLeaseBenchmark(input: LeaseBenchmarkInput): Promise<Lea
       sampleSource: c.sampleSource,
     })),
     zonal,
+    freshness,
     // Comps are labelled by their WEAKEST row (lease.real.json: 21 Verified / 59 Assumed) —
     // never a blanket "Verified".
     truth: { comps: weakestLayer(compRows.map((c) => c.truthLayer as TruthLayer)), fairRange, zonalBand: zonalBandTruth },

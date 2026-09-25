@@ -40,6 +40,8 @@ export interface SiteModulePayloads {
     verdict?: 'below_market' | 'at_market' | 'above_market' | 'insufficient_data' | 'corridor_benchmark';
     comps?: Array<{ baseRentPhpSqm: number | null }>;
     truth?: { comps?: string; fairRange?: string; zonalBand?: string };
+    /** Comp-set recency (F-14): 'data as of' + whether the set is ageing. */
+    freshness?: { dataAsOf?: string | null; monthsSinceNewest?: number | null; isStale?: boolean };
     flags?: string[];
     format?: string;
   } | null;
@@ -1093,6 +1095,12 @@ function AnalysisTab({
           <div>
             <ReportRow label="Corridor" value={l.corridor ?? '—'} />
             <ReportRow label="Comparable leases" value={`${l.sampleSize ?? l.comps?.length ?? 0}`} truth={tl(l.truth?.comps, 'Assumed')} />
+            {l.freshness?.dataAsOf && (
+              <ReportRow
+                label="Comps data as of"
+                value={l.freshness.isStale ? `${l.freshness.dataAsOf} · ageing` : l.freshness.dataAsOf}
+              />
+            )}
             <ReportRow
               label="Base-rent percentile"
               value={l.baseRentPercentile != null ? ordinal(l.baseRentPercentile) : '—'}
