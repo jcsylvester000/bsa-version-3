@@ -113,6 +113,24 @@ export async function readAnalysis(siteId: string): Promise<AnalysisState> {
 }
 
 /**
+ * True when an error means the database schema is behind the code (needs migrate/seed), across
+ * both the typed client and raw SQL:
+ *  - P2021 (table does not exist) / P2022 (column does not exist) — typed Prisma client.
+ *  - P2010 (raw query failed) wrapping Postgres 42P01 (undefined_table) / 42703 (undefined_column),
+ *    which is how a missing/unseeded doc_chunk surfaces through the retrieval $queryRaw.
+ * Recognising these turns a confusing 502 "internal" into a 503 with an actionable message.
+ */
+function isMissingSchemaError(err: unknown): boolean {
+  const code = (err as { code?: unknown })?.code;
+  if (code === 'P2021' || code === 'P2022') return true;
+  const meta = (err as { meta?: { code?: unknown } })?.meta;
+  const pgCode = String(meta?.code ?? '');
+  if (code === 'P2010' && (pgCode === '42P01' || pgCode === '42703')) return true;
+  const msg = err instanceof Error ? err.message : String(err ?? '');
+  return /(does not exist|undefined_table|undefined_column|42P01|42703)/i.test(msg);
+}
+
+/**
  * Generate (or return the cached) Analysis Report for one site in a run.
  * `force` regenerates (capped per site per day on the live provider).
  * Throws AiGenerationError (code + server-only detail) when the provider fails.
@@ -170,10 +188,12 @@ export async function generateAnalysisReport(
     const result = await generateLocked(runId, siteId, which, { actorId: opts.actorId, trigger }, lockId);
     return { status: 'ready', result };
   } catch (err) {
-    const prismaCode = (err as { code?: unknown })?.code;
     const code = err instanceof AiGenerationError ? err.code
-      // P2021 table / P2022 column missing → the database is behind the code (migrate deploy).
-      : prismaCode === 'P2021' || prismaCode === 'P2022' ? 'db_migration_pending'
+      // A database that is behind the code → tell the operator to migrate/seed, not "internal".
+      // P2021 (table) / P2022 (column) come from the typed client; P2010 wraps a raw-SQL error
+      // whose Postgres code is 42P01 (undefined_table) / 42703 (undefined_column) — e.g. a missing
+      // or unseeded doc_chunk hit by the retrieval query. Match both shapes.
+      : isMissingSchemaError(err) ? 'db_migration_pending'
       : 'internal';
     const detail = err instanceof AiGenerationError ? err.detail : err instanceof Error ? err.message : String(err);
     console.error(`[analysis] generation failed run=${runId} site=${siteId} code=${code}: ${detail}`);

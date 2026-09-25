@@ -29,24 +29,35 @@ export interface GroundingChunk {
  * For the stub path we use keyword search, which is deterministic and needs no key.
  */
 export async function retrieve(query: string, limit = 5): Promise<GroundingChunk[]> {
-  const rows = await prisma.$queryRaw<Array<{ id: bigint; content: string; truth_layer: TruthLayer }>>`
-    SELECT id, content, truth_layer
-    FROM doc_chunk
-    WHERE tsv @@ plainto_tsquery('english', ${query})
-    ORDER BY ts_rank(tsv, plainto_tsquery('english', ${query})) DESC
-    LIMIT ${limit}
-  `;
-  // Fallback: if keyword search finds nothing, return the highest-Truth-Layer chunks
-  // so generation is still grounded rather than ungrounded.
-  if (rows.length === 0) {
+  // Retrieval is an OPTIONAL grounding enhancement — the deterministic schema text already
+  // carries every real figure. So this must NEVER throw: if the doc_chunk corpus is missing,
+  // not yet migrated, or unseeded (e.g. `db:seed-methodology` not run), we degrade to an
+  // empty reference and let generation proceed, rather than 502-ing the whole analysis.
+  try {
+    const rows = await prisma.$queryRaw<Array<{ id: bigint; content: string; truth_layer: TruthLayer }>>`
+      SELECT id, content, truth_layer
+      FROM doc_chunk
+      WHERE tsv @@ plainto_tsquery('english', ${query})
+      ORDER BY ts_rank(tsv, plainto_tsquery('english', ${query})) DESC
+      LIMIT ${limit}
+    `;
+    if (rows.length > 0) {
+      return rows.map((r) => ({ id: r.id, content: r.content, truthLayer: r.truth_layer }));
+    }
+    // Fallback: keyword search found nothing → return the first chunks so generation is
+    // still grounded rather than ungrounded.
     const fallback = await prisma.docChunk.findMany({
       take: limit,
       orderBy: { id: 'asc' },
       select: { id: true, content: true, truthLayer: true },
     });
     return fallback.map((c) => ({ id: c.id, content: c.content, truthLayer: c.truthLayer }));
+  } catch (e) {
+    // A missing/unmigrated doc_chunk (or its tsv column) surfaces as a raw-SQL error here.
+    // Log once and continue ungrounded — the numbers the report needs are not in these chunks.
+    console.error('[retrieve] grounding corpus unavailable — continuing ungrounded:', (e as Error)?.message ?? e);
+    return [];
   }
-  return rows.map((r) => ({ id: r.id, content: r.content, truthLayer: r.truth_layer }));
 }
 
 /** Ground: fold retrieved chunks + deterministic facts into the ONLY context. */

@@ -26,14 +26,30 @@ after Batch 5:
   `tests/unit/format.test.ts` added. Grep confirms no live `.toLocale*` left in any `'use client'`
   file. **414/414 tests, typecheck clean, `next build` compiles.**
 
-**502 on /api/analysis-report — TRIAGE (not caused by the recent work).** The route already maps a
-missing migration to **503** (`db_migration_pending`) and a bad provider config to **503**
-(`config_*`); a **502** is only reached for `timeout` or an `internal`/provider error. Verified the
-AI/report path (`lib/ai/analysisReport.ts`, `analysisContext.ts`, `reportComposer.ts`) reads **none**
-of the R-01…R-07 columns, so R-05/06/07 did not introduce it. The exact cause is in the 502 response
-body: `details[0].message` (the red error box in the UI also prints `[reason: …]`). Likely `timeout`
-(VectorShift slow / Netlify function timeout < 26s) — owner-side env/config, see PROJECT_MEMORY
-"Pending owner actions". No code change until the reason code is read.
+**502 `reason: internal` on /api/analysis-report — ROOT CAUSE + FIX.** The user's error box read
+`[reason: internal]`. The VectorShift provider wraps *every* failure in `AiGenerationError`
+(`timeout`/`http_*`/`network`/`config_*`), so `internal` can only come from a NON-provider throw in
+`generateLocked`, before generation. The culprit: **`retrieve()` (`lib/ai/retrieveThenGenerate.ts`)
+ran an unguarded `$queryRaw` `plainto_tsquery` against `doc_chunk`**. When `doc_chunk` (or its `tsv`
+column) is missing/unseeded on the deployed DB — e.g. `db:seed-methodology` not run — the raw query
+throws Postgres `42P01`/`42703` wrapped as Prisma **P2010**, which the classifier only checked
+P2021/P2022 for, so it fell through to `internal` → 502.
+- **Fix 1 (the real one):** `retrieve()` is now fault-tolerant — it try/catches and returns `[]` on
+  any corpus error, logging once. Retrieval is only OPTIONAL grounding; the deterministic schema text
+  already carries every real figure, so a missing reference corpus must degrade to an ungrounded (but
+  still correct, still Truth-Layer-honest) write-up, never 502 the analysis.
+- **Fix 2 (diagnostics):** `isMissingSchemaError` in `analysisReport.ts` now also recognises P2010 +
+  Postgres `42P01`/`42703` (and a message match), so any *other* behind-the-schema raw query returns
+  **503 `db_migration_pending`** with an actionable message instead of a confusing 502.
+- **414/414 tests, typecheck clean, `next build` compiles.** After deploy the Analysis tab should
+  generate even if the methodology corpus isn't seeded; if it still errors, the reason will now be
+  `db_migration_pending` (run `prisma migrate deploy` + `db:seed-methodology`), `config_*` (set
+  `VECTORSHIFT_API_KEY`/`_PIPELINE_ID`), or `timeout` (raise the Netlify function timeout / lower
+  `VECTORSHIFT_TIMEOUT_MS`).
+
+**Note:** the console still showed the SAME bundle hash `fd9d1056…` as before the hydration fix, so
+the earlier hotfix was not yet deployed — that is why #418/#423 persisted. Both fixes ship together in
+the next deploy.
 
 ---
 
