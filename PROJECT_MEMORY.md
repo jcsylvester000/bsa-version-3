@@ -64,9 +64,17 @@ _Last updated: 2026-09-23 — after Fix Batch 5 (review programme complete)._
 - **Outlets**: NULL `intake_submission_id` = brand reference network (shared); typed outlets belong to
   their intake and only that run sees them.
 - **Brands**: `created_by_user_id` NULL = shared catalog; set = private to creator + staff.
-- **AI**: VectorShift only for the Analysis Report; prompts live inside the VS pipeline (mirror docs in
-  `3 - Skills/10 - AI Systems Engineer/`); app sends schema + interpretation reference as one text input
-  (`VECTORSHIFT_SEND_REFERENCE=0` = schema only). Stub is the default. Unknown `AI_PROVIDER` throws.
+- **AI analysis REMOVED (2026-09-25):** the VectorShift Analysis Report is gone (not the core product,
+  and the source of the neon-http transaction 502 / timeouts). The Analysis tab's **Final Report** is now
+  a DETERMINISTIC recommendation — `lib/modules/siteVerdict.ts` `summariseSite()` rolls the module results
+  into **Proceed / Proceed with caution / No-Go** with a headline, findings (keyword: data) and keywords;
+  the site PDF renders the same. No Generate button, no polling, no external call. Deleted:
+  `lib/ai/analysisReport.ts`, `vectorshiftProvider.ts`, `enqueue.ts`, `app/api/analysis-report/route.ts`,
+  `netlify/functions/*`. KEPT: the short module verdict-line phrasing (`generateGrounded` → deterministic
+  StubProvider) used by territory-guard / lease-benchmark. `VECTORSHIFT_*` / `ANALYSIS_BACKGROUND` /
+  `INTERNAL_JOB_SECRET` env vars are now unused.
+- **Left nav trimmed (2026-09-25):** Explore Places, All Modules, Scorecard removed; only Franchise
+  Screening · Site Dashboard · New Intake remain (`SidebarNav.tsx`).
 - Demo logins never work on deployments unless `BSA_ALLOW_DEMO_LOGINS=1` (admin/analyst never).
 - **Guardrail wording** lives ONLY in `lib/truth/guardrailCopy.ts` (lease position labels, zonal floor note,
   RA 9646 disclaimers, price-verdict patterns). Lease is described by position vs the corridor, never

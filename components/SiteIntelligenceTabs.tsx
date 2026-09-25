@@ -1,9 +1,9 @@
 'use client';
 
-import { manilaShortStamp } from '@/lib/util/manilaTime';
 import { fmtInt } from '@/lib/util/format';
+import { summariseSite } from '@/lib/modules/siteVerdict';
 import { LEASE_POSITION_LABEL, ZONAL_FLOOR_NOTE } from '@/lib/truth/guardrailCopy';
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { TerritoryMap, type MapOutlet } from '@/components/TerritoryMap';
 import { DaypartCurve, type DaypartData } from '@/components/DaypartCurve';
@@ -841,89 +841,10 @@ function AnalysisTab({
   runId?: string;
   siteId: string;
 }) {
-  const cached = payloads.analysis;
-  type Report = { analysis: string; schemaText?: string; model?: string; confidence?: string; generatedAt?: string; check?: AiCheck | null };
-  const [report, setReport] = useState<Report | null>(
-    cached && typeof cached.analysis === 'string' && cached.status !== 'generating'
-      ? { analysis: cached.analysis, schemaText: cached.schemaText, model: cached.model, confidence: cached.confidence, generatedAt: cached.generatedAt, check: cached.check ?? null }
-      : null,
-  );
-  const [loading, setLoading] = useState(false);
-  // True while ANOTHER request (e.g. the intake submit) is writing this site's analysis.
-  const [waiting, setWaiting] = useState<boolean>(cached?.status === 'generating');
-  const [error, setError] = useState<string | null>(null);
-  const [showSchema, setShowSchema] = useState(false);
-  const [pollTick, setPollTick] = useState(0);
-  const pollTries = useRef(0);
-
-  function applyReport(r: Report) {
-    setReport({ analysis: r.analysis, schemaText: r.schemaText, model: r.model, confidence: r.confidence, generatedAt: r.generatedAt, check: r.check ?? null });
-    setShowSchema(false);
-  }
-
-  // Poll the READ-ONLY status endpoint while a generation is in flight elsewhere (never bills).
-  // Each tick schedules one check; `pollTick` re-arms the effect for the next one.
-  useEffect(() => {
-    if (!waiting || !runId) return;
-    let cancelled = false;
-    const t = setTimeout(async () => {
-      pollTries.current += 1;
-      try {
-        const res = await fetch(`/api/analysis-report?runId=${encodeURIComponent(runId)}&siteId=${encodeURIComponent(siteId)}`);
-        const json = await res.json().catch(() => null);
-        if (cancelled) return;
-        const st = json?.data?.status;
-        if (st === 'ready') { applyReport(json.data.report); setWaiting(false); return; }
-        // A recorded failure ends the wait immediately and shows why (async job persisted it).
-        if (st === 'error') {
-          setWaiting(false);
-          setError(`${json.data.message ?? 'The analysis could not be generated.'}${json.data.reason ? ` [reason: ${json.data.reason}]` : ''}`);
-          return;
-        }
-        if (st === 'missing') { setWaiting(false); return; } // no attempt in flight → Generate shows
-      } catch { /* network blip — keep polling */ }
-      if (cancelled) return;
-      // ~5 min budget (75 × 4s) — the async background job (Netlify, up to 15 min) can outlive a
-      // slow VectorShift run; the lock TTL also covers this so a late finish still lands.
-      if (pollTries.current >= 75) {
-        setWaiting(false);
-        setError('The analysis is taking longer than expected. It may still finish — refresh in a minute.');
-        return;
-      }
-      setPollTick((n) => n + 1);
-    }, 4000);
-    return () => { cancelled = true; clearTimeout(t); };
-  }, [waiting, runId, siteId, pollTick]);
-
-  async function run(regen: boolean) {
-    if (!runId) { setError('Open this site from the Ranked Site Shortlist to generate its report.'); return; }
-    setLoading(true); setError(null);
-    try {
-      const res = await fetch('/api/analysis-report', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ runId, siteId, force: regen }),
-      });
-      const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.ok) {
-        // Show the short reason code (e.g. timeout, http_401, db_migration_pending) so the cause is
-        // visible without server logs. Netlify's own timeout page is not JSON → "function_timeout".
-        const reason = json?.error?.details?.find((d: { path: string }) => d.path === 'reason')?.message
-          ?? (json == null && (res.status === 502 || res.status === 504) ? 'function_timeout' : null);
-        setError(`${json?.error?.message ?? `Could not generate the report (HTTP ${res.status}).`}${reason ? ` [reason: ${reason}]` : ''}`);
-        return;
-      }
-      if (json.data?.status === 'generating') { pollTries.current = 0; setWaiting(true); setPollTick((n) => n + 1); return; }
-      if (json.data?.status === 'ready') applyReport(json.data.report);
-    } catch { setError('The request failed — check your connection and try again.'); }
-    finally { setLoading(false); }
-  }
-
   function exportPdf() {
     if (!runId) return;
     window.open(`/api/analysis-report/pdf?runId=${encodeURIComponent(runId)}&siteId=${encodeURIComponent(siteId)}`, '_blank');
   }
-
-  const paras = report ? report.analysis.split(/\n{2,}/).map((x) => x.trim()).filter(Boolean) : [];
 
   const t = payloads.territory;
   const l = payloads.lease;
@@ -955,105 +876,75 @@ function AnalysisTab({
   const wTop = wRecs ? wRecs.slice(0, 3) : [];
   const wProposed = (w as (SiteModulePayloads['whitespace'] & { proposed?: { cannibalizationPct?: number } }) | null)?.proposed;
 
+  // Deterministic PROCEED / CAUTIOUS / NO-GO recommendation, rolled up from the module figures
+  // above (no AI, no external call). Primary modules for this vertical block the site on a No-Go.
+  const summary = summariseSite(
+    {
+      territory: t ? { verdict: t.verdict ?? null, totalCannibalizedPhp: t.totalCannibalizedPhp ?? null, competitiveSaturationPct: t.competitiveSaturationPct ?? null } : null,
+      lease: l ? { verdict: l.verdict ?? null, corridor: l.corridor ?? null } : null,
+      daypart: d ? { windowMatchPct: d.windowMatchPct ?? null, noCatchmentData: d.noCatchmentData ?? null } : null,
+      whitespace: wRecs ? { recommendations: wRecs.map((r) => ({ verdict: r.verdict ?? null })) } : null,
+    },
+    (k) => primary(k as ModuleKind),
+  );
+  const verdictPill =
+    summary.tone === 'go' ? 'bg-go/10 text-go border-go/40'
+      : summary.tone === 'nogo' ? 'bg-nogo/10 text-nogo border-nogo/40'
+        : 'bg-caution/10 text-caution border-caution/40';
+  const dot = (tone: string) => (tone === 'go' ? 'bg-go' : tone === 'nogo' ? 'bg-nogo' : tone === 'caution' ? 'bg-caution' : 'bg-ink-muted');
+
   return (
     <div className="space-y-4">
-      {/* Header + AI narrative (the FINAL REPORT card) */}
+      {/* Final report — a deterministic PROCEED / CAUTIOUS / NO-GO recommendation rolled up from
+          the module figures below. No AI, no external call; every finding traces to a module. */}
       <div className="card p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="text-xs uppercase tracking-wide text-ink-muted">Final report</p>
-            <p className="mt-1 text-lg font-bold text-ink-text">Combined site intelligence — {siteLabel}</p>
+            <p className="mt-1 text-lg font-bold text-ink-text">Recommendation — {siteLabel}</p>
             <p className="mt-1 max-w-2xl text-sm text-ink-muted">
-              Every module for this site in one view — Territory Guard, Lease Benchmark, Daypart Demand and White-Space.
-              Each figure is carried straight from its tab with its Truth Layer intact; nothing here is recomputed.
+              A single call rolled up from the modules below — Territory Guard, Lease Benchmark, Daypart Demand and White-Space.
+              Every figure is carried straight from its tab with its Truth Layer intact; nothing here is recomputed or invented.
               {' '}<span className="text-ink-text">{ranCount} of 4 modules</span> have a stored result for this site.
             </p>
           </div>
-          <div className="flex shrink-0 flex-wrap gap-2">
-            {/* Generate shows ONLY until a report exists; once generated it's hidden
-                (reports are pre-generated at intake submission and cached). */}
-            {report == null && (
-              <button
-                onClick={() => run(false)}
-                disabled={loading || waiting}
-                className={`rounded-lg px-4 py-2 text-sm font-medium transition ${loading ? 'bg-ink-panel-2 text-ink-muted' : 'bg-accent text-ink-bg hover:opacity-90'}`}
-              >
-                {loading || waiting ? 'Analysing…' : 'Generate analysis'}
-              </button>
-            )}
-            {/* Export the branded professional PDF (server-generated) once a report exists. */}
-            {report != null && (
-              <button
-                onClick={() => run(true)}
-                disabled={loading || waiting}
-                title="Write a fresh version of this analysis (limited to a few per site per day)"
-                className="rounded-lg border border-ink-border px-4 py-2 text-sm font-medium text-ink-muted transition hover:text-ink-text disabled:opacity-50"
-              >
-                {loading || waiting ? 'Regenerating…' : 'Regenerate'}
-              </button>
-            )}
-            {report != null && (
+          {runId && (
+            <div className="flex shrink-0 flex-wrap gap-2">
               <button
                 onClick={exportPdf}
-                disabled={loading || waiting}
-                className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-ink-bg transition hover:opacity-90 disabled:opacity-50"
+                className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-ink-bg transition hover:opacity-90"
               >
                 Export site PDF
               </button>
-            )}
-          </div>
+            </div>
+          )}
         </div>
 
-        {/* The written analysis */}
+        {/* The recommendation */}
         <div className="mt-4 border-t border-ink-border pt-4">
-          {error && <div className="mb-3 rounded-lg border-l-4 border-nogo bg-nogo/10 px-4 py-2.5 text-sm text-ink-text">{error}</div>}
+          <div className="flex flex-wrap items-center gap-3">
+            <span className={`rounded-full border px-4 py-1.5 text-sm font-bold uppercase tracking-wide ${verdictPill}`}>{summary.label}</span>
+            {summary.coverage < 2 && <Chip tone="muted">Limited data — {summary.coverage} of 3 core modules</Chip>}
+          </div>
+          <p className="mt-3 text-[15px] leading-relaxed text-ink-text">{summary.headline}</p>
 
-          {report ? (
-            <>
-              <div className="space-y-3 text-[15px] leading-relaxed text-ink-text">
-                {paras.length ? paras.map((para, i) => <p key={i}>{para}</p>) : <p>{report.analysis}</p>}
-              </div>
-              {report.check && !report.check.ok && (
-                <div className="mt-3 rounded-lg border-l-4 border-caution bg-caution/10 px-4 py-2.5 text-sm text-ink-text">
-                  <p className="font-medium">Check before sharing</p>
-                  {report.check.ungroundedNumbers.length > 0 && (
-                    <p className="mt-1 text-ink-muted">
-                      These figures could not be matched to the site data: <span className="text-ink-text">{report.check.ungroundedNumbers.join(', ')}</span>.
-                      Verify them against the sections below, or regenerate.
-                    </p>
-                  )}
-                  {report.check.priceVerdictPhrases.length > 0 && (
-                    <p className="mt-1 text-ink-muted">
-                      Contains price-verdict wording (<span className="text-ink-text">{report.check.priceVerdictPhrases.join(', ')}</span>) — BSA positions rents
-                      against the corridor; the price judgement is the broker&apos;s. Edit before sharing, or regenerate.
-                    </p>
-                  )}
-                </div>
-              )}
-              <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-ink-muted">
-                {report.confidence && <Chip tone={report.confidence === 'high' ? 'go' : report.confidence === 'low' ? 'muted' : 'caution'}>Confidence: {report.confidence}</Chip>}
-                <span>{report.model === 'mock-analysis-v1' ? 'Mock analysis (preview)' : report.model}</span>
-                {/* Fixed Manila-time formatter: identical on the server and in the browser (toLocaleString
-                    differed — UTC on Netlify vs the viewer's zone — and broke hydration, React #418). */}
-                {report.generatedAt && <span>· {manilaShortStamp(new Date(report.generatedAt))}</span>}
-              </div>
-              {report.schemaText && (
-                <div className="mt-3">
-                  <button onClick={() => setShowSchema((v) => !v)} className="text-xs font-medium text-accent hover:underline">
-                    {showSchema ? '▾ Hide the data schema the AI read' : '▸ Show the data schema the AI read'}
-                  </button>
-                  {showSchema && (
-                    <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap rounded-lg bg-ink-panel-2 p-4 text-[11px] leading-relaxed text-ink-muted">{report.schemaText}</pre>
-                  )}
-                </div>
-              )}
-            </>
-          ) : (
-            <p className="text-sm text-ink-muted">
-              {loading || waiting
-                ? 'Reading the four modules and writing the analysis…'
-                : 'Click Generate analysis to turn the combined data below into a short written report. It reads only the figures on this page — nothing is invented.'}
-            </p>
+          {summary.findings.length > 0 && (
+            <ul className="mt-4 space-y-2">
+              {summary.findings.map((f, i) => (
+                <li key={i} className="flex items-start gap-2.5 text-sm">
+                  <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${dot(f.tone)}`} />
+                  <span><span className="font-medium text-ink-text">{f.keyword}:</span> <span className="text-ink-muted">{f.detail}</span></span>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {summary.keywords.length > 0 && (
+            <div className="mt-4 flex flex-wrap gap-1.5">
+              {summary.keywords.map((k) => (
+                <span key={k} className="rounded bg-ink-panel-2 px-2 py-0.5 text-[11px] text-ink-muted">{k}</span>
+              ))}
+            </div>
           )}
         </div>
       </div>

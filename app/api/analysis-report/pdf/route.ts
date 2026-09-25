@@ -5,19 +5,21 @@ import { prisma } from '@/lib/db/prisma';
 import { getSession } from '@/lib/auth/session';
 import { canAccessRun } from '@/lib/auth/auth';
 import { isUuid } from '@/lib/util/uuid';
-import { errors, fail } from '@/lib/api/respond';
-import { readAnalysis } from '@/lib/ai/analysisReport';
+import { errors } from '@/lib/api/respond';
+import { summariseSite, summaryToText } from '@/lib/modules/siteVerdict';
+import { isPrimaryModule } from '@/lib/modules/verticalConfig';
 import { AnalysisPdf } from '@/lib/pdf/AnalysisPdf';
+import type { ModuleKind } from '@prisma/client';
 
 // @react-pdf needs the Node runtime (not edge); the report is per-request.
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /**
- * GET /api/analysis-report/pdf?runId=…&siteId=… — the branded, server-generated PDF of a
- * site's Analysis Report (Grid identity). READ-ONLY: renders the cached analysis and never
- * triggers a (paid) generation — a GET must be safe to open, prefetch or retry. If no report
- * exists yet it answers 409 and the UI asks the user to generate first. Access-scoped per run.
+ * GET /api/analysis-report/pdf?runId=…&siteId=… — the branded, server-generated PDF of a site's
+ * recommendation (Grid identity). READ-ONLY and deterministic: it rolls the site's module results
+ * into the same PROCEED / CAUTIOUS / NO-GO summary shown on screen (no AI, no external call), so a
+ * GET is always safe to open, prefetch or retry. Access-scoped per run.
  */
 export async function GET(req: NextRequest) {
   const session = await getSession();
@@ -27,54 +29,54 @@ export async function GET(req: NextRequest) {
   const siteId = req.nextUrl.searchParams.get('siteId');
   if (!runId || !siteId || !isUuid(runId) || !isUuid(siteId)) return errors.notFound('Report');
 
-  const run = await prisma.pipelineRun.findUnique({ where: { id: runId } });
+  const run = await prisma.pipelineRun.findUnique({ where: { id: runId }, select: { franchisorId: true, vertical: true, createdByUserId: true } });
   if (!run) return errors.notFound('Run');
   if (!canAccessRun(session, run)) return errors.forbidden();
 
-  const site = await prisma.candidateSite.findUnique({ where: { id: siteId }, select: { pipelineRunId: true } });
+  const site = await prisma.candidateSite.findUnique({ where: { id: siteId }, select: { pipelineRunId: true, label: true, city: true } });
   if (!site || site.pipelineRunId !== runId) return errors.notFound('Site');
 
   try {
-    const state = await readAnalysis(siteId);
-    if (state.state !== 'ready') {
-      return fail(
-        {
-          code: state.state === 'generating' ? 'analysis_generating' : 'analysis_missing',
-          message: state.state === 'generating'
-            ? 'The analysis is still being written. Try the PDF again in a moment.'
-            : 'Generate the analysis for this site before exporting the PDF.',
-        },
-        409,
-      );
-    }
-    const result = state.result;
-    const meta = ((result.contextJson ?? {}) as { meta?: Record<string, unknown> }).meta ?? {};
-    const siteLabel = String(meta.siteLabel ?? 'Site');
-    const brand = meta.brand != null ? String(meta.brand) : null;
-    const location = meta.city != null ? String(meta.city) : null;
-    // Manila time regardless of the server's zone (Netlify runs in UTC).
-    const dateStr = manilaLongStamp(new Date(result.generatedAt));
+    // Build the deterministic recommendation from the site's stored module results.
+    const rows = await prisma.moduleResult.findMany({
+      where: { candidateSiteId: siteId, module: { in: ['territory', 'lease', 'daypart', 'whitespace'] as ModuleKind[] } },
+      select: { module: true, payload: true },
+    });
+    const p = (k: string) => (rows.find((r) => r.module === k)?.payload ?? null) as Record<string, unknown> | null;
+    const t = p('territory'); const l = p('lease'); const d = p('daypart'); const w = p('whitespace');
+    const wRecs = (w?.recommendations as Array<{ verdict?: string | null }> | undefined) ?? null;
+    const summary = summariseSite(
+      {
+        territory: t ? { verdict: t.verdict as string ?? null, totalCannibalizedPhp: (t.totalCannibalizedPhp as number) ?? null, competitiveSaturationPct: (t.competitiveSaturationPct as number) ?? null } : null,
+        lease: l ? { verdict: (l.verdict as string) ?? null, corridor: (l.corridor as string) ?? null } : null,
+        daypart: d ? { windowMatchPct: (d.windowMatchPct as number) ?? null, noCatchmentData: (d.noCatchmentData as boolean) ?? null } : null,
+        whitespace: wRecs ? { recommendations: wRecs.map((r) => ({ verdict: r.verdict ?? null })) } : null,
+      },
+      (k) => isPrimaryModule(run.vertical, k as ModuleKind),
+    );
+
+    const franchisor = run.franchisorId
+      ? await prisma.franchisor.findUnique({ where: { id: run.franchisorId }, select: { brandName: true } })
+      : null;
+    const dateStr = manilaLongStamp(new Date()); // Manila time regardless of the server zone (UTC on Netlify).
+    const coverageConfidence = summary.coverage >= 3 ? 'high' : summary.coverage >= 2 ? 'medium' : 'low';
+    const modulesIncluded = ['territory', 'lease', 'daypart', 'whitespace'].filter((k) => p(k)).join(', ') || 'none';
 
     const { renderToBuffer } = await import('@react-pdf/renderer');
     const element = React.createElement(AnalysisPdf, {
-      siteLabel,
-      brand,
-      location,
+      siteLabel: site.label,
+      brand: franchisor?.brandName ?? null,
+      location: site.city ?? null,
       dateStr,
-      confidence: result.confidence,
-      narrative: result.analysis,
-      schemaText: result.schemaText,
-      checkWarning: result.check && !result.check.ok
-        ? [
-            result.check.ungroundedNumbers.length ? `figures not matched to the site data: ${result.check.ungroundedNumbers.join(', ')}` : '',
-            result.check.priceVerdictPhrases.length ? `price-verdict wording: ${result.check.priceVerdictPhrases.join(', ')}` : '',
-          ].filter(Boolean).join('; ')
-        : null,
+      confidence: `${summary.label} · evidence ${coverageConfidence}`,
+      narrative: summaryToText(summary),
+      schemaText: `Modules included: ${modulesIncluded}.`,
+      checkWarning: null,
     });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const buffer = await renderToBuffer(element as any);
 
-    const safe = siteLabel.replace(/[^a-z0-9]+/gi, '_').replace(/^_+|_+$/g, '') || 'site';
+    const safe = site.label.replace(/[^a-z0-9]+/gi, '_').replace(/^_+|_+$/g, '') || 'site';
     return new Response(new Uint8Array(buffer), {
       status: 200,
       headers: {

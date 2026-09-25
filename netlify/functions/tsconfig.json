@@ -1,8 +1,0 @@
-{
-  "//": "Lets the Netlify function bundler (esbuild) resolve the app's @/* path alias when it bundles analysis-report-background.mts, which imports from @/lib/ai/analysisReport.",
-  "extends": "../../tsconfig.json",
-  "compilerOptions": {
-    "baseUrl": "../..",
-    "paths": { "@/*": ["./*"] }
-  }
-}

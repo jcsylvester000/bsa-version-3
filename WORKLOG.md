@@ -90,6 +90,39 @@ compiles. Also rode along earlier (still-undeployed) fixes: hydration #418/#423 
 the identical error + run/site id suggests the previous build was still running. Test on a fresh site,
 and clear any site stuck in `generating` by regenerating.
 
+---
+
+## 2026-09-25 — REMOVED AI analysis; Final Report is now a deterministic GO/CAUTIOUS/NO-GO summary
+
+Owner decision: AI analysis is not the core product. Removed it entirely and replaced the Final
+Report with a deterministic recommendation rolled up from the module figures — which also permanently
+kills the VectorShift 502 / transaction / timeout surface (no external call, no implicit transaction).
+
+- **New summariser `lib/modules/siteVerdict.ts` (pure, tested):** `summariseSite(payloads, isPrimary)`
+  → `{ classification: proceed|cautious|no_go, label, tone, headline, findings[], keywords[], coverage }`.
+  Drivers are the three site-viability modules (Territory, Lease, Daypart); White-Space is
+  informational only. Rules: a PRIMARY module reading no-go (or ≥2 no-go) → **No-Go**; ≥2 modules
+  covered, zero no-go, positive score, gos ≥ cautions → **Proceed**; else **Cautious**; no data →
+  Cautious with an honest headline. Every finding traces to a module figure; no price verdict, nothing
+  invented. `tests/unit/siteVerdict.test.ts` (6 cases).
+- **Analysis tab (`SiteIntelligenceTabs`):** removed the **Generate analysis** + Regenerate buttons,
+  the AI narrative, the poll loop, the schema/AI-check UI. The Final Report card now shows the
+  verdict badge (Proceed / Proceed with caution / No-Go), the one-line headline, the findings list
+  (keyword: data) and keyword chips. Module sections below are unchanged. **Export site PDF** kept.
+- **PDF (`/api/analysis-report/pdf`):** now builds the same deterministic summary from the site's
+  module_results (flat reads — no `findUniqueOrThrow`/`include`, so no HTTP-mode transaction) and
+  renders it through the existing `AnalysisPdf`. No AI, no "generate first" 409.
+- **Deleted (AI is gone):** `app/api/analysis-report/route.ts` (POST/GET), `lib/ai/analysisReport.ts`,
+  `lib/ai/vectorshiftProvider.ts`, `lib/ai/enqueue.ts`, `netlify/functions/*` (the async background
+  worker), the `netlify.toml [functions]` block, and `docs/ASYNC_ANALYSIS.md`. **Kept:** the module
+  verdict-line phrasing (`generateGrounded` → deterministic StubProvider, used by territory-guard /
+  lease-benchmark) and the pure helpers `outputCheck` / `mockAnalysis` / `analysisCache` (still tested).
+- **Menu trim (same session):** removed **Explore Places**, **All Modules**, **Scorecard** from the
+  left rail (`SidebarNav.tsx`); only Workspace (Franchise Screening · Site Dashboard · New Intake) remains.
+
+**421/421 tests, typecheck clean, `next build` compiles.** No DB migration. Env vars `VECTORSHIFT_*`,
+`ANALYSIS_BACKGROUND`, `INTERNAL_JOB_SECRET` are no longer used and can be removed from Netlify.
+
 **Note:** the console still showed the SAME bundle hash `fd9d1056…` as before the hydration fix, so
 the earlier hotfix was not yet deployed — that is why #418/#423 persisted. Both fixes ship together in
 the next deploy.

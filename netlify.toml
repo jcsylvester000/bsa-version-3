@@ -21,12 +21,3 @@
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"
-
-# Standalone functions in netlify/functions/ (the async Analysis Report worker) are bundled with
-# esbuild. It follows the @/* path alias via netlify/functions/tsconfig.json. Prisma runs through the
-# Neon HTTP driver adapter (no native query engine), so only the generated client + schema need to
-# ride along. The async path is OFF unless ANALYSIS_BACKGROUND=1 (+ INTERNAL_JOB_SECRET) is set in
-# the Netlify env, so this function is inert until deliberately enabled.
-[functions]
-  node_bundler = "esbuild"
-  included_files = ["node_modules/.prisma/client/**", "prisma/schema.prisma"]
