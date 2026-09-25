@@ -307,6 +307,10 @@ model CandidateSite {
   /// The resumable pipeline processes sites where this is NULL — a module_result row alone
   /// no longer marks a site done (a killed invocation could leave it half-analysed).
   analyzedAt     DateTime?       @map("analyzed_at") @db.Timestamptz(6)
+  /// Set when an invocation CLAIMS this site to analyse it, so two concurrent invocations
+  /// (two tabs, a double-click) can't process the same site twice (F-05). A claim older than
+  /// the stale window can be retaken, so a crashed invocation never strands a site.
+  claimedAt      DateTime?       @map("claimed_at") @db.Timestamptz(6)
   /// Modules that failed for this site on the last pass (e.g. "whitespace: timeout"). NULL = clean.
   pipelineError  String?         @map("pipeline_error")
   createdAt      DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)

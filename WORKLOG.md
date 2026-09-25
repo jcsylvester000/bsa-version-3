@@ -5,6 +5,28 @@ The cross-thread state record. Read this (with the Master Instruction and the cu
 
 ---
 
+## 2026-09-25 — Pipeline integrity: F-05, F-06 (⏳ awaiting push; NEW MIGRATION)
+
+**Skills:** 02 Database (claim + rollback), 03 API, 04 Security, 11 Code QA.
+
+- **F-05** `lib/modules/orchestrator.ts` + schema: `candidate_site` gains `claimed_at`
+  (migration `20260927000000_site_claim`, plus a partial pending index). Before working a site the
+  slice CLAIMS it with a single conditional `updateMany` (analyzedAt null AND claimedAt null-or-stale
+  → set claimedAt). `claim.count === 0` means a concurrent invocation (second tab / double-click) owns
+  it → skip. A claim older than `CLAIM_STALE_MS` (60 s) can be retaken, so a crashed slice never
+  strands a site. Refresh clears `claimedAt` too.
+- **F-06** `app/api/intake/route.ts`: reordered so EVERY gate (franchisor access, 80% completeness,
+  version lineage) runs before any write. The independent-operator brand is now created inside the
+  write phase, not before the gate. All writes are tracked (`cleanup.{createdFranchisorId,intakeId,runId}`)
+  and a failure triggers a compensating rollback — delete run (cascades sites) → outlets → intake →
+  the brand, but only if we created it (never a shared catalog brand). No orphan brands / half-written runs.
+- Test: `tests/unit/pipelineIntegrity.test.ts` (+6). **453 tests pass**, typecheck clean, build compiles.
+- Workbook: F-05, F-06 → Done (27 Done total).
+- **Owner action added:** run `npx prisma migrate deploy` for `20260927000000_site_claim` (or let the
+  Netlify build run it). Until the column exists the claim update will error — deploy the migration with this push.
+
+---
+
 ## 2026-09-25 — White-Space local scoping: F-11, F-20 (⏳ awaiting push)
 
 **Skills:** 02 Database (PostGIS scoping), 01 Senior Web & App, 07 PH Broker (local relevance), 11 Code QA.

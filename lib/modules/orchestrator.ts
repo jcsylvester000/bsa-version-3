@@ -59,6 +59,13 @@ const DEFAULT_LEASE_CORRIDOR = 'Quezon City';
 const PIPELINE_BUDGET_MS = 5500;
 
 /**
+ * How long a site's claim is honoured before another invocation may retake it (F-05). Longer
+ * than the per-invocation budget, so a slice that's still working keeps its sites, but short
+ * enough that a crashed/killed invocation frees its claim quickly for a resume.
+ */
+const CLAIM_STALE_MS = 60_000;
+
+/**
  * Execute one time-boxed slice of the pipeline for a run. Call repeatedly until
  * `complete`. Module rows upsert per (site, module), so re-running refreshes rather
  * than duplicates.
@@ -119,7 +126,7 @@ async function runPipelineSlice(runId: string, opts: { refresh?: boolean }): Pro
   if (opts.refresh) {
     await prisma.candidateSite.updateMany({
       where: { pipelineRunId: runId },
-      data: { analyzedAt: null, pipelineError: null },
+      data: { analyzedAt: null, pipelineError: null, claimedAt: null },
     });
     for (const s of sites) s.analyzedAt = null;
   }
@@ -139,6 +146,21 @@ async function runPipelineSlice(runId: string, opts: { refresh?: boolean }): Pro
     // Budget guard: once at least one site is done this call and we're over
     // budget, stop and hand back to the client to re-invoke for the rest.
     if (processedThisCall > 0 && Date.now() - pipelineStart > PIPELINE_BUDGET_MS) break;
+
+    // F-05: atomically CLAIM this site before doing any work. updateMany is a single
+    // conditional UPDATE (no transaction — safe on the Neon HTTP adapter). We win the claim
+    // only if the site is still unanalysed AND either unclaimed or its claim has gone stale
+    // (a crashed invocation). If count === 0 another invocation owns it right now — skip it.
+    const staleBefore = new Date(Date.now() - CLAIM_STALE_MS);
+    const claim = await prisma.candidateSite.updateMany({
+      where: {
+        id: site.id,
+        analyzedAt: null,
+        OR: [{ claimedAt: null }, { claimedAt: { lt: staleBefore } }],
+      },
+      data: { claimedAt: new Date() },
+    });
+    if (claim.count === 0) continue; // claimed by a concurrent invocation — leave it to them
     processedThisCall++;
 
     const errors: string[] = [];

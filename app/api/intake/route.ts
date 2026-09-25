@@ -42,25 +42,16 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) return failValidation(parsed.error);
   const input = parsed.data;
 
-  // Resolve the franchisor: either an existing one (access-checked), or a lightweight
-  // one created on the fly for an independent operator, anchored to a comparable brand
-  // so the concept discriminator / scoring adapts to their business.
-  let franchisorId: string;
+  // F-06: run EVERY validation/authorization/gate that can reject the request BEFORE writing
+  // anything. For an independent operator the franchisor row is NOT created here — it's created
+  // inside the write block below (and cleaned up if a later write fails), so a rejected submit
+  // never leaves an orphan brand in Franchise Screening.
   let conceptAnchor: string | null = null;
   let brandLabel = 'Analysis';
+  // For an existing brand we resolve + access-check now (a read). For an independent, we hold the
+  // details and create the row only in the write phase.
+  let existingFranchisorId: string | null = null;
   if (input.independent) {
-    const created = await prisma.franchisor.create({
-      data: {
-        brandName: input.independent.name,
-        sector: sectorForVertical(input.vertical),
-        subCategory: input.independent.comparableBrand, // the concept anchor
-        positioning: `Independent · benchmarked against ${input.independent.comparableBrand}`,
-        // Brand privacy: an independent business is private to the user who created it —
-        // it must never appear in another user's brand list or be runnable by them.
-        createdByUserId: session.id,
-      },
-    });
-    franchisorId = created.id;
     conceptAnchor = input.independent.comparableBrand;
     brandLabel = input.independent.name;
   } else {
@@ -77,11 +68,11 @@ export async function POST(req: NextRequest) {
     ) {
       return errors.notFound('Franchisor');
     }
-    franchisorId = input.franchisorId;
+    existingFranchisorId = input.franchisorId;
     brandLabel = franchisor.brandName;
   }
 
-  // 80% must-have completeness gate.
+  // 80% must-have completeness gate — still BEFORE any write.
   const completeness = computeCompleteness(input.sections);
   if (completeness.pct < 80) {
     return fail(
@@ -124,7 +115,31 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // Track everything we write so a failure part-way can be rolled back by hand (the Neon HTTP
+  // adapter has no multi-statement transaction). Deleting the run cascades to its candidate sites.
+  const cleanup: { runId?: string; intakeId?: string; createdFranchisorId?: string } = {};
   try {
+    // Create the independent operator's brand now, inside the write phase, so a failure leaves
+    // no orphan. An existing brand was already resolved + access-checked above.
+    let franchisorId: string;
+    if (input.independent) {
+      const createdFr = await prisma.franchisor.create({
+        data: {
+          brandName: input.independent.name,
+          sector: sectorForVertical(input.vertical),
+          subCategory: input.independent.comparableBrand, // the concept anchor
+          positioning: `Independent · benchmarked against ${input.independent.comparableBrand}`,
+          // Brand privacy: an independent business is private to the user who created it —
+          // it must never appear in another user's brand list or be runnable by them.
+          createdByUserId: session.id,
+        },
+      });
+      franchisorId = createdFr.id;
+      cleanup.createdFranchisorId = createdFr.id;
+    } else {
+      franchisorId = existingFranchisorId!;
+    }
+
     const intake = await prisma.intakeSubmission.create({
       data: {
         franchisorId,
@@ -138,6 +153,7 @@ export async function POST(req: NextRequest) {
         ...sectionData,
       },
     });
+    cleanup.intakeId = intake.id;
 
     // 2) outlet rows — geom via trigger. NOTE: sequential single creates, NOT createMany.
     // Under the Neon HTTP adapter (PrismaNeonHTTP), Prisma runs createMany inside a
@@ -178,6 +194,7 @@ export async function POST(req: NextRequest) {
         createdByUserId: session.id,
       },
     });
+    cleanup.runId = run.id;
 
     // 4) candidate sites — geom via trigger. Tag the region (LGU name first, else pinned
     // coordinate). When boundary polygons are loaded (R-02), also stamp the real barangay/city/
@@ -216,6 +233,24 @@ export async function POST(req: NextRequest) {
     // internals). Log the full error server-side with a short reference the user can quote.
     const ref = Math.random().toString(36).slice(2, 10);
     console.error(`[POST /api/intake] write failed ref=${ref}`, err);
+
+    // F-06: compensating rollback (no Neon HTTP transaction). Delete what we wrote, in reverse:
+    // the run cascades to its candidate sites; then this intake's outlets; then the intake; then
+    // the brand — but ONLY if we created it here (never a pre-existing shared catalog brand).
+    // Each delete is best-effort so one failure can't mask the original error.
+    try {
+      if (cleanup.runId) await prisma.pipelineRun.delete({ where: { id: cleanup.runId } }).catch(() => undefined);
+      if (cleanup.intakeId) {
+        await prisma.outlet.deleteMany({ where: { intakeSubmissionId: cleanup.intakeId } }).catch(() => undefined);
+        await prisma.intakeSubmission.delete({ where: { id: cleanup.intakeId } }).catch(() => undefined);
+      }
+      if (cleanup.createdFranchisorId) {
+        await prisma.franchisor.delete({ where: { id: cleanup.createdFranchisorId } }).catch(() => undefined);
+      }
+    } catch (cleanupErr) {
+      console.error(`[POST /api/intake] cleanup after ref=${ref} failed`, cleanupErr);
+    }
+
     return errors.server(`Failed to save intake. Please try again; if it keeps failing, quote reference ${ref}.`);
   }
 }
