@@ -5,12 +5,9 @@ import { usePathname, useSearchParams } from 'next/navigation';
 import { NewTag } from '@/components/ui/Chips';
 
 /**
- * Left-rail navigation, grouped Workspace / Intelligence / Output like the mockup.
- * Feature links carry the current runId so the intelligence modules open in context.
+ * Left-rail navigation. 44px targets, 16px labels, active item = hover surface + Muesli inset bar.
+ * `onNavigate` lets the mobile drawer close itself after a tap.
  */
-// Explore Places, All Modules and Scorecard were retired from the left rail (the per-site
-// results view — SiteIntelligenceTabs — already surfaces the module intelligence and the
-// exportable report). Their routes may still exist but are no longer linked in the menu.
 const GROUPS: Array<{ heading: string; items: Array<{ href: string; label: string; isNew?: boolean; keepRun?: boolean; tour?: string }> }> = [
   {
     heading: 'Workspace',
@@ -22,22 +19,30 @@ const GROUPS: Array<{ heading: string; items: Array<{ href: string; label: strin
   },
 ];
 
-export function SidebarNav() {
+export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
   const params = useSearchParams();
   const runId = params.get('runId');
 
   return (
-    <nav className="flex-1 space-y-5 overflow-y-auto px-3 py-2">
+    <nav aria-label="Main" className="flex-1 space-y-5 overflow-y-auto px-3 py-3">
       {GROUPS.map((g) => (
         <div key={g.heading}>
-          <p className="px-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-ink-muted">{g.heading}</p>
-          <div className="space-y-0.5">
+          <p className="overline px-3 pb-2">{g.heading}</p>
+          <div className="space-y-1">
             {g.items.map((it) => {
               const href = it.keepRun && runId ? `${it.href}?runId=${runId}` : it.href;
-              const active = pathname === it.href;
+              // /site belongs to the Site Dashboard section.
+              const active = pathname === it.href || (it.href === '/runs' && pathname.startsWith('/site'));
               return (
-                <Link key={it.href} href={href} data-tour={it.tour} className={`nav-item ${active ? 'nav-item-active' : ''}`}>
+                <Link
+                  key={it.href}
+                  href={href}
+                  data-tour={it.tour}
+                  onClick={onNavigate}
+                  aria-current={active ? 'page' : undefined}
+                  className={`nav-item ${active ? 'nav-item-active' : ''}`}
+                >
                   <span className="flex-1">{it.label}</span>
                   {it.isNew && <NewTag />}
                 </Link>

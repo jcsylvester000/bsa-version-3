@@ -14,12 +14,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const session = await getSession();
   if (!session) redirect('/login');
 
-  // First-run tour: show once for a brand-new account (has_onboarded = false). We key
-  // off the actual user row, not AUTH_MODE — a real registered account gets the tour
-  // even while the mock demo logins are also enabled. A mock demo user has no matching
-  // DB row, so the lookup returns null and the tour simply doesn't show for them.
-  // Guard the lookup: a mock demo id (e.g. "mock-admin") isn't a UUID and would make
-  // Postgres throw. Only query for a real UUID-keyed account.
+  // First-run tour (unchanged): only for a real UUID-keyed account that hasn't onboarded.
   const u = isUuid(session.id)
     ? await prisma.appUser
         .findUnique({ where: { id: session.id }, select: { hasOnboarded: true } })
@@ -29,19 +24,21 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="flex min-h-screen bg-ink-bg">
-      {/* Left rail */}
-      <aside className="hidden w-60 shrink-0 border-r border-ink-border bg-ink-panel-2 md:flex md:flex-col">
-        <div className="px-5 py-4">
-          <GridLogo className="h-8 w-auto" />
-          <p className="mt-2 text-[10px] uppercase tracking-[0.16em] text-ink-muted">Business Site Analysis</p>
+      <a href="#main" className="btn-primary sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50">Skip to content</a>
+
+      {/* Left rail (desktop) */}
+      <aside className="sticky top-0 hidden h-screen w-[248px] shrink-0 border-r border-ink-border bg-ink-panel-2 md:flex md:flex-col">
+        <div className="flex flex-col gap-2.5 px-5 pb-3.5 pt-[22px]">
+          <GridLogo className="h-11 w-auto self-start" />
+          <p className="overline text-xs tracking-[0.16em]">Business Site Analysis</p>
         </div>
         <SidebarNav />
-        <div className="mt-auto border-t border-ink-border px-4 py-3">
-          <Link href="/settings" className="block truncate text-xs text-ink-text hover:text-accent" title="Account settings">{session.email}</Link>
-          <div className="mt-1 flex items-center justify-between">
-            <span className="rounded-full bg-ink-hover px-2 py-0.5 text-[10px] uppercase tracking-wide text-ink-muted">{session.role}</span>
-            <div className="flex items-center gap-3">
-              <Link href="/settings" className="text-[11px] text-ink-muted hover:text-accent">Settings</Link>
+        <div className="mt-auto flex flex-col gap-2.5 border-t border-ink-border p-4">
+          <Link href="/settings" className="link truncate text-label font-normal text-ink-text" title="Account settings">{session.email}</Link>
+          <div className="flex items-center justify-between gap-2">
+            <span className="rounded-full bg-ink-hover px-2 py-0.5 text-chip uppercase text-ink-muted">{session.role}</span>
+            <div className="flex items-center">
+              <Link href="/settings" className="focus-ring inline-flex min-h-tap items-center rounded-control px-2 text-label font-normal text-ink-muted hover:text-ink-text">Settings</Link>
               <LogoutButton />
             </div>
           </div>
@@ -49,22 +46,19 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       </aside>
 
       {/* Content */}
-      <div className="flex-1">
-        {/* Mobile top bar */}
-        <header className="flex items-center justify-between border-b border-ink-border bg-ink-panel-2 px-4 py-3 md:hidden">
-          <div className="flex items-center gap-2">
-            <MobileNav email={session.email} />
-            <Link href="/runs" className="flex items-center">
-              <GridLogo className="h-7 w-auto" />
-            </Link>
+      <div className="flex min-w-0 flex-1 flex-col">
+        <MobileNav email={session.email} role={session.role} />
+        <main id="main" className="w-full max-w-[1192px] px-4 py-5 md:px-12 md:py-8">{children}</main>
+        {/* RA 9646 / broker-supplementation notice on every signed-in page — present but calm. */}
+        <footer className="mt-auto w-full max-w-[1192px] px-4 pb-7 md:px-12">
+          <div className="notice-ra flex items-start gap-3">
+            <span className="shrink-0 rounded-chip border border-ink-border px-1.5 py-0.5 text-chip text-ink-muted">RA 9646</span>
+            <p>
+              {BROKER_DISCLAIMER_SHORT}
+              {/* Running build id (audit F-50) so the owner can confirm which deploy is live. */}
+              <span className="ml-2 opacity-60">· build {process.env.NEXT_PUBLIC_BUILD_ID ?? 'dev'}</span>
+            </p>
           </div>
-          <LogoutButton />
-        </header>
-        <main className="mx-auto max-w-7xl px-6 py-8">{children}</main>
-        {/* RA 9646 / broker-supplementation notice on every signed-in page, plus the running build id. */}
-        <footer className="mx-auto max-w-7xl px-6 pb-6 text-xs leading-relaxed text-ink-muted">
-          {BROKER_DISCLAIMER_SHORT}
-          <span className="ml-2 opacity-60">· build {process.env.NEXT_PUBLIC_BUILD_ID ?? 'dev'}</span>
         </footer>
       </div>
 

@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 
-export function LogoutButton() {
+export function LogoutButton({ className }: { className?: string }) {
   const router = useRouter();
   async function logout() {
     await fetch('/api/auth/logout', { method: 'POST' });
@@ -10,8 +10,12 @@ export function LogoutButton() {
     router.refresh();
   }
   return (
-    <button onClick={logout} className="rounded-lg border border-ink-border px-3 py-1 text-xs text-ink-muted hover:bg-ink-hover hover:text-ink-text">
-      Sign out
+    <button
+      type="button"
+      onClick={logout}
+      className={className ?? 'focus-ring inline-flex min-h-tap items-center rounded-control px-2 text-label font-normal text-ink-muted hover:text-ink-text'}
+    >
+      Log out
     </button>
   );
 }

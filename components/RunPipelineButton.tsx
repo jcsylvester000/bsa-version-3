@@ -11,7 +11,7 @@ import { useRouter } from 'next/navigation';
  * The first POST sends `{ refresh: true }` (recompute every site); later POSTs resume the
  * time-boxed slices until the server reports `complete`.
  */
-export function RunPipelineButton({ runId }: { runId: string }) {
+export function RunPipelineButton({ runId, className = 'btn-secondary btn-lg' }: { runId: string; className?: string }) {
   const router = useRouter();
   const [state, setState] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
 
@@ -37,9 +37,11 @@ export function RunPipelineButton({ runId }: { runId: string }) {
 
   return (
     <button
+      type="button"
       onClick={run}
       disabled={state === 'running'}
-      className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-ink-bg shadow hover:opacity-90 disabled:opacity-50"
+      className={className}
+      aria-live="polite"
       title="Recompute every module for every site in this run with the latest data"
     >
       {state === 'running' ? '⏳ Analysing sites…' : state === 'error' ? '↻ Retry' : '↻ Re-run analysis'}
