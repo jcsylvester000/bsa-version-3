@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db/prisma';
 import { isUuid } from '@/lib/util/uuid';
 import { isMockUser } from '@/lib/auth/mockUsers';
 import { ChangePasswordForm } from '@/components/ChangePasswordForm';
+import { manilaLongStamp } from '@/lib/util/manilaTime';
 
 export const dynamic = 'force-dynamic';
 
@@ -28,55 +29,54 @@ export default async function SettingsPage() {
   // Demo accounts have no created-at row; show a meaningful label instead of a bare "—"
   // (which reads as broken/missing data to a viewer).
   const memberSince = row?.createdAt
-    ? new Date(row.createdAt).toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' })
+    ? manilaLongStamp(new Date(row.createdAt)).split(' at ')[0] // ICU-free (Netlify has no tz data)
     : 'Demo account';
 
   return (
     <div className="mx-auto max-w-2xl">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-ink-text">Account settings</h1>
-        <p className="text-sm text-ink-muted">Your profile and sign-in credentials.</p>
+      <div className="mb-6 flex flex-col gap-1.5">
+        <h1 className="text-h1">Settings</h1>
+        <p className="text-body text-ink-muted">Your account and sign-in credentials.</p>
       </div>
 
       <section className="card p-6">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-ink-muted">Profile</h2>
+        <h2 className="font-body text-title">Account</h2>
         <dl className="mt-4 grid gap-4 sm:grid-cols-2">
           <div>
-            <dt className="text-xs uppercase tracking-wide text-ink-muted">Username / email</dt>
-            <dd className="mt-1 text-sm text-ink-text">{displayName}</dd>
+            <dt className="stat-label">Username / email</dt>
+            <dd className="mt-1 text-body text-ink-text">{displayName}</dd>
           </div>
           <div>
-            <dt className="text-xs uppercase tracking-wide text-ink-muted">Role</dt>
-            <dd className="mt-1 text-sm capitalize text-ink-text">{session.role}</dd>
+            <dt className="stat-label">Role</dt>
+            <dd className="mt-1 text-body capitalize text-ink-text">{session.role}</dd>
           </div>
           <div>
-            <dt className="text-xs uppercase tracking-wide text-ink-muted">Member since</dt>
-            <dd className="mt-1 text-sm text-ink-text">{memberSince}</dd>
+            <dt className="stat-label">Member since</dt>
+            <dd className="mt-1 text-body text-ink-text">{memberSince}</dd>
           </div>
           <div>
-            <dt className="text-xs uppercase tracking-wide text-ink-muted">Account type</dt>
-            <dd className="mt-1 text-sm text-ink-text">{demo ? 'Demo (read-only)' : 'Registered'}</dd>
+            <dt className="stat-label">Account type</dt>
+            <dd className="mt-1 text-body text-ink-text">{demo ? 'Demo (read-only)' : 'Registered'}</dd>
           </div>
         </dl>
       </section>
 
       <section className="card mt-6 p-6">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-ink-muted">Getting started</h2>
+        <h2 className="font-body text-title">Getting started</h2>
         <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm text-ink-text/85">
-            Replay the guided walkthrough of the four screens you&apos;ll use most — intake,
-            dashboard, the Intelligence modules, and the site report.
+          <p className="text-body text-ink-muted">
+            Replay the guided walkthrough — intake, the Site Dashboard, the four module tabs and the Final Report.
           </p>
-          <Link href="/runs?tour=1" className="btn-accent shrink-0 text-center text-sm">
+          <Link href="/runs?tour=1" className="btn-secondary shrink-0">
             Replay tour
           </Link>
         </div>
       </section>
 
       <section className="card mt-6 p-6">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-ink-muted">Change password</h2>
+        <h2 className="font-body text-title">Change password</h2>
         {demo ? (
-          <p className="mt-3 rounded-lg border border-dashed border-ink-border p-4 text-sm text-ink-muted">
+          <p className="empty-state mt-3 text-body text-ink-muted">
             Demo accounts are login-only and can’t change a password. Register a real account to manage credentials.
           </p>
         ) : (

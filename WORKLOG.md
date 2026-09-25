@@ -5,6 +5,40 @@ The cross-thread state record. Read this (with the Master Instruction and the cu
 
 ---
 
+## 2026-09-25 — DESIGN v2 (cont.): remaining mockup screens, batches 5–8 (CODE COMPLETE — pending push)
+
+Batches 1–4 confirmed pushed (`75fcd15`, `60404b1`, `da9afc5`, `f82716d`; batch 0 = `0ecddcd`).
+This pass covers mockup screens the bundle drew but shipped no code for. Tracker: `docs/DESIGN_V2_CHECKLIST.md`.
+**Skills:** 12 Orchestration, 01 Senior Web & App, 07 PH Broker (tier/seasonality/zonal wording), 04 Security
+(error boundary + `?brand=` hand-over), 11 Code QA.
+
+- **Batch 5 (B3/H1/H2):** `/runs` is now a results table (Proceed/Caution/No-Go counts per run from one flat
+  `candidate_site` read — no include/transaction, safe on Neon HTTP), search + brand filter via GET form,
+  empty and no-match states. Run dashboard shows an in-progress card (n of N analysed) with
+  **↻ Continue analysis** (`RunPipelineButton resume` — resumes slices, no restart) and a failed-run alert.
+- **Batch 6 (D1/D2):** Franchise Screening results are cards with removable filter chips, skeleton loading and
+  a no-results state. "Start intake with this brand" → `/intake?brand=` → the wizard preselects the brand +
+  vertical, matched only against the user-visible catalog (`/api/franchisors`), so the param can't widen access.
+- **Batch 7 (F1–F4/H3):** Lease tab header "Position vs corridor", H3 not-enough-data copy (uses `MIN_SAMPLE`),
+  "Save & use in score", BIR zonal floor card (Truth chip from payload, `ZONAL_FLOOR_NOTE`); Daypart window
+  match with status word + peak window (`12 NN` format); Territory/White-Space restyle. **FindingsList figures
+  wired** from the same payloads (each with its own Truth Layer).
+- **Batch 8 (G1/H4):** Settings restyle (ICU-free member-since), password form help/alert; new
+  `app/(app)/error.tsx` (generic message + digest, no internals) and `app/(app)/loading.tsx` skeleton.
+
+**Verification:** tsc 0 errors · vitest 36 files 426/426 · `next build` compiles (sandbox-only warnings: Google
+Fonts download and Prisma engine unavailable). Not verified live in a browser against Neon.
+
+**⚠️ ACTION REQUIRED (owner):** run the Batch 5–8 commands in the checklist, then paste `git log --oneline -6`.
+Smoke test after deploy: /runs list + search; open an unfinished run (Continue analysis); Screening → Start
+intake with a brand; a site's Lease tab (zonal card) and Final Report (figures beside findings).
+
+**Noticed, not changed:** PRC licence field (G1) needs a schema decision; the light-theme switch stays deferred;
+`/reports`, `/scorecard`, `/modules`, `/explore` (not in the menu) still use pre-v2 layouts; the Lease finding
+in `siteVerdict.ts` still carries a go/caution tone (drives the call by design — flagged for a broker review).
+
+---
+
 ## 2026-09-25 — DESIGN v2: Claude Design bundle implemented (CODE COMPLETE — pending push, batches 0–4)
 
 **Skills loaded:** 12 Orchestration (plan/batches/log), 01 Senior Web & App Engineer (structure),

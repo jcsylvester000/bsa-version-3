@@ -49,20 +49,25 @@ export function ChangePasswordForm() {
   return (
     <form onSubmit={onSubmit} className="mt-4 space-y-4">
       <label className="block">
-        <span className="text-sm font-medium text-ink-muted">Current password</span>
-        <input type="password" value={current} onChange={(e) => setCurrent(e.target.value)} className="field mt-1" required autoComplete="current-password" />
+        <span className="field-label">Current password</span>
+        <input type="password" value={current} onChange={(e) => setCurrent(e.target.value)} className="field mt-1.5" required autoComplete="current-password" />
       </label>
       <label className="block">
-        <span className="text-sm font-medium text-ink-muted">New password</span>
-        <input type="password" value={next} onChange={(e) => setNext(e.target.value)} placeholder="at least 10 characters" className="field mt-1" required minLength={10} autoComplete="new-password" />
+        <span className="field-label">New password</span>
+        <input type="password" value={next} onChange={(e) => setNext(e.target.value)} placeholder="at least 10 characters" className="field mt-1.5" required minLength={10} autoComplete="new-password" aria-describedby="new-pw-help" />
+        <span id="new-pw-help" className="field-help mt-1.5 block">At least 10 characters.</span>
       </label>
       <label className="block">
-        <span className="text-sm font-medium text-ink-muted">Confirm new password</span>
-        <input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} className="field mt-1" required minLength={10} autoComplete="new-password" />
+        <span className="field-label">Confirm new password</span>
+        <input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} className="field mt-1.5" required minLength={10} autoComplete="new-password" />
       </label>
-      {error && <p className="text-sm text-nogo">{error}</p>}
-      {done && <p className="text-sm text-go">Password updated.</p>}
-      <button type="submit" disabled={loading} className="btn-accent justify-center">
+      {error && (
+        <div role="alert" className="error-state flex-row items-start gap-2 p-3 text-body">
+          <span className="font-bold text-nogo" aria-hidden>✕</span> <span>{error}</span>
+        </div>
+      )}
+      {done && <p role="status" className="text-body font-semibold text-go">✓ Password updated.</p>}
+      <button type="submit" disabled={loading} className="btn-primary btn-lg">
         {loading ? 'Updating…' : 'Update password'}
       </button>
     </form>

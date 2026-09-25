@@ -75,17 +75,51 @@ Batch 0 needs no further commit.
 - [x] §4 maps: marker classes `.mk-*`, legend overlay, sr-only marker list (Territory, Gaps, LocationPicker)
       via new `components/MapMarkers.tsx`; LocationPicker is a labelled dialog with 44px controls
 
+## Batch 5 — All runs list + run states (mockups B3, H1, H2)
+- [x] `/runs` list → table: Run (name, vertical, cities) · Brand · Sites · Result (✓ Proceed / ▲ Caution / ✕ No-Go counts) · Last run
+- [x] Search by run/brand/city + brand filter (plain GET form, works without JS); "No runs match" state
+- [x] H1 "No runs yet" empty state → Start New Intake / browse Franchise Screening
+- [x] H2 in-progress card on the run dashboard (sites analysed n of N, progress bar, **↻ Continue analysis**
+      resumes without restarting); failed-run alert. `RunPipelineButton` gains `resume`
+
+## Batch 6 — Franchise Screening (mockups D1, D2)
+- [x] Brand table → cards: name, category, Truth chip, investment, space, fee, payback, tier tag, fit, reach line
+- [x] "Start intake with this brand" → `/intake?brand=…`; the wizard preselects that brand + vertical
+      (matched only against brands the user can see)
+- [x] Active-filter chips (each removable) + Clear all; D2 "No brands match" + Clear filters
+- [x] Loading skeletons; labels/help → `field-label`/`field-help`; 44px pagination; error → `role="alert"`
+- [~] Capital-tier tags are neutral outlines (were green/tan/violet) — a tier is a fact, not a status
+
+## Batch 7 — Site tab content (mockups F1–F4, H3) + Final Report figures
+- [x] F1 Territory: "Territory call" header, outlet list rows 44px, chip lists restyled
+- [x] F2 Lease: "Position vs <corridor> corridor" header; asking rent "Save & use in score" with the
+      not-a-price-opinion help line; distribution header with Truth chip + n; **BIR zonal floor card**
+      (tax-reference wording from `ZONAL_FLOOR_NOTE`); comps table uses `table-head`
+- [x] H3 Lease "— Not enough data yet · only n comparable leases · need at least 5 (`MIN_SAMPLE`)"
+- [x] F3 Daypart: Window match + status word, Catchment mix, Peak window (Manila time, `12 NN`)
+- [~] F3 seasonality multipliers now neutral text (were green/red)
+- [x] F4 White-Space: rank badge contrast, restyled lists
+- [x] `FindingsList` `figures` wired: cannibalization ₱/mo, lease percentile (or corridor median),
+      window %, white-space area count — each with its own Truth Layer (was deferred)
+
+## Batch 8 — Settings + error/loading states (mockups G1, H4)
+- [x] Settings: Account / Getting started / Change password (help text, alert error, `btn-primary`);
+      member-since date is ICU-free (`manilaLongStamp`)
+- [-] G1 PRC licence number — no field in the data model; not added (needs a schema decision)
+- [-] G1/G2 Appearance switch — light theme deferred (owner: dark only)
+- [x] H4 `app/(app)/error.tsx` — generic "We couldn’t load this page" + Try again (no internals leaked)
+- [x] `app/(app)/loading.tsx` — skeleton page while server pages stream
+- [-] H4 "Site PDF is ready" toast — the PDF opens in a new tab, so there is nothing to confirm
+
 ## Verification (every batch)
-- [x] `tsc --noEmit` 0 errors (2026-09-25, cloud sandbox)
+- [x] `tsc --noEmit` 0 errors (2026-09-25, cloud sandbox — batches 1–4, and again after 5–8)
 - [x] `vitest run` 36 files · 426/426 passing (Prisma-engine "unhandled" notices are sandbox-only)
 - [x] `next build` compiles every route
-- [ ] Browser check by owner after deploy (keyboard: skip link → rail → tabs ← → → content → footer;
+- [ ] Browser check by owner after deploy (batches 1–4 live on `f82716d`; 5–8 pending push) (keyboard: skip link → rail → tabs ← → → content → footer;
       44px targets; every verdict = icon + word; compare with `design-reference/*.dc.html`)
 
 ## Deferred / not in scope
 - [-] Light-theme Settings toggle + cookie (owner chose dark only; tokens are ready)
-- [-] `FindingsList` `figures` (headline number per finding) — optional in the bundle; left empty so no
-      figure is shown without a traced source. Wire from the module payloads in a later pass.
 
 ---
 
@@ -96,11 +130,15 @@ Commands are PowerShell 5-safe (one per line). Run them from `4 - Final Applicat
 
 | # | Batch | Commit message | Status | Hash |
 |---|---|---|---|---|
-| 0 | Pending audit fixes | `audit batch 2: CI (F-48), migrate-on-deploy (F-49), build id in footer (F-50), mobile nav (F-32), fix onboarding tour (F-33), pipeline maxDuration (F-04)` | committed by owner — confirm pushed | `0ecddcd` |
-| 1 | Foundation | `design v2 batch 1: theme tokens, global CSS recipes, UI primitives, dual logo` | ready to push | — |
-| 2 | Shell + dashboard | `design v2 batch 2: app shell, sidebar, mobile dialog nav, dashboard verdict strip` | ready to push | — |
-| 3 | Site page + Final Report | `design v2 batch 3: Final Report hero + findings, underline tabs, neutral lease cues` | ready to push | — |
-| 4 | Login, intake, maps + logs | `design v2 batch 4: login two-column, intake stepper + submit checklist, map markers + legend` | ready to push | — |
+| 0 | Pending audit fixes | `audit batch 2: CI (F-48), migrate-on-deploy (F-49), build id in footer (F-50), mobile nav (F-32), fix onboarding tour (F-33), pipeline maxDuration (F-04)` | ✅ pushed | `0ecddcd` |
+| 1 | Foundation | `design v2 batch 1: theme tokens, global CSS recipes, UI primitives, dual logo` | ✅ pushed | `75fcd15` |
+| 2 | Shell + dashboard | `design v2 batch 2: app shell, sidebar, mobile dialog nav, dashboard verdict strip` | ✅ pushed | `60404b1` |
+| 3 | Site page + Final Report | `design v2 batch 3: Final Report hero + findings, underline tabs, neutral lease cues` | ✅ pushed | `da9afc5` |
+| 4 | Login, intake, maps + logs | `design v2 batch 4: login two-column, intake stepper + submit checklist, map markers + legend` | ✅ pushed | `f82716d` |
+| 5 | All runs + run states | `design v2 batch 5: all-runs table with results, search/filter, empty + in-progress states` | ready to push | — |
+| 6 | Franchise Screening | `design v2 batch 6: franchise screening cards, filter chips, start intake with brand` | ready to push | — |
+| 7 | Site tab content | `design v2 batch 7: lease position + zonal floor card, daypart tiles, findings figures` | ready to push | — |
+| 8 | Settings + states + logs | `design v2 batch 8: settings restyle, error boundary, loading skeleton` | ready to push | — |
 
 ### Batch 0
 Already committed (`0ecddcd`). If `git status` says "Your branch is ahead of 'origin/main'", push it with the Batch 1 push.
@@ -130,6 +168,34 @@ git push origin main
 ```powershell
 git add "app/(auth)/login/page.tsx" components/SteppedIntakeWizard.tsx components/MapMarkers.tsx components/TerritoryMap.tsx components/GapsMap.tsx components/LocationPicker.tsx WORKLOG.md PROJECT_MEMORY.md docs/DESIGN_V2_CHECKLIST.md
 git commit -m "design v2 batch 4: login two-column, intake stepper + submit checklist, map markers + legend"
+git push origin main
+```
+
+### Batch 5
+```powershell
+git add "app/(app)/runs/page.tsx" components/RunDashboard.tsx components/RunPipelineButton.tsx
+git commit -m "design v2 batch 5: all-runs table with results, search/filter, empty + in-progress states"
+git push origin main
+```
+
+### Batch 6
+```powershell
+git add components/FranchiseScreeningView.tsx "app/(app)/screening/page.tsx" "app/(app)/intake/page.tsx" components/SteppedIntakeWizard.tsx
+git commit -m "design v2 batch 6: franchise screening cards, filter chips, start intake with brand"
+git push origin main
+```
+
+### Batch 7
+```powershell
+git add components/SiteIntelligenceTabs.tsx
+git commit -m "design v2 batch 7: lease position + zonal floor card, daypart tiles, findings figures"
+git push origin main
+```
+
+### Batch 8
+```powershell
+git add "app/(app)/settings/page.tsx" components/ChangePasswordForm.tsx "app/(app)/error.tsx" "app/(app)/loading.tsx" WORKLOG.md PROJECT_MEMORY.md docs/DESIGN_V2_CHECKLIST.md
+git commit -m "design v2 batch 8: settings restyle, error boundary, loading skeleton"
 git push origin main
 ```
 

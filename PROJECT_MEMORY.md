@@ -5,7 +5,7 @@ always-current snapshot. `WORKLOG.md` is the full history (newest first). This f
 rewritten at the end of every work batch — if it disagrees with older notes (e.g.
 `2 - Data Intake/Migration Guide/PROJECT_MEMORY_EXPORT.md`, 2026-08-10), **this file wins**.
 
-_Last updated: 2026-09-25 — after Design v2 implementation (Claude Design bundle, 4 batches, pending push)._
+_Last updated: 2026-09-25 — Design v2 batches 1–4 pushed; batches 5–8 code-complete, pending push._
 
 ---
 
@@ -39,7 +39,11 @@ Tracker: **`docs/DESIGN_V2_CHECKLIST.md`** (item checklist + push log — update
   Hero shows the composite, rank n of N, run confidence, analysed time (Manila, ICU-free), truth mix.
   The hero never contradicts the dashboard: when the site has a composite band it shows that call.
 - Rent is never coloured good/bad (lease tones muted, neutral asking bar, "Distance from corridor median").
-- Batches 0–4 are code-complete and verified (tsc 0 · vitest 426/426 · next build OK) — **pending push**.
+- Batches 0–4 pushed (`0ecddcd` … `f82716d`). Batches 5–8 (all-runs table + run states, Franchise Screening
+  cards + "Start intake with this brand", site-tab content + zonal card + findings figures, Settings + error/
+  loading states) code-complete and verified — **pending push** (commands in the checklist).
+- Open design items: PRC licence field (schema decision), light-theme switch (deferred), legacy pages
+  /reports /scorecard /modules /explore still pre-v2, broker review of the lease finding tone.
 
 ## Code-review fix programme (started 2026-09-23)
 
