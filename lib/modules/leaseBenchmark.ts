@@ -177,9 +177,12 @@ export async function runLeaseBenchmark(input: LeaseBenchmarkInput): Promise<Lea
   if (site) {
     const band = await resolveZonalBand(site);
     if (band) {
+      // Rent-to-land calibration is per region (F-08): NCR has one; other regions withhold the
+      // cross-check/indicative until calibrated, rather than judging provincial rent by NCR's band.
+      const rentBand = getRegion(canonicalCity(site.city, site.label)?.region)?.zonalRentBand ?? null;
       const crossCheck: ZonalCrossCheck | null =
-        input.siteTerms.baseRentPhpSqm != null ? zonalRentCrossCheck(input.siteTerms.baseRentPhpSqm, band.midPhpSqm) : null;
-      const indicativeRent: IndicativeRent = indicativeRentFromZonal(band.midPhpSqm);
+        input.siteTerms.baseRentPhpSqm != null ? zonalRentCrossCheck(input.siteTerms.baseRentPhpSqm, band.midPhpSqm, rentBand) : null;
+      const indicativeRent: IndicativeRent = indicativeRentFromZonal(band.midPhpSqm, rentBand);
       const usedAsFallback = output.verdict === 'insufficient_data' && indicativeRent.midPhpSqm != null;
       zonal = { band, crossCheck, indicativeRent, usedAsFallback };
       zonalBandTruth = band.truthLayer; // the BAND is Verified; cross-check/indicative are Projected

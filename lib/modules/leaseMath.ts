@@ -277,10 +277,16 @@ export function resolveCorridorForSite(
 // → ₱25–37). Hence a band, never a point rent.
 // ============================================================================
 
-/** Monthly rent (₱/sqm) per ₱1,000 of commercial-zonal midpoint — central + reliable band. */
+/** Monthly rent (₱/sqm) per ₱1,000 of commercial-zonal midpoint — central + reliable band (NCR). */
 export const ZONAL_RENT_PER_1000_CENTRAL = 10.0;
 export const ZONAL_RENT_PER_1000_LOW = 6.0;
 export const ZONAL_RENT_PER_1000_HIGH = 14.0;
+
+/** Rent-to-land calibration band for a region (from lib/geo/regions `zonalRentBand`). */
+export interface RentBand { low: number; central: number; high: number }
+/** The NCR band, used as the default so existing NCR callers/tests are unchanged. Province callers
+ *  pass their own band, or `null` to WITHHOLD the cross-check rather than borrow NCR's (F-08). */
+export const NCR_RENT_BAND: RentBand = { low: ZONAL_RENT_PER_1000_LOW, central: ZONAL_RENT_PER_1000_CENTRAL, high: ZONAL_RENT_PER_1000_HIGH };
 
 export type ZonalGrain = 'barangay' | 'city';
 
@@ -312,23 +318,30 @@ export interface ZonalCrossCheck {
   note: string;
 }
 
-/** Where the asking rent sits against the underlying commercial land value. Projected. */
+/**
+ * Where the asking rent sits against the underlying commercial land value. Projected.
+ * `band` is the region's calibration (defaults to NCR). Pass `null` for a region with no
+ * calibration yet — the cross-check is then withheld ('unknown') rather than judged against NCR.
+ */
 export function zonalRentCrossCheck(
   askingRentPhpSqm: number | null | undefined,
   zonalMid: number | null,
+  band: RentBand | null = NCR_RENT_BAND,
 ): ZonalCrossCheck {
+  if (band == null) {
+    return { rentPer1000: null, position: 'unknown', note: 'Rent-to-land calibration is not available for this area yet, so the rent is not compared to the land value.' };
+  }
   if (askingRentPhpSqm == null || zonalMid == null || zonalMid <= 0) {
     return { rentPer1000: null, position: 'unknown', note: 'Not enough data to compare rent to land value.' };
   }
   const r = Math.round((askingRentPhpSqm / zonalMid) * 1000 * 10) / 10;
-  const position: ZonalRentPosition =
-    r > ZONAL_RENT_PER_1000_HIGH ? 'rich' : r < ZONAL_RENT_PER_1000_LOW ? 'thin' : 'inline';
+  const position: ZonalRentPosition = r > band.high ? 'rich' : r < band.low ? 'thin' : 'inline';
   const note =
     position === 'rich'
-      ? `Rent runs ₱${r}/mo per ₱1,000 of commercial land value — above the typical ₱${ZONAL_RENT_PER_1000_LOW}–${ZONAL_RENT_PER_1000_HIGH} NCR band, so it is rich relative to the land.`
+      ? `Rent runs ₱${r}/mo per ₱1,000 of commercial land value — above the typical ₱${band.low}–${band.high} band for this area, so it is rich relative to the land.`
       : position === 'thin'
         ? `Rent runs ₱${r}/mo per ₱1,000 of commercial land value — below the typical band; cheap relative to the land (or a prime-CBD zone where zonal is inflated).`
-        : `Rent runs ₱${r}/mo per ₱1,000 of commercial land value — in line with typical NCR corridors.`;
+        : `Rent runs ₱${r}/mo per ₱1,000 of commercial land value — in line with typical corridors for this area.`;
   return { rentPer1000: r, position, note };
 }
 
@@ -339,15 +352,16 @@ export interface IndicativeRent {
 }
 
 /**
- * Indicative monthly rent band derived from the commercial zonal midpoint, for when
- * lease comps are too thin to score. Projected and deliberately wide (the ₱6–14 band).
+ * Indicative monthly rent band derived from the commercial zonal midpoint, for when lease comps are
+ * too thin to score. Projected. `band` defaults to NCR; `null` (an un-calibrated region) returns
+ * nulls so no NCR-derived rent is shown for a province that has no calibration yet (F-08).
  */
-export function indicativeRentFromZonal(zonalMid: number | null): IndicativeRent {
-  if (zonalMid == null || zonalMid <= 0) return { lowPhpSqm: null, highPhpSqm: null, midPhpSqm: null };
+export function indicativeRentFromZonal(zonalMid: number | null, band: RentBand | null = NCR_RENT_BAND): IndicativeRent {
+  if (zonalMid == null || zonalMid <= 0 || band == null) return { lowPhpSqm: null, highPhpSqm: null, midPhpSqm: null };
   return {
-    lowPhpSqm: Math.round((ZONAL_RENT_PER_1000_LOW / 1000) * zonalMid),
-    highPhpSqm: Math.round((ZONAL_RENT_PER_1000_HIGH / 1000) * zonalMid),
-    midPhpSqm: Math.round((ZONAL_RENT_PER_1000_CENTRAL / 1000) * zonalMid),
+    lowPhpSqm: Math.round((band.low / 1000) * zonalMid),
+    highPhpSqm: Math.round((band.high / 1000) * zonalMid),
+    midPhpSqm: Math.round((band.central / 1000) * zonalMid),
   };
 }
 

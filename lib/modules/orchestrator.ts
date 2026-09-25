@@ -28,6 +28,7 @@ import { runSiteFit, persistSiteFit } from './siteFit';
 import { runTerritoryGuard, persistTerritoryResult } from './territoryGuard';
 import { runLeaseBenchmark, persistLeaseResult } from './leaseBenchmark';
 import { inferCorridor } from './leaseMath';
+import { regionForSite, corridorsForRegion } from '@/lib/geo/regions';
 import { runDaypart, runInformal, runHealthcare, runMall, runWhiteSpace, runLand } from './p2p3Modules';
 import { competitorsNear } from '@/lib/places/poiCache';
 import { siteEvidenceScore, runEvidenceConfidence } from './scorecard';
@@ -182,11 +183,19 @@ async function runPipelineSlice(runId: string, opts: { refresh?: boolean }): Pro
     if (modules.includes('lease')) {
       await attempt('lease', async () => {
         const inferred = inferCorridor(site.city, site.label);
-        const corridor = inferred ?? DEFAULT_LEASE_CORRIDOR;
+        // Region-aware fallback (F-09): if no corridor matched, prefer the site's OWN region's
+        // default corridor so a province is never scored against Metro Manila rent comps. Only an
+        // NCR/unknown site falls back to the NCR proxy corridor. A province with no comps loaded
+        // then returns insufficient_data honestly rather than borrowing NCR numbers.
+        let corridor = inferred;
+        if (!corridor) {
+          const region = regionForSite({ city: site.city, label: site.label, lat: site.lat, lon: site.lon });
+          corridor = (region && region !== 'ncr' ? corridorsForRegion(region)[0] : null) ?? DEFAULT_LEASE_CORRIDOR;
+        }
         const lease = await runLeaseBenchmark({ candidateSiteId: site.id, format: site.siteType ?? 'inline', corridor, siteTerms: {} });
         if (!inferred) {
-          // Never silent: the comps come from a DIFFERENT area than the site, so the read is a
-          // proxy (Projected) and the UI/AI say so.
+          // Never silent: the comps come from a DIFFERENT area than the site (or none exist), so the
+          // read is a proxy (Projected) and the UI/AI say so.
           lease.flags.push('corridor_default_fallback');
           lease.moduleTruthLayer = 'projected';
         }

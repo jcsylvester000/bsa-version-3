@@ -55,12 +55,19 @@ export interface RegionDef {
   /** philippines-json-maps province (adm2) codes to fetch for this region. Empty/undefined =
    *  the auto-downloader has no mapping yet (use the ogr2ogr file path). */
   psgcProvinces?: string[];
+  /** Rent-to-land calibration: monthly rent (₱/sqm) per ₱1,000 of commercial-zonal midpoint.
+   *  Derived per region from corridors that have BOTH lease comps and CR zonal. Undefined =
+   *  NOT yet calibrated for this region → the zonal cross-check / indicative rent is withheld
+   *  rather than borrowing another region's band (audit F-08). */
+  zonalRentBand?: { low: number; central: number; high: number };
 }
 
 const NCR: RegionDef = {
   key: 'ncr',
   name: 'Metro Manila (NCR)',
   psaRegion: 'NCR',
+  // Calibrated 2026-08 across the 13 NCR corridors with both comps and CR zonal (~₱10/₱1,000/mo).
+  zonalRentBand: { low: 6, central: 10, high: 14 },
   provinces: ['Metro Manila', 'National Capital Region'],
   bbox: [14.35, 120.9, 14.78, 121.15],
   overpassAreas: ['Metro Manila', 'National Capital Region'],

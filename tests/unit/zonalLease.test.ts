@@ -9,6 +9,29 @@ import {
   ZONAL_RENT_PER_1000_HIGH,
 } from '@/lib/modules/leaseMath';
 
+describe('region-aware rent-to-land calibration (audit F-08)', () => {
+  it('withholds the cross-check for an un-calibrated region (band = null)', () => {
+    const c = zonalRentCrossCheck(1500, 150000, null);
+    expect(c.position).toBe('unknown');
+    expect(c.rentPer1000).toBeNull();
+    expect(c.note).toMatch(/not available for this area/i);
+  });
+  it('withholds the indicative rent for an un-calibrated region (band = null)', () => {
+    expect(indicativeRentFromZonal(150000, null)).toEqual({ lowPhpSqm: null, highPhpSqm: null, midPhpSqm: null });
+  });
+  it('uses a supplied region band instead of the NCR default', () => {
+    // A wider band → a rent that is "rich" against NCR reads "inline" here.
+    const wide = { low: 2, central: 20, high: 40 };
+    const c = zonalRentCrossCheck(3000, 150000, wide); // 20 per ₱1,000 → within 2–40
+    expect(c.position).toBe('inline');
+    expect(c.note).not.toMatch(/NCR/);
+  });
+  it('still defaults to the NCR band when none is passed (unchanged behaviour)', () => {
+    const c = zonalRentCrossCheck(3000, 150000); // 20/₱1,000 → above the ₱14 NCR high
+    expect(c.position).toBe('rich');
+  });
+});
+
 describe('canonicalNcrCity', () => {
   it('maps common variants + landmarks to the canonical city', () => {
     expect(canonicalNcrCity('City of Pasig')).toBe('Pasig');

@@ -171,6 +171,31 @@ and clear any site stuck in `generating` by regenerating.
 
 ---
 
+## 2026-09-26 — Audit fixes batch 4 (F-08, F-09, F-10 — regional data honesty)
+
+Removed the last NCR assumptions from provincial scoring.
+
+- **F-08 — rent-to-land calibration is now per region.** Added `zonalRentBand` to the region registry
+  (NCR = ₱6–14/₱1,000; other regions undefined). `zonalRentCrossCheck` / `indicativeRentFromZonal` take
+  a `band` (defaults to NCR for existing callers); `leaseBenchmark` passes the site's region band, and
+  a region with no calibration WITHHOLDS the cross-check/indicative ('unknown' / null) instead of
+  judging provincial rent by the NCR band. Note text no longer hard-codes "NCR". New tests.
+- **F-09 — region-aware corridor fallback.** When no corridor matches, the orchestrator now falls back
+  to the site's OWN region's default corridor (province → its corridor, which returns insufficient_data
+  honestly if no comps are loaded) instead of always the NCR "Quezon City" proxy. NCR/unknown keeps the
+  QC proxy. Still flagged `corridor_default_fallback` + Projected.
+- **F-10 — no more confident scores from missing data.** Daypart's last-resort nearest demographic cell
+  is capped at 6 km (`ST_DWithin`) so it can't borrow a cell from another region/city. Informal now
+  distinguishes a genuinely open market from a coverage gap: a 0 competitor count with ZERO POIs of any
+  kind within 2 km is flagged `low_poi_coverage` and the row is downgraded Assumed → Projected (so
+  "no competition → high score" reads as low-confidence). Healthcare was already correct (its aggregate
+  drives no-data off `nearestFacilityM = null`).
+
+**426/426 + new tests (14 in zonalLease), typecheck clean, `next build` compiles.** Audit workbook: 16
+Done. No DB migration.
+
+---
+
 ## 2026-09-26 — Audit fixes batch 3 (F-34, F-42 partial) + design pass reconciliation
 
 Re-baselined against the completed DESIGN_V2 pass (theme tokens, redesigned nav/layout, native-dialog

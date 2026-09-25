@@ -61,12 +61,17 @@ export async function runDaypart(runId: string, siteId: string, vertical: string
     if (res + day > 0) break;
   }
   if (res + day === 0) {
-    // Last resort: the single nearest demographic cell (any distance), so the module
-    // still produces a read instead of a false 0%.
+    // Last resort: the single nearest demographic cell WITHIN A CAP, so the module still produces a
+    // coarse read for a genuinely sparse area — but never borrows a cell from another region/city
+    // (F-10). Beyond the cap we return no data honestly rather than a false read.
+    const NEAREST_CELL_CAP_M = 6000;
     const near = await prisma.$queryRaw<Array<{ res: number | null; day: number | null; d: number }>>`
       SELECT population::int AS res, daytime_pop::int AS day,
              ST_Distance(geom, ST_SetSRID(ST_MakePoint(${site.lon}, ${site.lat}),4326)::geography) AS d
-      FROM demographic_cell WHERE geom IS NOT NULL ORDER BY d ASC LIMIT 1`;
+      FROM demographic_cell
+      WHERE geom IS NOT NULL
+        AND ST_DWithin(geom, ST_SetSRID(ST_MakePoint(${site.lon}, ${site.lat}),4326)::geography, ${NEAREST_CELL_CAP_M})
+      ORDER BY d ASC LIMIT 1`;
     res = near[0]?.res ?? 0; day = near[0]?.day ?? 0; usedRadius = Math.round(near[0]?.d ?? 0);
   }
   const targetWindow = vertical === 'fnb_cafe' || vertical === 'education' ? 'day' : 'allday';
@@ -121,6 +126,18 @@ export async function runInformal(
   const r = scoreInformal({ digitalCount: digital, informalMultiplier: mult });
   if (r.onGroundCheckAdvised) flags.push('on_ground_check_advised');
 
+  // A zero count can mean a genuinely open market OR an area with no POI coverage (e.g. a province
+  // before its OSM sweep). Distinguish them (F-10): if there are no POIs of ANY kind within 2 km,
+  // it's a coverage gap, not a clean market — flag it and downgrade the row from Assumed to Projected
+  // so the "no competition → high score" read is honestly marked as low-confidence.
+  let lowCoverage = false;
+  if (digital === 0) {
+    const anyPoi = await prisma.$queryRaw<Array<{ c: number | null }>>`
+      SELECT COUNT(*)::int AS c FROM poi
+      WHERE ST_DWithin(geom, ST_SetSRID(ST_MakePoint(${site.lon}, ${site.lat}),4326)::geography, 2000)`;
+    if ((anyPoi[0]?.c ?? 0) === 0) { lowCoverage = true; flags.push('low_poi_coverage'); }
+  }
+
   // Per-unit capacity read (QA v6) for chair/machine/line formats: pull the tight
   // 800 m resident catchment and turn units → pop-per-unit + breakeven households.
   let capacity: CapacityResult | undefined;
@@ -140,8 +157,9 @@ export async function runInformal(
   // 5 so a saturated corridor still reads as "very competitive," not zero. The raw counts
   // remain in the payload for the detailed read.
   const competitionScore = Math.max(5, Math.round(100 / (1 + r.totalEstimated / 12)));
-  // Digital Verified, informal estimate Assumed → row Assumed.
-  await persist(runId, siteId, 'informal', competitionScore, { ...r, capacity, competitionScore }, 'assumed', flags);
+  // Digital Verified, informal estimate Assumed → row Assumed; but a coverage gap makes the
+  // "no competitors" read unreliable → Projected.
+  await persist(runId, siteId, 'informal', competitionScore, { ...r, capacity, competitionScore, lowCoverage }, lowCoverage ? 'projected' : 'assumed', flags);
 }
 
 export async function runHealthcare(runId: string, siteId: string): Promise<void> {
