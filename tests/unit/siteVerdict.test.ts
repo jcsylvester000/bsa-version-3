@@ -3,6 +3,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { summariseSite } from '@/lib/modules/siteVerdict';
+import { scorecardBand } from '@/lib/modules/scorecard';
 
 const allPrimary = () => true;
 
@@ -64,5 +65,32 @@ describe('summariseSite', () => {
     const withWs = summariseSite({ ...base, whitespace: { recommendations: [{ verdict: 'open' }, { verdict: 'contested' }] } }, allPrimary);
     expect(withWs.classification).toBe('proceed');
     expect(withWs.findings.find((f) => f.keyword === 'White-space')?.tone).toBe('muted');
+  });
+});
+
+describe('summariseSite — the scorecard band is the single source of truth (audit F-07)', () => {
+  // Modules all positive, but the composite band must still decide the call.
+  const strongModules = { territory: { verdict: 'adds' as const }, lease: { verdict: 'below_market' as const }, daypart: { windowMatchPct: 90 } };
+  it('band go → Proceed', () => {
+    expect(summariseSite(strongModules, allPrimary, 'go').classification).toBe('proceed');
+  });
+  it('band caution → Cautious even when every module is positive', () => {
+    const s = summariseSite(strongModules, allPrimary, 'caution');
+    expect(s.classification).toBe('cautious');
+    expect(s.label).toBe('Proceed with caution');
+  });
+  it('band nogo → No-Go even when modules look fine', () => {
+    expect(summariseSite(strongModules, allPrimary, 'nogo').classification).toBe('no_go');
+  });
+  it('band insufficient → Cautious', () => {
+    expect(summariseSite(strongModules, allPrimary, 'insufficient').classification).toBe('cautious');
+  });
+  it('the Final Report call always matches the dashboard band across the score range', () => {
+    const want = { go: 'proceed', caution: 'cautious', nogo: 'no_go', insufficient: 'cautious' } as const;
+    for (const composite of [null, 0, 30, 44.9, 45, 55, 64.9, 65, 80, 100]) {
+      const band = scorecardBand(composite);
+      const rec = summariseSite(strongModules, allPrimary, band).classification;
+      expect(rec).toBe(want[band]);
+    }
   });
 });

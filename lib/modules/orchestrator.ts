@@ -77,26 +77,37 @@ export async function runPipeline(runId: string, opts: { refresh?: boolean } = {
 }
 
 async function runPipelineSlice(runId: string, opts: { refresh?: boolean }): Promise<RunResult> {
-  const run = await prisma.pipelineRun.findUniqueOrThrow({
+  // Read the run and its relations as SEPARATE flat queries — never findUniqueOrThrow + include.
+  // Under the Neon HTTP adapter both open an implicit transaction, which HTTP mode rejects with
+  // "Transactions are not supported in HTTP mode" (audit F-01). Plain findUnique + null check +
+  // separate reads carry no transaction.
+  const run = await prisma.pipelineRun.findUnique({
     where: { id: runId },
-    include: {
-      sites: { select: { id: true, label: true, siteType: true, city: true, lat: true, lon: true, analyzedAt: true } },
-      franchisor: { select: { brandName: true, subCategory: true } },
-      intake: { select: { sectionA: true, sectionH: true, sectionI: true, sectionJ: true } },
-    },
+    select: { id: true, vertical: true, franchisorId: true, intakeSubmissionId: true, exclusivityRadiusM: true },
   });
+  if (!run) throw new Error(`Run ${runId} not found`);
+  const sites = await prisma.candidateSite.findMany({
+    where: { pipelineRunId: runId },
+    select: { id: true, label: true, siteType: true, city: true, lat: true, lon: true, analyzedAt: true },
+  });
+  const franchisor = run.franchisorId
+    ? await prisma.franchisor.findUnique({ where: { id: run.franchisorId }, select: { brandName: true, subCategory: true } })
+    : null;
+  const intake = run.intakeSubmissionId
+    ? await prisma.intakeSubmission.findUnique({ where: { id: run.intakeSubmissionId }, select: { sectionA: true, sectionH: true, sectionI: true, sectionJ: true } })
+    : null;
   // Category-conditional intake (QA v6): land parcel string → frontage/lot for the land screen.
-  const parcel = parseParcel((run.intake?.sectionH as { landParcel?: string } | null)?.landParcel ?? null);
+  const parcel = parseParcel((intake?.sectionH as { landParcel?: string } | null)?.landParcel ?? null);
   // Per-unit capacity string → a unit count for the pop-per-unit / breakeven read.
-  const units = parseUnits((run.intake?.sectionJ as { capacityUnits?: string } | null)?.capacityUnits ?? null);
+  const units = parseUnits((intake?.sectionJ as { capacityUnits?: string } | null)?.capacityUnits ?? null);
   // Operator's target mall tier → compared against the nearest mall's actual tier.
-  const targetMallTier = (run.intake?.sectionI as { mallTier?: string } | null)?.mallTier ?? null;
+  const targetMallTier = (intake?.sectionI as { mallTier?: string } | null)?.mallTier ?? null;
   // Concept text for the competitor discriminator: brand + sub-category + intake concept.
   const conceptText = [
-    run.franchisor?.brandName,
-    run.franchisor?.subCategory,
-    (run.intake?.sectionA as { brand?: string; concept?: string } | null)?.concept,
-    (run.intake?.sectionA as { brand?: string; concept?: string } | null)?.brand,
+    franchisor?.brandName,
+    franchisor?.subCategory,
+    (intake?.sectionA as { brand?: string; concept?: string } | null)?.concept,
+    (intake?.sectionA as { brand?: string; concept?: string } | null)?.brand,
   ].filter(Boolean).join(' ');
 
   const modules = modulesForVertical(run.vertical);
@@ -111,11 +122,11 @@ async function runPipelineSlice(runId: string, opts: { refresh?: boolean }): Pro
     });
     // Cached AI write-ups describe the OLD figures — drop them so they're regenerated.
     await prisma.moduleResult.deleteMany({ where: { pipelineRunId: runId, module: 'analysis' } });
-    for (const s of run.sites) s.analyzedAt = null;
+    for (const s of sites) s.analyzedAt = null;
   }
 
-  const pending = run.sites.filter((s) => s.analyzedAt == null);
-  const startedFresh = pending.length === run.sites.length;
+  const pending = sites.filter((s) => s.analyzedAt == null);
+  const startedFresh = pending.length === sites.length;
   await prisma.pipelineRun.update({
     where: { id: runId },
     data: { status: 'analyzing', ...(startedFresh ? { startedAt: new Date(), finishedAt: null } : {}) },
@@ -161,7 +172,7 @@ async function runPipelineSlice(runId: string, opts: { refresh?: boolean }): Pro
       await attempt('territory', async () => {
         const terr = await runTerritoryGuard(
           site.id, run.franchisorId, run.exclusivityRadiusM, run.vertical, conceptText,
-          run.franchisor?.brandName ?? undefined, run.intakeSubmissionId,
+          franchisor?.brandName ?? undefined, run.intakeSubmissionId,
         );
         await persistTerritoryResult(runId, terr);
       });
@@ -190,7 +201,7 @@ async function runPipelineSlice(runId: string, opts: { refresh?: boolean }): Pro
     if (modules.includes('mall')) await attempt('mall', () => runMall(runId, site.id, targetMallTier));
     if (modules.includes('whitespace')) {
       await attempt('whitespace', () =>
-        runWhiteSpace(runId, site.id, run.franchisorId, run.vertical, conceptText, run.franchisor?.brandName ?? undefined, run.intakeSubmissionId),
+        runWhiteSpace(runId, site.id, run.franchisorId, run.vertical, conceptText, franchisor?.brandName ?? undefined, run.intakeSubmissionId),
       );
     }
     if (modules.includes('land')) await attempt('land', () => runLand(runId, site.id, run.vertical, parcel));
@@ -215,7 +226,7 @@ async function runPipelineSlice(runId: string, opts: { refresh?: boolean }): Pro
   if (remaining > 0) {
     return {
       runId, status: 'analyzing', confidence: null, complete: false, remaining,
-      modulesRun: expectedModules, siteCount: run.sites.length, perSite,
+      modulesRun: expectedModules, siteCount: sites.length, perSite,
     };
   }
 
@@ -257,7 +268,7 @@ async function runPipelineSlice(runId: string, opts: { refresh?: boolean }): Pro
     complete: true,
     remaining: 0,
     modulesRun: expectedModules,
-    siteCount: run.sites.length,
+    siteCount: sites.length,
     perSite: siteRows.map((s) => ({
       siteId: s.id,
       label: s.label,

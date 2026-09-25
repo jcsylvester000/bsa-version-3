@@ -110,13 +110,27 @@ const KEYWORD: Record<string, string> = {
   at_market: 'at-market',
 };
 
+/** The scorecard composite band — the SAME value the dashboard shows on candidate_site.verdict. */
+export type CompositeBand = 'go' | 'caution' | 'nogo' | 'insufficient';
+const BAND_TO_CLASS: Record<CompositeBand, SiteClass> = {
+  go: 'proceed', caution: 'cautious', nogo: 'no_go', insufficient: 'cautious',
+};
+
 /**
  * Roll the modules into a single call.
  * @param input   the four module payloads (loose shapes)
  * @param isPrimary optional — marks which modules are decision-critical for this vertical; a primary
- *                  module reading No-Go blocks the site. When omitted, any module can block.
+ *                  module reading No-Go blocks the site (module-derived fallback only).
+ * @param compositeBand the site's weighted-composite band (candidate_site.verdict). When given, THIS
+ *                  decides the Proceed / Cautious / No-Go call, so the Final Report can never disagree
+ *                  with the dashboard/scorecard (audit F-07). The module findings still explain WHY.
+ *                  When omitted, the call falls back to the module-derived heuristic.
  */
-export function summariseSite(input: SummaryInput, isPrimary?: (m: DriverKey) => boolean): SiteSummary {
+export function summariseSite(
+  input: SummaryInput,
+  isPrimary?: (m: DriverKey) => boolean,
+  compositeBand?: CompositeBand | null,
+): SiteSummary {
   const drivers: Array<{ key: DriverKey; finding: SiteFinding }> = [];
   const tf = territoryFinding(input.territory); if (tf) drivers.push({ key: 'territory', finding: tf });
   const lf = leaseFinding(input.lease); if (lf) drivers.push({ key: 'lease', finding: lf });
@@ -133,7 +147,10 @@ export function summariseSite(input: SummaryInput, isPrimary?: (m: DriverKey) =>
   const primaryNoGo = nogos.some((d) => prim(d.key));
 
   let classification: SiteClass;
-  if (coverage === 0) {
+  if (compositeBand != null) {
+    // Single source of truth: the scorecard band drives the call (agrees with the dashboard).
+    classification = BAND_TO_CLASS[compositeBand];
+  } else if (coverage === 0) {
     classification = 'cautious';
   } else if (primaryNoGo || nogos.length >= 2) {
     classification = 'no_go';
@@ -145,18 +162,20 @@ export function summariseSite(input: SummaryInput, isPrimary?: (m: DriverKey) =>
 
   const meta = CLASS_LABEL[classification];
 
-  // Headline: name the drivers that justify the call.
+  // Headline: name the drivers that justify the call (robust when the band, not the modules, decided).
   const positives = gos.map((d) => d.finding.detail.replace(/ ·.*$/, '').toLowerCase());
   const negatives = [...nogos, ...cautions].map((d) => d.finding.detail.replace(/ ·.*$/, '').toLowerCase());
   let headline: string;
-  if (coverage === 0) {
+  if (coverage === 0 && compositeBand == null) {
     headline = 'Not enough module data yet to make a call — run the site’s modules first.';
   } else if (classification === 'proceed') {
-    headline = `Proceed — ${positives.join('; ')}${cautions.length ? `; watch: ${negatives.join('; ')}` : ''}.`;
+    const base = positives.length ? positives.join('; ') : 'the modules support this site';
+    headline = `Proceed — ${base}${cautions.length ? `; watch: ${negatives.join('; ')}` : ''}.`;
   } else if (classification === 'no_go') {
-    headline = `No-Go — ${(nogos.length ? nogos : cautions).map((d) => d.finding.detail.replace(/ ·.*$/, '').toLowerCase()).join('; ')}.`;
+    const drv = (nogos.length ? nogos : cautions).map((d) => d.finding.detail.replace(/ ·.*$/, '').toLowerCase());
+    headline = `No-Go — ${drv.length ? drv.join('; ') : 'the combined score falls below the go/caution threshold'}.`;
   } else {
-    headline = `Proceed with caution — ${negatives.join('; ') || 'signals are mixed or evidence is thin'}.`;
+    headline = `Proceed with caution — ${negatives.length ? negatives.join('; ') : 'the combined score sits in the caution band; review the findings below'}.`;
   }
 
   const findings = [...drivers.map((d) => d.finding), whitespaceFinding(input.whitespace)].filter(Boolean) as SiteFinding[];

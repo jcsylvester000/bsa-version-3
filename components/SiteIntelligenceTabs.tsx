@@ -181,12 +181,15 @@ export function SiteIntelligenceTabs({
   outlets,
   payloads,
   vertical,
+  verdict,
   runId,
 }: {
   site: { id: string; label: string; lat: number; lon: number; siteType: string | null };
   outlets: Array<{ id: string; name: string; lat: number; lon: number; format: string | null }>;
   payloads: SiteModulePayloads;
   vertical?: Vertical | null;
+  /** The site's weighted-composite band (candidate_site.verdict) — drives the Final Report call. */
+  verdict?: string | null;
   runId?: string;
 }) {
   const [tab, setTab] = useState<TabKey>('territory');
@@ -221,7 +224,7 @@ export function SiteIntelligenceTabs({
       {tab === 'lease' && <LeaseTab p={payloads.lease} primary={primary('lease')} siteId={site.id} />}
       {tab === 'daypart' && <DaypartTab p={payloads.daypart} primary={primary('daypart')} />}
       {tab === 'whitespace' && <WhiteSpaceTab p={payloads.whitespace} primary={primary('whitespace')} />}
-      {tab === 'analysis' && <AnalysisTab payloads={payloads} primary={primary} siteLabel={site.label} runId={runId} siteId={site.id} />}
+      {tab === 'analysis' && <AnalysisTab payloads={payloads} primary={primary} siteLabel={site.label} runId={runId} siteId={site.id} verdict={verdict} />}
     </div>
   );
 }
@@ -833,13 +836,14 @@ type LeaseZonal = {
 } | null;
 
 function AnalysisTab({
-  payloads, primary, siteLabel, runId, siteId,
+  payloads, primary, siteLabel, runId, siteId, verdict,
 }: {
   payloads: SiteModulePayloads;
   primary: (m: ModuleKind) => boolean;
   siteLabel: string;
   runId?: string;
   siteId: string;
+  verdict?: string | null;
 }) {
   function exportPdf() {
     if (!runId) return;
@@ -876,8 +880,9 @@ function AnalysisTab({
   const wTop = wRecs ? wRecs.slice(0, 3) : [];
   const wProposed = (w as (SiteModulePayloads['whitespace'] & { proposed?: { cannibalizationPct?: number } }) | null)?.proposed;
 
-  // Deterministic PROCEED / CAUTIOUS / NO-GO recommendation, rolled up from the module figures
-  // above (no AI, no external call). Primary modules for this vertical block the site on a No-Go.
+  // Deterministic PROCEED / CAUTIOUS / NO-GO recommendation. The scorecard band (candidate_site.verdict,
+  // the same value the dashboard shows) DECIDES the call so the two can never disagree (audit F-07);
+  // the module figures below explain why.
   const summary = summariseSite(
     {
       territory: t ? { verdict: t.verdict ?? null, totalCannibalizedPhp: t.totalCannibalizedPhp ?? null, competitiveSaturationPct: t.competitiveSaturationPct ?? null } : null,
@@ -886,6 +891,7 @@ function AnalysisTab({
       whitespace: wRecs ? { recommendations: wRecs.map((r) => ({ verdict: r.verdict ?? null })) } : null,
     },
     (k) => primary(k as ModuleKind),
+    (verdict as 'go' | 'caution' | 'nogo' | null) ?? 'insufficient',
   );
   const verdictPill =
     summary.tone === 'go' ? 'bg-go/10 text-go border-go/40'

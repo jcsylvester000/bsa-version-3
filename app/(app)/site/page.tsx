@@ -38,7 +38,7 @@ export default async function SiteReportPage({ searchParams }: { searchParams: {
 
   const site = await prisma.candidateSite.findUnique({
     where: { id: siteId },
-    select: { id: true, label: true, city: true, siteType: true, lat: true, lon: true, pipelineRunId: true },
+    select: { id: true, label: true, city: true, siteType: true, lat: true, lon: true, pipelineRunId: true, verdict: true, compositeScore: true },
   });
   if (!site || site.pipelineRunId !== runId) return <Empty msg="Site not found in this run." />;
 
@@ -80,6 +80,7 @@ export default async function SiteReportPage({ searchParams }: { searchParams: {
         outlets={outlets.map((o) => ({ id: o.id, name: o.outletName, lat: o.lat, lon: o.lon, format: o.format }))}
         payloads={payloads}
         vertical={run.vertical}
+        verdict={site.verdict ?? null}
         runId={runId}
       />
     </div>

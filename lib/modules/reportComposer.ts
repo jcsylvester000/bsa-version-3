@@ -203,10 +203,16 @@ function metricsForModule(row: ModuleRow): ReportMetric[] {
 
 /** Compose the full report for a run. Does NOT persist — the API/route does that. */
 export async function composeReport(runId: string): Promise<ComposedReport> {
-  const run = await prisma.pipelineRun.findUniqueOrThrow({
+  // Flat reads — never findUniqueOrThrow + include (the Neon HTTP adapter rejects the implicit
+  // transaction it opens; audit F-02). findMany + include below is fine (batched read, no tx).
+  const run = await prisma.pipelineRun.findUnique({
     where: { id: runId },
-    include: { franchisor: { select: { brandName: true } } },
+    select: { franchisorId: true },
   });
+  if (!run) throw new Error(`Run ${runId} not found`);
+  const franchisor = run.franchisorId
+    ? await prisma.franchisor.findUnique({ where: { id: run.franchisorId }, select: { brandName: true } })
+    : null;
 
   const rows = await prisma.moduleResult.findMany({
     where: { pipelineRunId: runId },
@@ -240,7 +246,7 @@ export async function composeReport(runId: string): Promise<ComposedReport> {
 
   const sections: ComposedSection[] = [];
   for (const def of REPORT_SECTIONS) {
-    sections.push(await composeSection(def, byModule, runId, run.franchisor.brandName, { confidence, allLayers }));
+    sections.push(await composeSection(def, byModule, runId, franchisor?.brandName ?? 'Unknown brand', { confidence, allLayers }));
   }
 
   const truthLayerMix: Record<TruthLayer, number> = { verified: 0, assumed: 0, projected: 0 };
@@ -248,7 +254,7 @@ export async function composeReport(runId: string): Promise<ComposedReport> {
 
   return {
     runId,
-    brandName: run.franchisor.brandName,
+    brandName: franchisor?.brandName ?? 'Unknown brand',
     confidence,
     onGroundCheckFlagged,
     sections,

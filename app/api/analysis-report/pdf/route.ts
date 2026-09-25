@@ -33,7 +33,7 @@ export async function GET(req: NextRequest) {
   if (!run) return errors.notFound('Run');
   if (!canAccessRun(session, run)) return errors.forbidden();
 
-  const site = await prisma.candidateSite.findUnique({ where: { id: siteId }, select: { pipelineRunId: true, label: true, city: true } });
+  const site = await prisma.candidateSite.findUnique({ where: { id: siteId }, select: { pipelineRunId: true, label: true, city: true, verdict: true } });
   if (!site || site.pipelineRunId !== runId) return errors.notFound('Site');
 
   try {
@@ -53,6 +53,8 @@ export async function GET(req: NextRequest) {
         whitespace: wRecs ? { recommendations: wRecs.map((r) => ({ verdict: r.verdict ?? null })) } : null,
       },
       (k) => isPrimaryModule(run.vertical, k as ModuleKind),
+      // Same band as the dashboard drives the call (audit F-07) — the PDF can't disagree with the app.
+      (site.verdict as 'go' | 'caution' | 'nogo' | null) ?? 'insufficient',
     );
 
     const franchisor = run.franchisorId

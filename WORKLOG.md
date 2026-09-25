@@ -92,6 +92,34 @@ and clear any site stuck in `generating` by regenerating.
 
 ---
 
+## 2026-09-25 — Audit fixes batch 1 (F-01, F-02, F-03, F-07)
+
+Started on the audit's "do first" list (docs/BSA_Application_Audit.xlsx).
+
+- **F-01 — orchestrator transaction crash.** `lib/modules/orchestrator.ts` loaded the run with
+  `findUniqueOrThrow` + `include` (sites/franchisor/intake) → implicit transaction rejected by the
+  Neon HTTP adapter. Replaced with `findUnique` (flat select) + null check + separate flat reads for
+  sites / franchisor / intake. Same class of bug that broke the old AI report; the pipeline no longer
+  risks it.
+- **F-02 — report/scorecard transaction crash.** `lib/modules/reportComposer.ts` used
+  `findUniqueOrThrow({ include: franchisor })`. Same fix (flat findUnique + separate franchisor read).
+  The `moduleResult.findMany({ include: site })` below is left as-is — non-OrThrow findMany+include is
+  fine under the HTTP adapter.
+- **F-03 — leftover AI endpoint calls.** `RunPipelineButton` and `SteppedIntakeWizard` still POSTed to
+  the deleted `/api/analysis-report` after every run (a 404 per site + a fake "Writing analyses…"
+  step). Removed both loops and the "writing" state; the Final Report is computed live from module
+  results.
+- **F-07 — dashboard vs Final Report agreement.** `summariseSite` now takes the site's composite band
+  (`candidate_site.verdict`, the same value the dashboard shows) and that DECIDES the Proceed /
+  Cautious / No-Go call; the module findings only explain why. Threaded the band through the site page
+  → `SiteIntelligenceTabs` → the summary, and through the PDF route. Added an agreement test that the
+  Final Report call always matches the scorecard band across the score range.
+
+**426/426 tests (5 new), typecheck clean, `next build` compiles.** Audit workbook updated (these four
+marked Done). No DB migration.
+
+---
+
 ## 2026-09-25 — GRID brand applied across the app (palette · type · logo)
 
 Applied the official GRID Property Ventures brand guidelines app-wide.
