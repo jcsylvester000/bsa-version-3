@@ -242,7 +242,8 @@ export async function POST(req: NextRequest) {
     try {
       if (cleanup.runId) await prisma.pipelineRun.delete({ where: { id: cleanup.runId } }).catch(() => undefined);
       if (cleanup.intakeId) {
-        await prisma.outlet.deleteMany({ where: { intakeSubmissionId: cleanup.intakeId } }).catch(() => undefined);
+        // Raw single DELETE (deleteMany may open an implicit transaction on the Neon HTTP adapter).
+        await prisma.$executeRaw`DELETE FROM outlet WHERE intake_submission_id = ${cleanup.intakeId}::uuid`.catch(() => undefined);
         await prisma.intakeSubmission.delete({ where: { id: cleanup.intakeId } }).catch(() => undefined);
       }
       if (cleanup.createdFranchisorId) {

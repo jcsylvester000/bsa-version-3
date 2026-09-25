@@ -5,6 +5,26 @@ The cross-thread state record. Read this (with the Master Instruction and the cu
 
 ---
 
+## 2026-09-25 — HOTFIX: every analysis run returned 500 ("The last analysis did not finish") (⏳ awaiting push)
+
+- **Cause:** the F-05 per-site claim (`c64bee2`) used `prisma.candidateSite.updateMany(...)` on the request
+  path, outside the per-module error isolation. Under the Neon HTTP adapter Prisma can wrap `updateMany`
+  in an implicit transaction, which HTTP mode rejects ("Transactions are not supported in HTTP mode") —
+  the same class of bug as F-01. It ran for every site in every slice, so every run failed from that deploy
+  on (the last good run, 5:32 PM, predates it). Local mock-mode checks confirmed the new CSP nonce is
+  applied to every script, so the console #418/#423/#329 errors are fallout, not a separate cause.
+- **Fix:** `lib/modules/orchestrator.ts` — the claim and the refresh reset are now single raw
+  `UPDATE` statements (`$executeRaw`, no transaction), and a claim error can never fail a run (logged,
+  site processed anyway). Intake rollback's `deleteMany` → raw `DELETE` too.
+- **Diagnosability:** `/api/runs/[id]/run` 500s now carry `error.details[{path:'reason'}]`
+  (`db_transaction_http`, `db_migration_pending:<col>`, `db_unreachable`, `prisma_Pxxxx`, `internal`) + a ref,
+  never raw DB text.
+- **Guard:** `pipelineIntegrity.test.ts` now fails if the orchestrator/intake route reintroduce
+  `updateMany`/`deleteMany`/`createMany`. 479 tests pass, typecheck clean, build compiles.
+- After deploy: open a failed run → **Re-run analysis** (refresh) to recompute it.
+
+---
+
 ## 2026-09-25 — Layout & login polish (⏳ awaiting push)
 
 User report (screenshots): main content hugged the left, words scrunched, want full-width with edge padding; login left panel empty → blend an Unsplash photo.

@@ -15,18 +15,31 @@ const orch = read('lib', 'modules', 'orchestrator.ts');
 const intake = read('app', 'api', 'intake', 'route.ts');
 
 describe('F-05 per-site claim', () => {
-  it('claims a site with a conditional updateMany on claimedAt', () => {
-    expect(orch).toMatch(/updateMany\(\{[\s\S]*?analyzedAt:\s*null[\s\S]*?claimedAt:\s*null[\s\S]*?data:\s*\{\s*claimedAt:/);
+  it('claims a site with ONE raw conditional UPDATE on claimed_at', () => {
+    expect(orch).toMatch(/UPDATE candidate_site SET claimed_at = now\(\)[\s\S]*?analyzed_at IS NULL[\s\S]*?claimed_at IS NULL OR claimed_at </);
   });
-  it('skips a site when the claim is lost (count === 0)', () => {
-    expect(orch).toMatch(/claim\.count === 0\)\s*continue/);
+  it('skips a site when the claim is lost (0 rows)', () => {
+    expect(orch).toMatch(/claimed === 0\)\s*continue/);
   });
   it('lets a stale claim be retaken', () => {
     expect(orch).toContain('CLAIM_STALE_MS');
-    expect(orch).toMatch(/claimedAt:\s*\{\s*lt:/);
   });
   it('clears the claim on refresh', () => {
-    expect(orch).toMatch(/refresh[\s\S]*?claimedAt:\s*null/);
+    expect(orch).toMatch(/refresh[\s\S]*?claimed_at = NULL/);
+  });
+  it('a claim error never fails the run (falls back to processing the site)', () => {
+    expect(orch).toMatch(/claim skipped for site/);
+  });
+});
+
+describe('Neon HTTP safety (Sep 25 hotfix)', () => {
+  // prisma.updateMany / deleteMany / createMany can open an implicit transaction, which the Neon
+  // HTTP adapter rejects. Request-path code must use single statements instead.
+  it('the orchestrator and intake route use no updateMany/deleteMany/createMany calls', () => {
+    const strip = (s: string) => s.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+    for (const src of [orch, intake]) {
+      expect(strip(src)).not.toMatch(/\.(updateMany|deleteMany|createMany)\(/);
+    }
   });
 });
 
@@ -43,7 +56,7 @@ describe('F-06 intake writes are gated and rolled back', () => {
     expect(intake).toContain('cleanup.runId');
     // Rollback deletes run (cascades sites), outlets, intake, and the brand only if we created it.
     expect(intake).toMatch(/pipelineRun\.delete\(\{ where: \{ id: cleanup\.runId/);
-    expect(intake).toMatch(/outlet\.deleteMany\(\{ where: \{ intakeSubmissionId: cleanup\.intakeId/);
+    expect(intake).toMatch(/DELETE FROM outlet WHERE intake_submission_id = \$\{cleanup\.intakeId\}/);
     expect(intake).toMatch(/franchisor\.delete\(\{ where: \{ id: cleanup\.createdFranchisorId/);
   });
 });

@@ -124,10 +124,12 @@ async function runPipelineSlice(runId: string, opts: { refresh?: boolean }): Pro
 
   // Refresh = recompute a finished run from scratch (keeps old rows until overwritten).
   if (opts.refresh) {
-    await prisma.candidateSite.updateMany({
-      where: { pipelineRunId: runId },
-      data: { analyzedAt: null, pipelineError: null, claimedAt: null },
-    });
+    // Single raw UPDATE — NOT prisma.updateMany. Under the Neon HTTP adapter Prisma can wrap
+    // updateMany in an implicit transaction, which HTTP mode rejects ("Transactions are not supported
+    // in HTTP mode") and which failed every run (Sep 25 hotfix). One statement never opens one.
+    await prisma.$executeRaw`
+      UPDATE candidate_site SET analyzed_at = NULL, pipeline_error = NULL, claimed_at = NULL
+      WHERE pipeline_run_id = ${runId}::uuid`;
     for (const s of sites) s.analyzedAt = null;
   }
 
@@ -147,20 +149,23 @@ async function runPipelineSlice(runId: string, opts: { refresh?: boolean }): Pro
     // budget, stop and hand back to the client to re-invoke for the rest.
     if (processedThisCall > 0 && Date.now() - pipelineStart > PIPELINE_BUDGET_MS) break;
 
-    // F-05: atomically CLAIM this site before doing any work. updateMany is a single
-    // conditional UPDATE (no transaction — safe on the Neon HTTP adapter). We win the claim
-    // only if the site is still unanalysed AND either unclaimed or its claim has gone stale
-    // (a crashed invocation). If count === 0 another invocation owns it right now — skip it.
+    // F-05: atomically CLAIM this site before doing any work, with ONE raw conditional UPDATE
+    // (prisma.updateMany may open an implicit transaction, which the Neon HTTP adapter rejects —
+    // that broke every run). We win the claim only if the site is still unanalysed AND either
+    // unclaimed or its claim has gone stale (a crashed invocation). 0 rows = another invocation owns
+    // it right now → skip. The claim is a safety net, never a blocker: if it errors for any reason
+    // we log and process the site anyway (the pre-F-05 behaviour) rather than fail the whole run.
     const staleBefore = new Date(Date.now() - CLAIM_STALE_MS);
-    const claim = await prisma.candidateSite.updateMany({
-      where: {
-        id: site.id,
-        analyzedAt: null,
-        OR: [{ claimedAt: null }, { claimedAt: { lt: staleBefore } }],
-      },
-      data: { claimedAt: new Date() },
-    });
-    if (claim.count === 0) continue; // claimed by a concurrent invocation — leave it to them
+    let claimed = 1;
+    try {
+      claimed = await prisma.$executeRaw`
+        UPDATE candidate_site SET claimed_at = now()
+        WHERE id = ${site.id}::uuid AND analyzed_at IS NULL
+          AND (claimed_at IS NULL OR claimed_at < ${staleBefore})`;
+    } catch (err) {
+      console.warn(`[pipeline] claim skipped for site=${site.id}:`, String((err as { message?: string })?.message ?? err).slice(0, 200));
+    }
+    if (claimed === 0) continue; // claimed by a concurrent invocation — leave it to them
     processedThisCall++;
 
     const errors: string[] = [];

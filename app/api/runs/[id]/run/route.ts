@@ -6,7 +6,20 @@ import { isUuid } from '@/lib/util/uuid';
 import { ok, errors } from '@/lib/api/respond';
 import { runPipeline } from '@/lib/modules/orchestrator';
 import { audit } from '@/lib/audit/audit';
-import { captureException } from '@/lib/monitoring/report';
+import { captureException, errorRef } from '@/lib/monitoring/report';
+import { fail } from '@/lib/api/respond';
+
+/** Classify a pipeline failure into a short, non-sensitive reason code (no SQL, no values). */
+function pipelineReason(err: unknown): string {
+  const e = err as { code?: string; message?: string; meta?: { column?: string; target?: unknown } };
+  const msg = String(e?.message ?? '');
+  if (/Transactions are not supported in HTTP mode/i.test(msg)) return 'db_transaction_http';
+  if (/column .* does not exist/i.test(msg) || e?.code === 'P2022') return `db_migration_pending${e?.meta?.column ? `:${e.meta.column}` : ''}`;
+  if (/relation .* does not exist/i.test(msg) || e?.code === 'P2021') return 'db_migration_pending:table';
+  if (/timed? ?out|ETIMEDOUT|fetch failed/i.test(msg)) return 'db_unreachable';
+  if (typeof e?.code === 'string' && /^P\d{4}$/.test(e.code)) return `prisma_${e.code}`;
+  return 'internal';
+}
 
 /**
  * POST /api/runs/[id]/run — execute one time-boxed slice of the deterministic pipeline.
@@ -40,9 +53,15 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   try {
     result = await runPipeline(run.id, { refresh });
   } catch (err) {
-    // Run already marked `failed` inside runPipeline. Report to the monitor; generic message out.
-    await captureException(err, { code: 'pipeline_failed', route: `POST /api/runs/${run.id}/run` });
-    return errors.server('The analysis could not be completed. Please try again.');
+    // Run already marked `failed` inside runPipeline. Report to the monitor, and return a short
+    // machine REASON (never the raw DB text) so a failure is diagnosable from the browser's Network tab.
+    const ref = errorRef();
+    const reason = pipelineReason(err);
+    await captureException(err, { ref, code: `pipeline_failed:${reason}`, route: `POST /api/runs/${run.id}/run` });
+    return fail(
+      { code: 'server_error', message: `The analysis could not be completed. Please try again (ref ${ref}).`, details: [{ path: 'reason', message: reason }] },
+      500,
+    );
   }
 
   await audit({
