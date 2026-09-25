@@ -212,12 +212,11 @@ export async function POST(req: NextRequest) {
 
     return ok({ intakeId: intake.id, runId: run.id, completenessPct: completeness.pct }, { status: 201 });
   } catch (err) {
-    // Surface the real failure. Empty-body 500s (unhandled throws) are impossible
-    // to debug from the client. The Neon HTTP adapter, in particular, throws on any
-    // operation Prisma runs in a transaction — return that message, don't swallow it.
-    console.error('[POST /api/intake] write failed', err);
-    const message = err instanceof Error ? err.message : 'Failed to save intake.';
-    return errors.server(message);
+    // F-24: never echo raw DB/driver messages to the browser (they leak table/column names and
+    // internals). Log the full error server-side with a short reference the user can quote.
+    const ref = Math.random().toString(36).slice(2, 10);
+    console.error(`[POST /api/intake] write failed ref=${ref}`, err);
+    return errors.server(`Failed to save intake. Please try again; if it keeps failing, quote reference ${ref}.`);
   }
 }
 

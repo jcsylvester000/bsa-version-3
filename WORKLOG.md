@@ -5,6 +5,29 @@ The cross-thread state record. Read this (with the Master Instruction and the cu
 
 ---
 
+## 2026-09-25 — Audit security batch: F-24, F-27, F-28, F-29 (⏳ awaiting push)
+
+**Skills:** 04 Security (owner), 03 API, 11 Code QA.
+
+- **F-24** `app/api/intake/route.ts`: the 500 no longer echoes `err.message` (Prisma/Neon text leaked
+  table/column details). It logs the full error server-side with a short `ref=` and returns a generic message quoting that ref.
+- **F-27** Login split: `app/(auth)/login/page.tsx` is now a Server Component that passes `demo={isMockAuth()}`
+  to the new client `components/LoginForm.tsx`. Demo credentials are prefilled and hinted **only** when demo logins
+  actually work. On Netlify the form starts empty.
+- **F-28** `app/api/auth/password/route.ts`: `checkLimit('password_change_failed', auth_account, userId)`
+  (5 per 15 min, `LIMITS.passwordChangePerAccount`). Each wrong current password is recorded, and the limit is checked before any bcrypt work.
+- **F-29** Hardening:
+  - territory-guard returns 404 on a non-UUID runId (was a DB 500).
+  - maptiles now send `Cache-Control: private` (was public).
+  - `clientIp` trusts only `x-nf-client-connection-ip` on a hosted deployment (XFF is used only locally).
+  - `checkLimit` **fails closed** when the count can't be read.
+  - Franchisor create no longer writes the user's email into `positioning`.
+- Tests: `tests/unit/securityHardening.test.ts` (+6). **442 tests pass**, typecheck is clean, and the build compiles.
+- Workbook: F-24/27/28/29 → Done (23 Done total).
+- Note: fail-closed means that if Neon is down, login returns "too many attempts" (429) instead of 401. Login can't succeed without the DB anyway.
+
+---
+
 ## 2026-09-25 — DESIGN v2 (cont.): remaining mockup screens, batches 5–8 (✅ PUSHED — 1fc780c, 89deb3c, 12ab500, df39955)
 
 Batches 1–4 confirmed pushed (`75fcd15`, `60404b1`, `da9afc5`, `f82716d`; batch 0 = `0ecddcd`).

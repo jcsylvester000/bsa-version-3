@@ -100,7 +100,7 @@ export async function POST(req: NextRequest) {
       brandName,
       sector,
       subCategory: subCategory || null,
-      positioning: `Added via intake by ${session.email}`,
+      positioning: null, // F-29: never write the user's email into brand text (who created it is createdByUserId).
       createdByUserId: session.id,
     },
   });

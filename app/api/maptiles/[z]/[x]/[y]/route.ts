@@ -34,7 +34,8 @@ export async function GET(
     status: 200,
     headers: {
       'Content-Type': res.headers.get('content-type') ?? 'image/png',
-      'Cache-Control': 'public, max-age=86400, immutable',
+      // F-29: authenticated response — browser cache only, never a shared/CDN cache.
+      'Cache-Control': 'private, max-age=86400',
     },
   });
 }

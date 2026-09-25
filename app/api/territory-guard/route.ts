@@ -30,6 +30,9 @@ export async function POST(req: NextRequest) {
     return ok(await mockTerritoryGuard(radius));
   }
 
+  // F-29: a malformed (non-UUID) id must be a clean 404, never a Postgres UUID-cast 500.
+  if (!isUuid(parsed.data.runId)) return errors.notFound('Run');
+
   const run = await prisma.pipelineRun.findUnique({
     where: { id: parsed.data.runId },
     include: {

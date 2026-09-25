@@ -55,6 +55,8 @@ Tracker: **`docs/DESIGN_V2_CHECKLIST.md`** (item checklist + push log — update
 | 4 | Truth Layer + guardrails: honest demographic/lease/territory labels, no fake zeros, proxy-corridor flag, positional lease labels (no price verdicts), RA 9646 disclaimers, zonal-floor wording, AI output check, reference sent to VectorShift; mall ≤3 km, daypart all-day range, canonical zoning city, concept-aware informal | ✅ pushed (`fb4e312`) |
 | 5 | Hygiene + hotfix: hydration #418 (Manila-time formatter), non-fatal usage log + reason codes for AI 502s, maptiles 200-when-off; reports on demand (no storage) + both kept & relabelled; report PII via POST; retired 4 pages + 5 components + root scripts; Lease tab saves asking rent; rankWhiteSpace v1 removed; README + HANDOFF + security/API docs | ✅ pushed (`321b49f`) |
 
+**Audit workbook progress (docs/BSA_Application_Audit.xlsx):** 23 Done as of 2026-09-25. The security batch F-24/F-27/F-28/F-29 is done. Rate limiting fails closed, and on a hosted deployment only the platform's client-IP header is trusted. Login demo hints are gated by `isMockAuth()` via the server wrapper.
+
 ## Pending owner actions (carry forward until confirmed)
 
 1. `npx prisma generate` then `npx prisma migrate deploy` — applies 4 new migrations:

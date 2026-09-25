@@ -7,6 +7,7 @@ import { isUuid } from '@/lib/util/uuid';
 import { changePasswordSchema } from '@/lib/validation/schemas';
 import { ok, fail, failValidation, errors } from '@/lib/api/respond';
 import { audit } from '@/lib/audit/audit';
+import { checkLimit, recordAttempt, LIMITS } from '@/lib/auth/rateLimit';
 
 /**
  * POST /api/auth/password — change the signed-in user's password. Verifies the current
@@ -25,6 +26,12 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // F-28: a stolen session must not be able to brute-force the current password here.
+  const lim = await checkLimit('password_change_failed', 'auth_account', session.id, LIMITS.passwordChangePerAccount);
+  if (lim.limited) {
+    return errors.tooMany(lim.retryAfterSeconds, 'Too many incorrect attempts. Please wait 15 minutes and try again.');
+  }
+
   const body = await req.json().catch(() => null);
   const parsed = changePasswordSchema.safeParse(body);
   if (!parsed.success) return failValidation(parsed.error);
@@ -34,7 +41,10 @@ export async function POST(req: NextRequest) {
   if (!user) return errors.notFound('Account');
 
   const okCurrent = await verifyPassword(currentPassword, user.passwordHash);
-  if (!okCurrent) return fail({ code: 'wrong_password', message: 'Your current password is incorrect.' }, 403);
+  if (!okCurrent) {
+    await recordAttempt('password_change_failed', 'auth_account', user.id);
+    return fail({ code: 'wrong_password', message: 'Your current password is incorrect.' }, 403);
+  }
 
   // Reject a no-op change so the user gets clear feedback instead of a silent success.
   const sameAsOld = await verifyPassword(newPassword, user.passwordHash);
