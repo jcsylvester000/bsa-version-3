@@ -2,7 +2,10 @@ import Link from 'next/link';
 import { prisma } from '@/lib/db/prisma';
 import { getSession } from '@/lib/auth/session';
 import { canAccessRun } from '@/lib/auth/auth';
-import { SiteIntelligenceTabs, TAB_KEYS, type SiteModulePayloads, type TabKey } from '@/components/SiteIntelligenceTabs';
+import { SiteIntelligenceTabs, type SiteModulePayloads } from '@/components/SiteIntelligenceTabs';
+// Server-safe tab keys. NEVER import runtime values (like TAB_KEYS) from a 'use client' module into
+// this Server Component — they arrive as client-reference proxies and throw on use (the #329 crash).
+import { isSiteTabKey, type SiteTabKey } from '@/lib/ui/siteTabs';
 import { RunPipelineButton } from '@/components/RunPipelineButton';
 import { manilaShortStampYear } from '@/lib/util/manilaTime';
 import type { TruthLayer } from '@/lib/truth/truthLayer';
@@ -20,7 +23,7 @@ export default async function SiteReportPage({ searchParams }: { searchParams: {
   const { runId, siteId } = searchParams;
   // `?tab=` opens a specific tab (dashboard links use tab=analysis → Final Report). Validated against
   // the known keys so an arbitrary value can never reach the client component.
-  const initialTab: TabKey = (TAB_KEYS as readonly string[]).includes(searchParams.tab ?? '') ? (searchParams.tab as TabKey) : 'analysis';
+  const initialTab: SiteTabKey = isSiteTabKey(searchParams.tab) ? searchParams.tab : 'analysis';
 
   if (!runId || !siteId) {
     return <Empty msg="Pick a site from the Ranked Site Shortlist on the dashboard." />;

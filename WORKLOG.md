@@ -171,6 +171,25 @@ and clear any site stuck in `generating` by regenerating.
 
 ---
 
+## 2026-09-26 — HOTFIX (root cause found): every site page crashed on the server
+
+Symptom (build b58ac84): dashboard loads, but clicking ANY site (even a brand-new run) shows "We
+couldn't load this page" — console: "An error occurred in the Server Components render" + React
+#329/#418/#423. **Root cause:** `app/(app)/site/page.tsx` (a Server Component) imported the runtime value
+`TAB_KEYS` from `components/SiteIntelligenceTabs` (a 'use client' module) and called
+`TAB_KEYS.includes(...)` to validate `?tab=`. Next.js only gives server code a client-reference proxy for
+values exported by a client module, so every site-page render threw. Builds/typecheck can't catch it.
+**Reproduced locally** (production build + a self-signed test session): old code logs
+`Attempted to call includes() from the server but includes is on the client` with a digest; fixed code
+gets past it (0 occurrences).
+- Fix: new server-safe `lib/ui/siteTabs.ts` (`SITE_TAB_KEYS`, `isSiteTabKey`); the site page uses it.
+- Guard: `tests/unit/serverClientBoundary.test.ts` — keys stay in sync with the client TABS, and the test
+  FAILS if any server file ever imports a non-component value from a 'use client' module again.
+**436 tests, typecheck clean, build compiles.** (The verdict-key guards in the entry below are still a
+valid latent-bug fix for old payloads, but were not the cause of this crash.)
+
+---
+
 ## 2026-09-26 — HOTFIX: site page #329 (server-render crash) on older runs
 
 Symptom: opening a specific run's site page (?tab=analysis) 500'd with React #329 (server-render
