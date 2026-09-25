@@ -26,26 +26,30 @@ after Batch 5:
   `tests/unit/format.test.ts` added. Grep confirms no live `.toLocale*` left in any `'use client'`
   file. **414/414 tests, typecheck clean, `next build` compiles.**
 
-**502 `reason: internal` on /api/analysis-report — ROOT CAUSE + FIX.** The user's error box read
-`[reason: internal]`. The VectorShift provider wraps *every* failure in `AiGenerationError`
-(`timeout`/`http_*`/`network`/`config_*`), so `internal` can only come from a NON-provider throw in
-`generateLocked`, before generation. The culprit: **`retrieve()` (`lib/ai/retrieveThenGenerate.ts`)
-ran an unguarded `$queryRaw` `plainto_tsquery` against `doc_chunk`**. When `doc_chunk` (or its `tsv`
-column) is missing/unseeded on the deployed DB — e.g. `db:seed-methodology` not run — the raw query
-throws Postgres `42P01`/`42703` wrapped as Prisma **P2010**, which the classifier only checked
-P2021/P2022 for, so it fell through to `internal` → 502.
-- **Fix 1 (the real one):** `retrieve()` is now fault-tolerant — it try/catches and returns `[]` on
-  any corpus error, logging once. Retrieval is only OPTIONAL grounding; the deterministic schema text
-  already carries every real figure, so a missing reference corpus must degrade to an ungrounded (but
-  still correct, still Truth-Layer-honest) write-up, never 502 the analysis.
-- **Fix 2 (diagnostics):** `isMissingSchemaError` in `analysisReport.ts` now also recognises P2010 +
-  Postgres `42P01`/`42703` (and a message match), so any *other* behind-the-schema raw query returns
-  **503 `db_migration_pending`** with an actionable message instead of a confusing 502.
-- **414/414 tests, typecheck clean, `next build` compiles.** After deploy the Analysis tab should
-  generate even if the methodology corpus isn't seeded; if it still errors, the reason will now be
-  `db_migration_pending` (run `prisma migrate deploy` + `db:seed-methodology`), `config_*` (set
-  `VECTORSHIFT_API_KEY`/`_PIPELINE_ID`), or `timeout` (raise the Netlify function timeout / lower
-  `VECTORSHIFT_TIMEOUT_MS`).
+**502 `reason: internal` on /api/analysis-report — REAL ROOT CAUSE (from the server log) + FIX.**
+The server log showed `prisma:error Transactions are not supported in HTTP mode` → the `internal`
+502. The Neon **HTTP** adapter (`PrismaNeonHTTP`) does not support transactions, and Prisma opens an
+**implicit** transaction for the ONE query in `generateLocked` that combined
+`findUniqueOrThrow` **with a multi-relation `include`** (`pipelineRun` → `franchisor` + `intake`).
+That combination is unique to the analysis path — the pipeline uses `findUniqueOrThrow` with a *flat
+select* (works) and the dashboards use `include` on *non-OrThrow* reads (works), which is why only
+the Analysis Report 502'd.
+- **Fix:** replaced the `findUniqueOrThrow({ include: … })` with **sequential flat reads** — run
+  (`select` scalars + `franchisorId` + `intakeSubmissionId`), then `franchisor.findUnique`, then
+  `intakeSubmission.findUnique` — exactly the "split nested reads into sequential calls" rule the
+  `lib/db/prisma.ts` header already states for the HTTP adapter. No `include` → no transaction.
+- **Hardening that rode along (still valuable):** `retrieve()` (`lib/ai/retrieveThenGenerate.ts`) is
+  now fault-tolerant (returns `[]` if the `doc_chunk` corpus is missing/unseeded — optional grounding
+  must never 502 the analysis), and `isMissingSchemaError` recognises raw-SQL missing-schema
+  (P2010 + `42P01`/`42703`) so a behind-the-schema DB reads as **503 db_migration_pending**, not a
+  confusing 502.
+- **414/414 tests, typecheck clean, `next build` compiles.** This is the actual unblock; a slow-but-
+  successful VectorShift run (the timeout case) is addressed separately by the async polling work.
+
+**Watch for the same trap elsewhere:** other `findUniqueOrThrow({ include })` combos would hit the
+same neon-http transaction error. A scan found none on other request paths (dashboards use
+non-OrThrow `include`; the pipeline uses flat-select `findUniqueOrThrow`). If a new one is added, use
+sequential flat reads under the HTTP adapter.
 
 **Note:** the console still showed the SAME bundle hash `fd9d1056…` as before the hydration fix, so
 the earlier hotfix was not yet deployed — that is why #418/#423 persisted. Both fixes ship together in

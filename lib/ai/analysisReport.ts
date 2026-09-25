@@ -226,13 +226,23 @@ async function generateLocked(
   opts: { actorId?: string; trigger: 'initial' | 'regenerate' },
   lockId: string,
 ): Promise<AnalysisReportResult> {
+  // Fetch the run and its two relations as SEPARATE flat queries — never via `include`.
+  // Prisma loads `include`d relations as multiple queries inside an IMPLICIT TRANSACTION, and
+  // the Neon HTTP adapter rejects that with "Transactions are not supported in HTTP mode"
+  // (the 502 `internal` on the live site). Sequential flat reads carry no transaction.
   const run = await prisma.pipelineRun.findUniqueOrThrow({
     where: { id: runId },
-    include: {
-      franchisor: { select: { brandName: true, subCategory: true } },
-      intake: { select: { sectionA: true, sectionB: true, sectionC: true, sectionD: true, sectionE: true, sectionF: true, sectionH: true, sectionI: true, sectionJ: true } },
-    },
+    select: { vertical: true, confidence: true, franchisorId: true, intakeSubmissionId: true },
   });
+  const franchisor = run.franchisorId
+    ? await prisma.franchisor.findUnique({ where: { id: run.franchisorId }, select: { brandName: true, subCategory: true } })
+    : null;
+  const intake = run.intakeSubmissionId
+    ? await prisma.intakeSubmission.findUnique({
+        where: { id: run.intakeSubmissionId },
+        select: { sectionA: true, sectionB: true, sectionC: true, sectionD: true, sectionE: true, sectionF: true, sectionH: true, sectionI: true, sectionJ: true },
+      })
+    : null;
   const site = await prisma.candidateSite.findUniqueOrThrow({
     where: { id: siteId },
     select: { id: true, label: true, city: true, barangay: true, siteType: true, compositeScore: true, verdict: true },
@@ -258,7 +268,7 @@ async function generateLocked(
   // PDF all show the same label; fall back to the local roll-up only for legacy runs.
   const confidence: Confidence = (run.confidence as Confidence | null) ?? rollUpConfidence(layers, { onGroundCheckFlagged: onGround });
 
-  const conceptText = [run.franchisor?.brandName, run.franchisor?.subCategory].filter(Boolean).join(' ');
+  const conceptText = [franchisor?.brandName, franchisor?.subCategory].filter(Boolean).join(' ');
   const input: AnalysisInput = {
     meta: {
       runId, siteId,
@@ -266,15 +276,15 @@ async function generateLocked(
       city: site.city,
       barangay: site.barangay,
       siteType: site.siteType,
-      brand: run.franchisor?.brandName ?? null,
+      brand: franchisor?.brandName ?? null,
       vertical: humanizeVertical(run.vertical),
       conceptLabel: conceptFor(run.vertical, conceptText).label,
       overallConfidence: confidence,
       generatedAt: new Date().toISOString(),
     },
     intake: mergeIntake([
-      run.intake?.sectionA, run.intake?.sectionB, run.intake?.sectionC, run.intake?.sectionD,
-      run.intake?.sectionE, run.intake?.sectionF, run.intake?.sectionH, run.intake?.sectionI, run.intake?.sectionJ,
+      intake?.sectionA, intake?.sectionB, intake?.sectionC, intake?.sectionD,
+      intake?.sectionE, intake?.sectionF, intake?.sectionH, intake?.sectionI, intake?.sectionJ,
     ]),
     composite: { score: site.compositeScore != null ? Number(site.compositeScore) : null, verdict: (site.verdict as string | null) ?? null },
     modules: { territory: mod('territory'), lease: mod('lease'), daypart: mod('daypart'), whitespace: mod('whitespace') },
