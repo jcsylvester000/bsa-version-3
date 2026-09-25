@@ -199,7 +199,7 @@ export function OnboardingTour({ show }: { show: boolean }) {
 
           {/* Boxed, brightly-emphasised key takeaway. */}
           <div className="mt-5 rounded-xl border-l-4 border-accent bg-accent/10 px-4 py-3">
-            <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-accent/80">
+            <div className="text-xs font-bold uppercase tracking-[0.18em] text-accent/80">
               What you can do
             </div>
             <p className="mt-1 text-[15px] font-bold text-accent">{step.highlight}</p>

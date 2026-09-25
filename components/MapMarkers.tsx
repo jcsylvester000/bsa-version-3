@@ -37,7 +37,7 @@ export function MapLegend({ items }: { items: Array<{ kind: LegendKind; text: st
             {/* The .mk-* recipes own `transform` (rotation), so scale on a wrapper, not the shape. */}
             <span className="grid h-6 w-6 shrink-0 place-items-center" aria-hidden>
               {it.kind === 'area' ? (
-                <span className="grid h-5 w-5 place-items-center rounded-full border-2 border-midnight bg-muesli text-[10px] font-extrabold text-midnight">1</span>
+                <span className="grid h-5 w-5 place-items-center rounded-full border-2 border-midnight bg-muesli text-xs font-extrabold text-midnight">1</span>
               ) : (
                 <span className="grid place-items-center" style={{ transform: 'scale(0.6)' }}>
                   <span className={`mk-${it.kind}`} />

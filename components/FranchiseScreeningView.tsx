@@ -319,15 +319,15 @@ function BrandAutocomplete({
               >
                 <span className="min-w-0">
                   <span className="text-ink-text">{highlight(s.brand, value)}</span>
-                  {s.category && <span className="ml-2 truncate text-[11px] text-ink-muted">{s.category}</span>}
+                  {s.category && <span className="ml-2 truncate text-xs text-ink-muted">{s.category}</span>}
                 </span>
                 {supplier
-                  ? <span className="pill bg-ink-panel-2 text-ink-muted shrink-0 text-[10px]">Supplier</span>
-                  : pfa ? <span className="pill pill-new shrink-0 text-[10px]">PFA</span> : null}
+                  ? <span className="pill bg-ink-panel-2 text-ink-muted shrink-0 text-xs">Supplier</span>
+                  : pfa ? <span className="pill pill-new shrink-0 text-xs">PFA</span> : null}
               </li>
             );
           })}
-          <li className="border-t border-ink-border px-3 py-1.5 text-[11px] text-ink-muted">
+          <li className="border-t border-ink-border px-3 py-1.5 text-xs text-ink-muted">
             {resultCount} match{resultCount === 1 ? '' : 'es'} in the table · ↑↓ to navigate, Enter to pick
           </li>
         </ul>

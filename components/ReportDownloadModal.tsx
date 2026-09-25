@@ -119,7 +119,7 @@ export function ReportDownloadModal({ runId }: { runId: string }) {
               <button onClick={() => setOpen(false)} className="btn-ghost text-sm">Cancel</button>
               <button onClick={openReport} className="btn-accent">Open report → print to PDF</button>
             </div>
-            <p className="mt-3 text-[11px] text-ink-muted">
+            <p className="mt-3 text-xs text-ink-muted">
               The report opens in a new tab. Use your browser’s Print → “Save as PDF” to download it.
             </p>
           </div>

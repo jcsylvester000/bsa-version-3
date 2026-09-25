@@ -218,6 +218,7 @@ export function SiteIntelligenceTabs({
   runId,
   initialTab,
   report,
+  leaseCorridors,
 }: {
   site: { id: string; label: string; lat: number; lon: number; siteType: string | null };
   outlets: Array<{ id: string; name: string; lat: number; lon: number; format: string | null }>;
@@ -230,6 +231,9 @@ export function SiteIntelligenceTabs({
   initialTab?: TabKey;
   /** Hero context for the Final Report (composite, rank, confidence, analysed time, truth mix). */
   report?: SiteReportMeta;
+  /** Corridors the broker can re-benchmark against (registry corridors for the site's region +
+   *  every corridor that has comps). Shown as a picker when the pipeline fell back to a proxy (F-40). */
+  leaseCorridors?: string[];
 }) {
   const [tab, setTab] = useState<TabKey>(initialTab ?? 'analysis');
 
@@ -278,7 +282,7 @@ export function SiteIntelligenceTabs({
 
       <div id="site-tabpanel" role="tabpanel" aria-labelledby={`tab-${tab}`}>
       {tab === 'territory' && <TerritoryTab site={site} outlets={mapOutlets} p={payloads.territory} primary={primary('territory')} />}
-      {tab === 'lease' && <LeaseTab p={payloads.lease} primary={primary('lease')} siteId={site.id} />}
+      {tab === 'lease' && <LeaseTab p={payloads.lease} primary={primary('lease')} siteId={site.id} corridors={leaseCorridors ?? []} />}
       {tab === 'daypart' && <DaypartTab p={payloads.daypart} primary={primary('daypart')} />}
       {tab === 'whitespace' && <WhiteSpaceTab p={payloads.whitespace} primary={primary('whitespace')} />}
       {tab === 'analysis' && <AnalysisTab payloads={payloads} primary={primary} verdict={verdict} report={report} onOpenTab={setTab} />}
@@ -424,11 +428,33 @@ const L_VERDICT = {
   insufficient_data: { label: LEASE_POSITION_LABEL.insufficient_data, tone: 'muted' as const },
   corridor_benchmark: { label: LEASE_POSITION_LABEL.corridor_benchmark, tone: 'muted' as const },
 };
-function LeaseTab({ p, primary = true, siteId }: { p: SiteModulePayloads['lease']; primary?: boolean; siteId: string }) {
+function LeaseTab({ p, primary = true, siteId, corridors = [] }: { p: SiteModulePayloads['lease']; primary?: boolean; siteId: string; corridors?: string[] }) {
   const router = useRouter();
   const [askingRent, setAskingRent] = useState('');
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
+  const [corridorBusy, setCorridorBusy] = useState(false);
+  const [corridorMsg, setCorridorMsg] = useState<string | null>(null);
+
+  /** F-40: re-benchmark this site against a corridor the broker picks (used when the pipeline fell
+   *  back to a proxy corridor). Carries the current asking rent if one is entered. Choosing a real
+   *  corridor drops the proxy/Projected flag server-side (the endpoint only keeps it for the same
+   *  fallback corridor). */
+  async function pickCorridor(corridor: string) {
+    if (!corridor || corridor === p?.corridor) return;
+    setCorridorBusy(true); setCorridorMsg(null);
+    const rent = Number(askingRent);
+    const siteTerms = Number.isFinite(rent) && rent > 0 ? { baseRentPhpSqm: rent } : {};
+    try {
+      const res = await fetch('/api/lease-benchmark', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ candidateSiteId: siteId, corridor, format: p?.format ?? 'inline', siteTerms }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) { setCorridorMsg(json?.error?.message ?? 'Could not re-benchmark against that corridor.'); setCorridorBusy(false); return; }
+      router.refresh();
+    } catch { setCorridorMsg('The request failed — check your connection and try again.'); setCorridorBusy(false); }
+  }
 
   /** Persist the asking rent: re-benchmarks the site server-side, stores the lease VALUE score and
    *  recomputes the site composite (POST /api/lease-benchmark). Until this runs, Lease does not
@@ -564,6 +590,27 @@ function LeaseTab({ p, primary = true, siteId }: { p: SiteModulePayloads['lease'
         }
         truth={p.flags?.includes('corridor_default_fallback') ? 'projected' : tk(tl(p.truth?.comps, 'Assumed'))}
       />
+      {/* F-40: proxy corridor → let the broker pick the right one in a click and re-benchmark. */}
+      {p.flags?.includes('corridor_default_fallback') && corridors.length > 0 && (
+        <div className="rounded-control border border-ink-border bg-ink-panel-2 p-3 sm:col-span-2 lg:col-span-4">
+          <label htmlFor="corridor-pick" className="field-label">Benchmark against a different corridor</label>
+          <div className="mt-1.5 flex flex-wrap items-center gap-2">
+            <select
+              id="corridor-pick"
+              className="field flex-1"
+              defaultValue=""
+              disabled={corridorBusy}
+              onChange={(e) => { const v = e.target.value; if (v) pickCorridor(v); }}
+            >
+              <option value="" disabled>Choose the corridor closest to this site…</option>
+              {corridors.filter((c) => c !== p.corridor).map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+            {corridorBusy && <span className="text-body text-ink-muted">Re-benchmarking…</span>}
+          </div>
+          <p className="field-help mt-1.5">Picking the corridor nearest this site replaces the proxy with a real benchmark (no longer Projected).</p>
+          {corridorMsg && <p role="alert" className="mt-1.5 text-body text-nogo">{corridorMsg}</p>}
+        </div>
+      )}
       <Stat label="Base-rent percentile" value={p.baseRentPercentile != null ? ordinal(p.baseRentPercentile) : '—'} sub="within corridor" truth="assumed" />
       {p.negotiatingRoomPhpSqm != null && (
         <Stat
@@ -613,8 +660,8 @@ function LeaseTab({ p, primary = true, siteId }: { p: SiteModulePayloads['lease'
     {compRents.length > 0 && (
       <div className="card p-5">
         <h3 className="mb-3 font-body text-title">Comparable leases in {p.corridor ?? 'this corridor'} ({compRents.length})</h3>
-        <div className="overflow-hidden rounded-control border border-ink-border">
-          <table className="w-full text-body">
+        <div className="overflow-x-auto rounded-control border border-ink-border">
+          <table className="w-full min-w-[420px] text-body">
             <thead>
               <tr className="table-head text-left">
                 <th scope="col" className="px-3 py-2.5 font-semibold">#</th>

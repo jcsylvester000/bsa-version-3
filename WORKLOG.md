@@ -5,6 +5,36 @@ The cross-thread state record. Read this (with the Master Instruction and the cu
 
 ---
 
+## 2026-09-25 — UX & accessibility set: F-36, F-37, F-39, F-40, F-41 (⏳ awaiting push)
+
+**Skills:** 01 Senior Web & App, 07 PH Broker (older-user legibility), 09 User Journey QA, 11 Code QA.
+
+- **F-36 (labels):** every intake outlet/candidate-row input and the 📍 Pin icon buttons now carry an
+  `aria-label` (`components/SteppedIntakeWizard.tsx`). LocationPicker's search input + ✕ already had
+  labels (design pass) — verified.
+- **F-37 (responsive):** the intake outlet/candidate rows switch from a fixed `grid-cols-12` to
+  `grid-cols-1 sm:grid-cols-12` (stack on phones); the Lease comps table wrapper is now
+  `overflow-x-auto` with a `min-w` so it scrolls instead of clipping (`SiteIntelligenceTabs.tsx`).
+- **F-39 (legibility):** every remaining `text-[9|10|11px]` (21 uses) raised to the 12px floor
+  (`text-xs`) across FranchiseScreeningView, InfoHint, MapMarkers, OnboardingTour, ReportDownloadModal,
+  ReportView, RunDashboard, VersionHistory, SteppedIntakeWizard, and `globals.css`. InfoHint's "?"
+  control enlarged 4→5 (h-5 w-5) for tap/readability. Zero tiny-text uses remain.
+- **F-40 (corridor picker + map verdict):**
+  - Lease tab now shows a **corridor picker** when the pipeline fell back to a proxy corridor. The
+    server (`site/page.tsx`) supplies `leaseCorridors` = the site region's registry corridors that have
+    comps, then any other corridor with comps (for the site's format). Picking one POSTs
+    `/api/lease-benchmark`; that endpoint already drops the proxy/Projected flag when the corridor
+    changes, so a real pick becomes a real benchmark. (`SiteIntelligenceTabs.tsx` LeaseTab.)
+  - Map verdict: TerritoryMap already renders from the passed-in `candidate.verdict` (the same value the
+    Territory chip uses) — it does NOT self-compute, so ring and verdict already agree. Verified; no change.
+- **F-41 (redesign):** delivered by the DESIGN v2 pass (theme tokens, FinalReportHero/FindingsList,
+  `<dialog>` MobileNav, error/loading boundaries — see the DESIGN v2 entries + `docs/DESIGN_V2_CHECKLIST.md`).
+  Marked Done.
+- **464 tests pass**, typecheck clean, build compiles.
+- Workbook: F-36/37/39/40/41 → Done (36 Done total).
+
+---
+
 ## 2026-09-25 — F-22 batch loaders + F-23 /api/brands cache (⏳ awaiting push)
 
 **Skills:** 02 Database (batched writes / direct pooled client), 03 API, 05 Cost, 11 Code QA.

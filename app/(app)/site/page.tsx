@@ -6,6 +6,7 @@ import { SiteIntelligenceTabs, type SiteModulePayloads } from '@/components/Site
 // Server-safe tab keys. NEVER import runtime values (like TAB_KEYS) from a 'use client' module into
 // this Server Component — they arrive as client-reference proxies and throw on use (the #329 crash).
 import { isSiteTabKey, type SiteTabKey } from '@/lib/ui/siteTabs';
+import { corridorsForRegion } from '@/lib/geo/regions';
 import { RunPipelineButton } from '@/components/RunPipelineButton';
 import { manilaShortStampYear } from '@/lib/util/manilaTime';
 import type { TruthLayer } from '@/lib/truth/truthLayer';
@@ -47,7 +48,7 @@ export default async function SiteReportPage({ searchParams }: { searchParams: {
 
   const site = await prisma.candidateSite.findUnique({
     where: { id: siteId },
-    select: { id: true, label: true, city: true, siteType: true, lat: true, lon: true, pipelineRunId: true, verdict: true, compositeScore: true, analyzedAt: true },
+    select: { id: true, label: true, city: true, siteType: true, lat: true, lon: true, pipelineRunId: true, verdict: true, compositeScore: true, analyzedAt: true, region: true },
   });
   if (!site || site.pipelineRunId !== runId) return <Empty msg="Site not found in this run." />;
 
@@ -71,6 +72,21 @@ export default async function SiteReportPage({ searchParams }: { searchParams: {
 
   const byModule: Record<string, unknown> = {};
   for (const r of rows) byModule[r.module] = r.payload;
+
+  // F-40: corridors the broker can re-benchmark the Lease tab against — every corridor that has
+  // comps for this site's format, with the site's own region's registry corridors listed first
+  // (the ones most likely to be the right local match). Only needed when the pipeline fell back to
+  // a proxy corridor, but cheap to always provide.
+  const compCorridors = await prisma.leaseComp.findMany({
+    where: site.siteType ? { format: site.siteType } : {},
+    select: { corridor: true },
+    distinct: ['corridor'],
+    orderBy: { corridor: 'asc' },
+  });
+  const compSet = compCorridors.map((c) => c.corridor).filter((c): c is string => !!c);
+  const regionCorridors = corridorsForRegion(site.region).filter((c) => compSet.includes(c));
+  // Region corridors that have comps first, then any other corridor with comps. Every option has data.
+  const leaseCorridors = Array.from(new Set([...regionCorridors, ...compSet]));
 
   // Final Report hero context (design v2, README §4). Rank uses the dashboard's ordering
   // (composite desc, unscored last). Truth mix = this site's module-level Truth Layers, the same
@@ -130,6 +146,7 @@ export default async function SiteReportPage({ searchParams }: { searchParams: {
         runId={runId}
         initialTab={initialTab}
         report={report}
+        leaseCorridors={leaseCorridors}
       />
     </div>
   );

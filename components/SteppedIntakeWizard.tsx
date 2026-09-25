@@ -484,7 +484,7 @@ export function SteppedIntakeWizard({ franchisors, mockMode = false, mockRunId, 
                 }} className={`card p-4 text-left transition ${active ? 'border-accent ring-1 ring-accent' : 'hover:bg-ink-hover'}`}>
                   <div className="flex items-center justify-between">
                     <p className="font-semibold text-ink-text">{c.group}</p>
-                    <span className={`pill text-[10px] ${c.quarter === 'LIVE' ? 'pill-go' : 'bg-accent/15 text-accent'}`}>{c.quarter}</span>
+                    <span className={`pill text-xs ${c.quarter === 'LIVE' ? 'pill-go' : 'bg-accent/15 text-accent'}`}>{c.quarter}</span>
                   </div>
                   <p className="mt-1 text-xs text-ink-muted">{c.desc}</p>
                 </button>
@@ -550,12 +550,12 @@ export function SteppedIntakeWizard({ franchisors, mockMode = false, mockRunId, 
                         ['Contract term', template.requirements.contractTerm],
                       ] as Array<[string, string | null]>).filter(([, v]) => v).map(([label, v]) => (
                         <div key={label} className="card-inset p-2">
-                          <p className="text-[11px] uppercase tracking-wide text-ink-muted">{label}</p>
+                          <p className="text-xs uppercase tracking-wide text-ink-muted">{label}</p>
                           <p className="text-ink-text">{v}</p>
                         </div>
                       ))}
                     </div>
-                    <p className="mt-3 text-[11px] text-ink-muted">
+                    <p className="mt-3 text-xs text-ink-muted">
                       {template.requirements.truthLayer && <span className="mr-1 rounded bg-ink-panel-2 px-1.5 py-0.5">{template.requirements.truthLayer}{template.requirements.confidence ? ` · ${template.requirements.confidence}` : ''}</span>}
                       Figures are indicative and subject to franchisor change — validate with the brand before commitment.{template.requirements.source ? ` Source: ${template.requirements.source}.` : ''}
                     </p>
@@ -628,7 +628,7 @@ export function SteppedIntakeWizard({ franchisors, mockMode = false, mockRunId, 
                   <span key={m.key} className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs ${on ? 'bg-ink-hover text-ink-text' : 'bg-ink-panel-2 text-ink-muted/50 line-through'}`}>
                     <span className={`h-1.5 w-1.5 rounded-full ${on ? (m.kind === 'new' ? 'bg-accent' : 'bg-verified') : 'bg-ink-border'}`} />
                     {m.label}
-                    {m.kind === 'new' && on && <span className="text-[9px] text-accent">new</span>}
+                    {m.kind === 'new' && on && <span className="text-xs text-accent">new</span>}
                   </span>
                 );
               })}
@@ -701,16 +701,16 @@ export function SteppedIntakeWizard({ franchisors, mockMode = false, mockRunId, 
           </div>
           <div className="space-y-2">
             {outlets.map((o, i) => (
-              <div key={i} className="grid grid-cols-12 items-center gap-2 rounded-lg bg-ink-panel-2 p-2">
-                <input placeholder="Branch name" value={o.outletName} onChange={(e) => setOutlets((cs) => cs.map((x, j) => (j === i ? { ...x, outletName: e.target.value } : x)))} className="field col-span-3 px-2 py-1.5 text-sm" />
-                <select value={o.format} onChange={(e) => setOutlets((cs) => cs.map((x, j) => (j === i ? { ...x, format: e.target.value } : x)))} className="field col-span-2 px-2 py-1.5 text-sm">
+              <div key={i} className="grid grid-cols-1 items-center gap-2 rounded-lg bg-ink-panel-2 p-2 sm:grid-cols-12">
+                <input aria-label={`Branch ${i + 1} name`} placeholder="Branch name" value={o.outletName} onChange={(e) => setOutlets((cs) => cs.map((x, j) => (j === i ? { ...x, outletName: e.target.value } : x)))} className="field px-2 py-1.5 text-sm sm:col-span-3" />
+                <select aria-label={`Branch ${i + 1} format`} value={o.format} onChange={(e) => setOutlets((cs) => cs.map((x, j) => (j === i ? { ...x, format: e.target.value } : x)))} className="field px-2 py-1.5 text-sm sm:col-span-2">
                   {OUTLET_FORMATS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
                 </select>
-                <input placeholder="Address (label)" value={o.address} onChange={(e) => setOutlets((cs) => cs.map((x, j) => (j === i ? { ...x, address: e.target.value } : x)))} onBlur={() => geocodeOutlet(i)} className="field col-span-3 px-2 py-1.5 text-sm" />
-                <input placeholder="Sales ₱" value={o.monthlySalesPhp} onChange={(e) => setOutlets((cs) => cs.map((x, j) => (j === i ? { ...x, monthlySalesPhp: e.target.value } : x)))} className="field col-span-2 px-2 py-1.5 text-sm" />
-                <div className="col-span-2 flex items-center gap-2 text-xs">
-                  <button type="button" onClick={() => setPinTarget({ kind: 'outlet', index: i })} className="rounded border border-ink-border px-1.5 py-1 text-[11px] text-accent hover:bg-ink-hover" title="Pin on map">📍 Pin</button>
-                  {o.geocoding ? <span className="text-ink-muted">locating…</span> : o.lat && o.lon ? <span className="text-go">✓</span> : <span className="text-ink-muted">—</span>}
+                <input aria-label={`Branch ${i + 1} address`} placeholder="Address (label)" value={o.address} onChange={(e) => setOutlets((cs) => cs.map((x, j) => (j === i ? { ...x, address: e.target.value } : x)))} onBlur={() => geocodeOutlet(i)} className="field px-2 py-1.5 text-sm sm:col-span-3" />
+                <input aria-label={`Branch ${i + 1} monthly sales in pesos`} placeholder="Sales ₱" value={o.monthlySalesPhp} onChange={(e) => setOutlets((cs) => cs.map((x, j) => (j === i ? { ...x, monthlySalesPhp: e.target.value } : x)))} className="field px-2 py-1.5 text-sm sm:col-span-2" />
+                <div className="flex items-center gap-2 text-xs sm:col-span-2">
+                  <button type="button" onClick={() => setPinTarget({ kind: 'outlet', index: i })} className="rounded border border-ink-border px-1.5 py-1 text-xs text-accent hover:bg-ink-hover" aria-label={`Pin branch ${i + 1} on the map`} title="Pin on map">📍 Pin</button>
+                  {o.geocoding ? <span className="text-ink-muted">locating…</span> : o.lat && o.lon ? <span className="text-go" role="img" aria-label="located">✓</span> : <span className="text-ink-muted" aria-label="not located yet">—</span>}
                 </div>
               </div>
             ))}
@@ -727,14 +727,14 @@ export function SteppedIntakeWizard({ franchisors, mockMode = false, mockRunId, 
           <p className="mb-3 text-xs text-ink-muted"><span className="text-accent">Pin the exact spot on the map</span> (📍) for each site — the address is a label for your reference.</p>
           <div className="space-y-2">
             {candidates.map((c, i) => (
-              <div key={i} className="grid grid-cols-12 items-center gap-2 rounded-lg bg-ink-panel-2 p-2">
-                <input placeholder="Label" value={c.label} onChange={(e) => setCandidates((cs) => cs.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)))} className="field col-span-3 px-2 py-1.5 text-sm" />
-                <input placeholder="Address" value={c.address} onChange={(e) => setCandidates((cs) => cs.map((x, j) => (j === i ? { ...x, address: e.target.value } : x)))} onBlur={() => geocodeCandidate(i)} className="field col-span-4 px-2 py-1.5 text-sm" />
-                <select value={c.siteType} onChange={(e) => setCandidates((cs) => cs.map((x, j) => (j === i ? { ...x, siteType: e.target.value } : x)))} className="field col-span-2 px-2 py-1.5 text-sm">
+              <div key={i} className="grid grid-cols-1 items-center gap-2 rounded-lg bg-ink-panel-2 p-2 sm:grid-cols-12">
+                <input aria-label={`Site ${i + 1} label`} placeholder="Label" value={c.label} onChange={(e) => setCandidates((cs) => cs.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)))} className="field px-2 py-1.5 text-sm sm:col-span-3" />
+                <input aria-label={`Site ${i + 1} address`} placeholder="Address" value={c.address} onChange={(e) => setCandidates((cs) => cs.map((x, j) => (j === i ? { ...x, address: e.target.value } : x)))} onBlur={() => geocodeCandidate(i)} className="field px-2 py-1.5 text-sm sm:col-span-4" />
+                <select aria-label={`Site ${i + 1} type`} value={c.siteType} onChange={(e) => setCandidates((cs) => cs.map((x, j) => (j === i ? { ...x, siteType: e.target.value } : x)))} className="field px-2 py-1.5 text-sm sm:col-span-2">
                   {OUTLET_FORMATS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
                 </select>
-                <div className="col-span-3 flex items-center gap-2 text-xs">
-                  <button type="button" onClick={() => setPinTarget({ kind: 'candidate', index: i })} className="rounded border border-ink-border px-1.5 py-1 text-[11px] text-accent hover:bg-ink-hover" title="Pin on map">📍 Pin</button>
+                <div className="flex items-center gap-2 text-xs sm:col-span-3">
+                  <button type="button" onClick={() => setPinTarget({ kind: 'candidate', index: i })} className="rounded border border-ink-border px-1.5 py-1 text-xs text-accent hover:bg-ink-hover" aria-label={`Pin site ${i + 1} on the map`} title="Pin on map">📍 Pin</button>
                   {c.geocoding ? <span className="text-ink-muted">locating…</span> : c.lat && c.lon ? <span className="text-go">✓ located</span> : <span className="text-ink-muted">enter address</span>}
                 </div>
               </div>

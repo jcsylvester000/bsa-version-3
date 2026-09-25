@@ -19,7 +19,7 @@ export function InfoHint({ text, label }: { text: string; label?: string }) {
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-label={label ?? 'What is this?'}
-        className="grid h-4 w-4 place-items-center rounded-full border border-ink-border text-[10px] font-bold text-ink-muted hover:border-accent hover:text-accent"
+        className="grid h-5 w-5 place-items-center rounded-full border border-ink-border text-xs font-bold text-ink-muted hover:border-accent hover:text-accent"
       >
         i
       </button>

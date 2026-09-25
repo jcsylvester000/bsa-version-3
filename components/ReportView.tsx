@@ -177,7 +177,7 @@ function MetricRow({ m }: { m: ReportMetric }) {
     <div className="grid grid-cols-12 items-center gap-3">
       <div className="col-span-12 sm:col-span-4">
         <p className="text-sm text-ink-text">{m.label}</p>
-        <p className="text-[11px] text-ink-muted">
+        <p className="text-xs text-ink-muted">
           <TruthChip layer={m.truthLayer} />{m.note ? ` · ${m.note}` : ''}
         </p>
       </div>
@@ -196,7 +196,7 @@ function MetricRow({ m }: { m: ReportMetric }) {
         {m.score != null ? (
           <span className={`text-lg font-bold ${scoreColor(bandFor(m.score, higher))}`}>{Math.round(m.score)}</span>
         ) : pill ? (
-          <span className={`rounded px-2 py-0.5 text-[11px] font-medium capitalize ${pill.cls}`}>{pill.label}</span>
+          <span className={`rounded px-2 py-0.5 text-xs font-medium capitalize ${pill.cls}`}>{pill.label}</span>
         ) : <span className="text-ink-muted">—</span>}
       </div>
     </div>
@@ -212,7 +212,7 @@ function RangeChart({ range }: { range: { min: number; median: number; max: numb
       <div className="relative h-2 w-full rounded-full bg-gradient-to-r from-go/40 via-caution/40 to-nogo/40">
         <div className="absolute top-1/2 h-3 w-0.5 -translate-y-1/2 bg-ink-text" style={{ left: `${medianPct}%` }} />
       </div>
-      <div className="mt-1 flex justify-between text-[11px] text-ink-muted">
+      <div className="mt-1 flex justify-between text-xs text-ink-muted">
         <span>₱{fmtInt(range.min)}</span>
         <span className="font-medium text-ink-text">median ₱{fmtInt(range.median)} · n={range.n}</span>
         <span>₱{fmtInt(range.max)}</span>

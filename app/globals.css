@@ -82,7 +82,7 @@ a:hover { @apply text-ink-text; }
 
   /* Verdict pill — solid fill + circled icon + word */
   .pill { @apply inline-flex h-8 items-center gap-2 whitespace-nowrap rounded-full pl-1.5 pr-3 text-sm font-semibold text-on-status; }
-  .pill-icon { @apply grid h-5 w-5 place-items-center rounded-full bg-midnight text-[11px]; }
+  .pill-icon { @apply grid h-5 w-5 place-items-center rounded-full bg-midnight text-xs; }
   .pill-go { @apply bg-go; }
   .pill-caution { @apply bg-caution; }
   .pill-nogo { @apply bg-nogo; }
@@ -90,7 +90,7 @@ a:hover { @apply text-ink-text; }
   .pill-caution .pill-icon { @apply text-caution; }
   .pill-nogo .pill-icon { @apply text-nogo; }
   .pill-empty { @apply border border-dashed border-ink-border-strong bg-transparent px-3 font-medium text-ink-muted; }
-  .pill-new { @apply h-6 border border-accent-text/60 bg-transparent px-2 text-[11px] tracking-wide text-accent-text; }
+  .pill-new { @apply h-6 border border-accent-text/60 bg-transparent px-2 text-xs tracking-wide text-accent-text; }
 
   /* Verdict hero (Final Report) */
   .verdict-hero { @apply flex flex-col justify-between gap-6 p-8 text-on-status; }

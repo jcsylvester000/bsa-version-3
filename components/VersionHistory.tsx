@@ -34,7 +34,7 @@ export function VersionHistory({ intakeId, currentRunId }: { intakeId: string; c
             <span className={`inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs ${isCurrent ? 'bg-accent text-ink-bg' : 'bg-ink-panel-2 text-ink-muted hover:bg-ink-hover'}`}>
               <span className="font-semibold">v{v.version}</span>
               <span>{manilaShortStamp(new Date(v.createdAt))}</span>
-              {isCurrent && <span className="rounded bg-ink-bg/20 px-1 text-[10px]">current</span>}
+              {isCurrent && <span className="rounded bg-ink-bg/20 px-1 text-xs">current</span>}
             </span>
           );
           return v.runId && !isCurrent

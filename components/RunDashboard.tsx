@@ -215,7 +215,7 @@ export function RunDashboard({
                   const [bg, fg] = SEV_FILL[a.severity].split(' ');
                   return (
                     <li key={i} className="flex gap-3">
-                      <span className={`mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full text-[11px] font-bold text-on-status ${bg}`} aria-hidden>{SEV_ICON[a.severity]}</span>
+                      <span className={`mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full text-xs font-bold text-on-status ${bg}`} aria-hidden>{SEV_ICON[a.severity]}</span>
                       <div className="min-w-0 space-y-1">
                         <p className="text-body font-semibold">{a.title}</p>
                         <p className="text-label font-normal text-ink-muted">{a.detail}</p>
