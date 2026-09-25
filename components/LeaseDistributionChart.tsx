@@ -18,9 +18,9 @@ interface Props {
 // Dark-theme verdict colours (status palette).
 const VERDICT_COLOR: Record<string, string> = {
   below_market: '#38a574',
-  at_market: '#e0a568',
+  at_market: '#BE8562',
   above_market: '#d9534f',
-  insufficient_data: '#8c96a8',
+  insufficient_data: '#94A3BE',
 };
 
 export function LeaseDistributionChart({ comps, median, asking, verdict }: Props) {
@@ -43,7 +43,7 @@ export function LeaseDistributionChart({ comps, median, asking, verdict }: Props
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img"
         aria-label={`Base-rent distribution: ${n} comps from ₱${min} to ₱${max}/sqm${asking != null ? `, asking ₱${asking}` : ''}${median != null ? `, median ₱${median}` : ''}.`}>
         {/* baseline */}
-        <line x1={padX} y1={padTop + plotH} x2={W - padX} y2={padTop + plotH} stroke="#1d2c4d" strokeWidth={1} />
+        <line x1={padX} y1={padTop + plotH} x2={W - padX} y2={padTop + plotH} stroke="#2A4372" strokeWidth={1} />
 
         {/* comp bars */}
         {sorted.map((c, i) => {
@@ -61,8 +61,8 @@ export function LeaseDistributionChart({ comps, median, asking, verdict }: Props
         {/* median line */}
         {median != null && (
           <>
-            <line x1={padX} y1={yOf(median)} x2={W - padX} y2={yOf(median)} stroke="#8c96a8" strokeWidth={1} strokeDasharray="3 3" />
-            <text x={W - padX} y={yOf(median) - 4} textAnchor="end" fontSize={10} fill="#8c96a8">median ₱{median}</text>
+            <line x1={padX} y1={yOf(median)} x2={W - padX} y2={yOf(median)} stroke="#94A3BE" strokeWidth={1} strokeDasharray="3 3" />
+            <text x={W - padX} y={yOf(median) - 4} textAnchor="end" fontSize={10} fill="#94A3BE">median ₱{median}</text>
           </>
         )}
 
@@ -75,13 +75,13 @@ export function LeaseDistributionChart({ comps, median, asking, verdict }: Props
             <text x={W - padX - barW / 2} y={yOf(asking) - 6} textAnchor="middle" fontSize={10} fontWeight={700} fill={askColor}>
               ₱{asking}
             </text>
-            <text x={W - padX - barW / 2} y={padTop + plotH + 16} textAnchor="middle" fontSize={9} fill="#8c96a8">your site</text>
+            <text x={W - padX - barW / 2} y={padTop + plotH + 16} textAnchor="middle" fontSize={9} fill="#94A3BE">your site</text>
           </g>
         )}
 
         {/* min / max labels */}
-        <text x={padX} y={padTop + plotH + 16} textAnchor="start" fontSize={9} fill="#8c96a8">₱{min}</text>
-        <text x={W - padX - barW - 8} y={padTop + plotH + 16} textAnchor="end" fontSize={9} fill="#8c96a8">₱{max}</text>
+        <text x={padX} y={padTop + plotH + 16} textAnchor="start" fontSize={9} fill="#94A3BE">₱{min}</text>
+        <text x={W - padX - barW - 8} y={padTop + plotH + 16} textAnchor="end" fontSize={9} fill="#94A3BE">₱{max}</text>
       </svg>
       <figcaption className="mt-1 text-center text-xs text-ink-muted">
         Comparable leases (₱/sqm) low→high; your asking rate highlighted; corridor median marked.

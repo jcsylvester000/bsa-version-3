@@ -81,15 +81,15 @@ export function GapsMap({ gaps, businesses = [] }: { gaps: GapPoint[]; businesse
         // Numbered amber pin: a small round badge with the rank.
         const el = document.createElement('div');
         el.style.cssText =
-          'width:24px;height:24px;border-radius:50%;background:#e0a568;color:#0b1426;' +
+          'width:24px;height:24px;border-radius:50%;background:#BE8562;color:#0b1426;' +
           'display:grid;place-items:center;font-size:12px;font-weight:800;' +
           'border:2px solid #0b1426;box-shadow:0 1px 4px rgba(0,0,0,.5);cursor:pointer';
         el.textContent = String(g.rank);
         const popupHtml =
           `<div style="min-width:150px">` +
           `<div style="font-weight:700">#${g.rank} ${escapeHtml(g.label)}</div>` +
-          `<div style="color:#8c96a8;font-size:11px;margin-top:2px">Opportunity ${Math.round(g.score)}/100</div>` +
-          (g.reason ? `<div style="color:#8c96a8;font-size:11px;margin-top:2px">${escapeHtml(g.reason)}</div>` : '') +
+          `<div style="color:#94A3BE;font-size:11px;margin-top:2px">Opportunity ${Math.round(g.score)}/100</div>` +
+          (g.reason ? `<div style="color:#94A3BE;font-size:11px;margin-top:2px">${escapeHtml(g.reason)}</div>` : '') +
           `</div>`;
         new maplibregl.Marker({ element: el })
           .setLngLat([g.lon, g.lat])

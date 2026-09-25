@@ -41,21 +41,21 @@ export function DaypartCurve({ data }: { data: DaypartData }) {
         </defs>
 
         {/* peak window band */}
-        <rect x={xOf(ws)} y={padTop} width={xOf(we) - xOf(ws)} height={plotH} fill="#e0a568" opacity={0.1} rx={4} />
+        <rect x={xOf(ws)} y={padTop} width={xOf(we) - xOf(ws)} height={plotH} fill="#BE8562" opacity={0.1} rx={4} />
 
         {/* area + line */}
         <path d={area} fill="url(#daypartFill)" />
         <path d={line} fill="none" stroke="#38a574" strokeWidth={2} />
 
         {/* peak window label */}
-        <text x={(xOf(ws) + xOf(we)) / 2} y={padTop + 12} textAnchor="middle" fontSize={10} fill="#e0a568">
+        <text x={(xOf(ws) + xOf(we)) / 2} y={padTop + 12} textAnchor="middle" fontSize={10} fill="#BE8562">
           peak {label(ws)}–{label(we)}
         </text>
 
         {/* baseline + x ticks */}
-        <line x1={padX} y1={padTop + plotH} x2={W - padX} y2={padTop + plotH} stroke="#1d2c4d" strokeWidth={1} />
+        <line x1={padX} y1={padTop + plotH} x2={W - padX} y2={padTop + plotH} stroke="#2A4372" strokeWidth={1} />
         {ticks.map((h) => (
-          <text key={h} x={xOf(h)} y={padTop + plotH + 15} textAnchor="middle" fontSize={9} fill="#8c96a8">{label(h)}</text>
+          <text key={h} x={xOf(h)} y={padTop + plotH + 15} textAnchor="middle" fontSize={9} fill="#94A3BE">{label(h)}</text>
         ))}
       </svg>
 

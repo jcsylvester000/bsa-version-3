@@ -71,7 +71,7 @@ export function LocationPicker({ title, initial, onPick, onClose }: Props) {
       const setPin = (lat: number, lon: number) => {
         if (!markerRef.current) {
           const el = document.createElement('div');
-          el.style.cssText = 'width:16px;height:16px;border-radius:50% 50% 50% 0;background:#e0a568;border:2px solid #fff;transform:rotate(-45deg);box-shadow:0 1px 4px rgba(0,0,0,.5)';
+          el.style.cssText = 'width:16px;height:16px;border-radius:50% 50% 50% 0;background:#BE8562;border:2px solid #fff;transform:rotate(-45deg);box-shadow:0 1px 4px rgba(0,0,0,.5)';
           markerRef.current = new maplibregl.Marker({ element: el, draggable: true }).setLngLat([lon, lat]).addTo(map);
           markerRef.current.on('dragend', () => {
             const p = markerRef.current!.getLngLat();
@@ -113,7 +113,7 @@ export function LocationPicker({ title, initial, onPick, onClose }: Props) {
         map.flyTo({ center: [lon, lat], zoom: 15 });
         if (!markerRef.current) {
           const el = document.createElement('div');
-          el.style.cssText = 'width:16px;height:16px;border-radius:50% 50% 50% 0;background:#e0a568;border:2px solid #fff;transform:rotate(-45deg);box-shadow:0 1px 4px rgba(0,0,0,.5)';
+          el.style.cssText = 'width:16px;height:16px;border-radius:50% 50% 50% 0;background:#BE8562;border:2px solid #fff;transform:rotate(-45deg);box-shadow:0 1px 4px rgba(0,0,0,.5)';
           markerRef.current = new maplibregl.Marker({ element: el, draggable: true }).setLngLat([lon, lat]).addTo(map);
           markerRef.current.on('dragend', () => { const p = markerRef.current!.getLngLat(); setPicked({ lat: round(p.lat), lon: round(p.lng) }); });
         } else {

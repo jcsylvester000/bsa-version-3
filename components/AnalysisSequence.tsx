@@ -237,22 +237,22 @@ function RadarMotif() {
   return (
     <svg viewBox="0 0 200 200" className="h-56 w-56">
       {[70, 50, 30].map((r) => (
-        <circle key={r} cx="100" cy="100" r={r} fill="none" stroke="#1d2c4d" strokeWidth="1" />
+        <circle key={r} cx="100" cy="100" r={r} fill="none" stroke="#2A4372" strokeWidth="1" />
       ))}
-      <line x1="20" y1="100" x2="180" y2="100" stroke="#1d2c4d" strokeWidth="1" />
-      <line x1="100" y1="20" x2="100" y2="180" stroke="#1d2c4d" strokeWidth="1" />
+      <line x1="20" y1="100" x2="180" y2="100" stroke="#2A4372" strokeWidth="1" />
+      <line x1="100" y1="20" x2="100" y2="180" stroke="#2A4372" strokeWidth="1" />
       {/* ping ring */}
-      <circle cx="100" cy="100" r="70" fill="none" stroke="#e0a568" strokeWidth="1.5" className="as-radar-ping" style={{ transformOrigin: '100px 100px' }} />
+      <circle cx="100" cy="100" r="70" fill="none" stroke="#BE8562" strokeWidth="1.5" className="as-radar-ping" style={{ transformOrigin: '100px 100px' }} />
       {/* sweep wedge */}
       <g className="as-radar-line" style={{ transformOrigin: '100px 100px' }}>
         <defs>
           <linearGradient id="sweep" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%" stopColor="#e0a568" stopOpacity="0.45" />
-            <stop offset="100%" stopColor="#e0a568" stopOpacity="0" />
+            <stop offset="0%" stopColor="#BE8562" stopOpacity="0.45" />
+            <stop offset="100%" stopColor="#BE8562" stopOpacity="0" />
           </linearGradient>
         </defs>
         <path d="M100 100 L100 30 A70 70 0 0 1 160 70 Z" fill="url(#sweep)" />
-        <line x1="100" y1="100" x2="100" y2="30" stroke="#e0a568" strokeWidth="1.5" />
+        <line x1="100" y1="100" x2="100" y2="30" stroke="#BE8562" strokeWidth="1.5" />
       </g>
       {/* blips */}
       <circle cx="132" cy="76" r="3" fill="#38a574" />
@@ -298,12 +298,12 @@ function CurveMotif() {
     <svg viewBox="0 0 220 160" className="h-52 w-64">
       <defs>
         <linearGradient id="cv" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#e0a568" stopOpacity="0.35" />
-          <stop offset="100%" stopColor="#e0a568" stopOpacity="0" />
+          <stop offset="0%" stopColor="#BE8562" stopOpacity="0.35" />
+          <stop offset="100%" stopColor="#BE8562" stopOpacity="0" />
         </linearGradient>
       </defs>
       {[40, 80, 120].map((y) => (
-        <line key={y} x1="10" y1={y} x2="210" y2={y} stroke="#1d2c4d" strokeWidth="1" />
+        <line key={y} x1="10" y1={y} x2="210" y2={y} stroke="#2A4372" strokeWidth="1" />
       ))}
       <path
         d="M10 130 C 50 130, 55 60, 90 55 S 140 110, 170 60 S 205 70, 210 66 L210 150 L10 150 Z"
@@ -312,7 +312,7 @@ function CurveMotif() {
       <path
         d="M10 130 C 50 130, 55 60, 90 55 S 140 110, 170 60 S 205 70, 210 66"
         fill="none"
-        stroke="#e0a568"
+        stroke="#BE8562"
         strokeWidth="2"
         strokeDasharray="420"
         style={{ animation: 'as-ring-dash 3s ease-out both' }}
@@ -331,10 +331,10 @@ function NetworkMotif() {
   return (
     <svg viewBox="0 0 220 160" className="h-52 w-64">
       {links.map(([a, b], i) => (
-        <line key={i} x1={nodes[a][0]} y1={nodes[a][1]} x2={nodes[b][0]} y2={nodes[b][1]} stroke="#1d2c4d" strokeWidth="1.5" className="as-cell" style={{ animationDelay: `${i * 0.15}s` }} />
+        <line key={i} x1={nodes[a][0]} y1={nodes[a][1]} x2={nodes[b][0]} y2={nodes[b][1]} stroke="#2A4372" strokeWidth="1.5" className="as-cell" style={{ animationDelay: `${i * 0.15}s` }} />
       ))}
       {nodes.map(([x, y], i) => (
-        <circle key={i} cx={x} cy={y} r={i === 5 ? 6 : 4} fill={i === 5 ? '#e0a568' : '#38a574'} className="as-cell" style={{ animationDelay: `${i * 0.12}s` }} />
+        <circle key={i} cx={x} cy={y} r={i === 5 ? 6 : 4} fill={i === 5 ? '#BE8562' : '#38a574'} className="as-cell" style={{ animationDelay: `${i * 0.12}s` }} />
       ))}
     </svg>
   );
@@ -344,9 +344,9 @@ function ScanMotif() {
   return (
     <div className="relative h-52 w-52">
       <svg viewBox="0 0 100 100" className="h-full w-full">
-        <circle cx="50" cy="50" r="46" fill="none" stroke="#1d2c4d" strokeWidth="3" />
+        <circle cx="50" cy="50" r="46" fill="none" stroke="#2A4372" strokeWidth="3" />
         <circle
-          cx="50" cy="50" r="46" fill="none" stroke="#e0a568" strokeWidth="3"
+          cx="50" cy="50" r="46" fill="none" stroke="#BE8562" strokeWidth="3"
           strokeLinecap="round" strokeDasharray="289" className="as-ring-stroke"
           transform="rotate(-90 50 50)"
         />

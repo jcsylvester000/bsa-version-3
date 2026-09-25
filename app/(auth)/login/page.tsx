@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { GridLogo } from '@/components/GridLogo';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -48,12 +49,10 @@ export default function LoginPage() {
   return (
     <main className="grid min-h-screen place-items-center bg-ink-bg px-4">
       <div className="w-full max-w-sm rounded-2xl border border-ink-border bg-ink-panel p-8 shadow-2xl">
-        <div className="mb-6 flex items-center gap-3">
-          <div className="grid h-10 w-10 place-items-center rounded-lg bg-accent text-lg font-bold text-ink-bg">G</div>
-          <div>
-            <h1 className="text-xl font-bold text-ink-text">BSA</h1>
-            <p className="text-xs text-ink-muted">Business Site Analysis · Grid Property Ventures</p>
-          </div>
+        <div className="mb-6">
+          <GridLogo className="text-ink-text" markClassName="h-11 w-11" />
+          <p className="mt-3 text-sm font-semibold text-ink-text">Business Site Analysis</p>
+          <p className="text-xs text-ink-muted">Sign in to continue</p>
         </div>
 
         {/* Tabs */}

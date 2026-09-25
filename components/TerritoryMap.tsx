@@ -40,7 +40,7 @@ export interface MapCompetitor {
  */
 const TIER_STYLE = {
   direct: { size: 11, fill: '#E0655A', border: '#fff', opacity: 1, label: 'Direct competitor' },
-  adjacent: { size: 9, fill: '#A98B54', border: '#fff', opacity: 0.9, label: 'Adjacent — sells similar, different format' },
+  adjacent: { size: 9, fill: '#BE8562', border: '#fff', opacity: 0.9, label: 'Adjacent — sells similar, different format' },
   unrelated: { size: 6, fill: '#6B7A8C', border: 'rgba(255,255,255,.55)', opacity: 0.5, label: 'Nearby business — not a competitor' },
 } as const;
 
@@ -117,7 +117,7 @@ export function TerritoryMap({ outlets, candidate, competitors = [] }: { outlets
         id: 'outlet-rings-line',
         type: 'line',
         source: 'outlet-rings',
-        paint: { 'line-color': '#193B4D', 'line-width': 1.5, 'line-dasharray': [2, 2] },
+        paint: { 'line-color': '#1C335E', 'line-width': 1.5, 'line-dasharray': [2, 2] },
       });
 
       // Candidate catchment (filled, verdict-coloured).
@@ -158,7 +158,7 @@ export function TerritoryMap({ outlets, candidate, competitors = [] }: { outlets
 
       // Own outlets (nile blue) + candidate (verdict colour).
       for (const o of outlets) {
-        new maplibregl.Marker({ color: '#193B4D' })
+        new maplibregl.Marker({ color: '#1C335E' })
           .setLngLat([o.lon, o.lat])
           .setPopup(new maplibregl.Popup().setText(o.name))
           .addTo(map);

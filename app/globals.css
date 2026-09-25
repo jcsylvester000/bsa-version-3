@@ -79,25 +79,25 @@ h1, h2, h3, h4 {
    ============================================================================ */
 input, select, textarea {
   color: #0b1426;            /* dark text — visible if any light background wins */
-  background-color: #0e192f; /* dark panel by default */
+  background-color: #15254A; /* deep navy inset by default */
 }
 input.field, select.field, textarea.field {
   /* !important so a .field input is ALWAYS light-on-dark and can never fall back to the
      near-black base color above (which rendered typed values invisible on the dark form). */
-  color: #e8ecf5 !important;
-  background-color: #0e192f;
+  color: #EDF2FB !important;
+  background-color: #15254A;
 }
-input.field::placeholder, textarea.field::placeholder { color: #8c96a8; }
+input.field::placeholder, textarea.field::placeholder { color: #94A3BE; }
 /* Chrome/Safari autofill: keep the dark field bg + light text instead of white. */
 input:-webkit-autofill,
 input:-webkit-autofill:hover,
 input:-webkit-autofill:focus,
 textarea:-webkit-autofill,
 select:-webkit-autofill {
-  -webkit-text-fill-color: #e8ecf5 !important;
-  -webkit-box-shadow: 0 0 0 1000px #0e192f inset !important;
-  box-shadow: 0 0 0 1000px #0e192f inset !important;
-  caret-color: #e8ecf5;
+  -webkit-text-fill-color: #EDF2FB !important;
+  -webkit-box-shadow: 0 0 0 1000px #15254A inset !important;
+  box-shadow: 0 0 0 1000px #15254A inset !important;
+  caret-color: #EDF2FB;
   transition: background-color 9999s ease-in-out 0s;
 }
 /* Native option list stays readable on the OS dropdown surface. */
@@ -149,8 +149,8 @@ select.field option { color: #0b1426; background-color: #ffffff; }
 /* Subtle moving grid backdrop */
 .as-gridbg {
   background-image:
-    linear-gradient(rgba(224,165,104,0.09) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(224,165,104,0.09) 1px, transparent 1px);
+    linear-gradient(rgba(190,133,98,0.10) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(190,133,98,0.10) 1px, transparent 1px);
   background-size: 26px 26px;
   animation: as-fade-in 0.6s ease-out both;
 }
@@ -166,25 +166,25 @@ select.field option { color: #0b1426; background-color: #ffffff; }
    (loaded via the JS import), which otherwise renders a white popup with pale,
    near-invisible text on the dark map. */
 .maplibregl-popup-content {
-  background: #132241 !important;
-  color: #e8ecf5 !important;
-  border: 1px solid #1d2c4d !important;
+  background: #1C335E !important;
+  color: #EDF2FB !important;
+  border: 1px solid #2A4372 !important;
   border-radius: 8px !important;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45) !important;
   font-size: 12px;
   padding: 8px 12px !important;
 }
 .maplibregl-popup-tip {
-  border-top-color: #132241 !important;
-  border-bottom-color: #132241 !important;
+  border-top-color: #1C335E !important;
+  border-bottom-color: #1C335E !important;
 }
 /* Close button visible on the dark surface. */
 .maplibregl-popup-close-button {
-  color: #8c96a8 !important;
+  color: #94A3BE !important;
   font-size: 16px;
   padding: 0 5px !important;
 }
 .maplibregl-popup-close-button:hover {
   background: transparent !important;
-  color: #e8ecf5 !important;
+  color: #EDF2FB !important;
 }

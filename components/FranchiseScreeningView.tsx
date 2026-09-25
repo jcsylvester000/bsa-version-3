@@ -488,7 +488,7 @@ export function FranchiseScreeningView() {
             </select>
           </label>
           <label className="flex cursor-pointer items-center gap-2 pb-2 text-sm text-ink-text">
-            <input type="checkbox" checked={hideOutOfReach} onChange={(e) => setHideOutOfReach(e.target.checked)} className="h-4 w-4 accent-[#e0a568]" />
+            <input type="checkbox" checked={hideOutOfReach} onChange={(e) => setHideOutOfReach(e.target.checked)} className="h-4 w-4 accent-[#BE8562]" />
             Hide out-of-reach
           </label>
           <button onClick={clearAll} className="btn-ghost ml-auto pb-2 text-sm">Reset filters</button>

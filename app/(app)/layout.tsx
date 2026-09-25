@@ -4,6 +4,7 @@ import { getSession } from '@/lib/auth/session';
 import { prisma } from '@/lib/db/prisma';
 import { isUuid } from '@/lib/util/uuid';
 import { LogoutButton } from '@/components/LogoutButton';
+import { GridMark } from '@/components/GridLogo';
 import { SidebarNav } from '@/components/SidebarNav';
 import { OnboardingTour } from '@/components/OnboardingTour';
 import { BROKER_DISCLAIMER_SHORT } from '@/lib/truth/guardrailCopy';
@@ -29,11 +30,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <div className="flex min-h-screen bg-ink-bg">
       {/* Left rail */}
       <aside className="hidden w-60 shrink-0 border-r border-ink-border bg-ink-panel-2 md:flex md:flex-col">
-        <div className="flex items-center gap-2 px-5 py-4">
-          <div className="grid h-8 w-8 place-items-center rounded-lg bg-accent text-sm font-bold text-ink-bg">G</div>
+        <div className="flex items-center gap-2.5 px-5 py-4">
+          <GridMark className="h-9 w-9 shrink-0" />
           <div>
-            <p className="text-sm font-bold leading-none text-ink-text">BSA</p>
-            <p className="text-[10px] uppercase tracking-wider text-ink-muted">Site Analysis</p>
+            <p className="font-heading text-base leading-none text-ink-text">BSA</p>
+            <p className="mt-0.5 text-[9px] uppercase tracking-[0.18em] text-ink-muted">Grid Property Ventures</p>
           </div>
         </div>
         <SidebarNav />
@@ -53,7 +54,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <div className="flex-1">
         {/* Mobile top bar */}
         <header className="flex items-center justify-between border-b border-ink-border bg-ink-panel-2 px-4 py-3 md:hidden">
-          <Link href="/runs" className="font-bold text-ink-text">BSA</Link>
+          <Link href="/runs" className="flex items-center gap-2">
+            <GridMark className="h-7 w-7" />
+            <span className="font-heading text-ink-text">BSA</span>
+          </Link>
           <LogoutButton />
         </header>
         <main className="mx-auto max-w-7xl px-6 py-8">{children}</main>

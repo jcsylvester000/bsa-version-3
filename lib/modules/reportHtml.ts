@@ -30,7 +30,7 @@ export interface ReportClientDetails {
 
 // --- Grid brand tokens (mirrors tailwind.config.ts) --------------------------
 const C = {
-  accent: '#e0a568',
+  accent: '#BE8562',
   ink: '#16233f', // deep navy for headings on the light print surface
   body: '#2c3648',
   muted: '#6b7688',
