@@ -7,14 +7,14 @@
  * point geom built here (polygon boundaries are a later ingestion enhancement).
  */
 import 'server-only';
-import { prisma } from '@/lib/db/prisma';
+import { prisma as appPrisma } from '@/lib/db/prisma';
 import {
   normalizePoi, poiDedupKey, type RawPoi,
   normalizeZonal, zonalNaturalKey, type RawZonal,
   normalizeDemo, type RawDemo,
   normalizeLease, leaseNaturalKey, type RawLease,
 } from './normalize';
-import { Prisma, type PoiCategory } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 
 export interface LoadReport {
   received: number;
@@ -23,8 +23,30 @@ export interface LoadReport {
   deduped: number;
 }
 
-/** Load POI rows (OSM Overpass shape). Dedup in-batch, upsert on osm_id. */
-export async function loadPoi(rows: RawPoi[]): Promise<LoadReport> {
+/**
+ * F-22: loaders accept a `db` client. Bulk scripts pass the DIRECT pooled client (see
+ * prisma/scriptDb.ts) so province-scale writes go out as chunked multi-row statements over a warm
+ * TCP connection instead of one HTTP round trip per row. Defaults to the app client.
+ */
+type Db = Pick<PrismaClient, '$executeRaw' | 'poi' | 'zonalValue' | 'demographicCell' | 'leaseComp' | 'mallProperty'>;
+interface LoadOpts { db?: Db; source?: 'osm' | 'google' | 'manual'; provenance?: string }
+
+/** Rows-per statement for the batched upserts. ~500 keeps each statement well under Postgres'
+ *  parameter limit (65535) even for the widest table, and is a good round-trip/latency trade. */
+const BATCH_SIZE = 500;
+function chunk<T>(arr: T[], size = BATCH_SIZE): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
+/**
+ * Load POI rows (OSM Overpass shape). Dedup in-batch, upsert on osm_id.
+ * F-18: `opts.source` / `opts.provenance` record where the rows came from. The default is the
+ * OSM sweep; a row that carries no osmId AND no explicit source is treated as hand-loaded ('manual').
+ */
+export async function loadPoi(rows: RawPoi[], opts: LoadOpts = {}): Promise<LoadReport> {
+  const db = opts.db ?? appPrisma;
   const seen = new Set<string>();
   let skipped = 0;
   let deduped = 0;
@@ -37,38 +59,44 @@ export async function loadPoi(rows: RawPoi[]): Promise<LoadReport> {
     seen.add(key);
     norm.push(n);
   }
+
+  // Rows WITH an osm_id upsert on the (unique) osm_id in one multi-row statement per chunk (F-22).
+  // Rows WITHOUT one (rare — sample/manual data) can't be deduped by the DB, so they're inserted.
+  // geom is filled by the poi_geom_biu trigger on INSERT/UPDATE — no extra round trip.
+  const withId = norm.filter((n) => n!.osmId != null);
+  const noId = norm.filter((n) => n!.osmId == null);
   let loaded = 0;
-  for (const n of norm) {
-    // osm_id is nullable, so Prisma won't accept it as a unique upsert selector.
-    // Find-then-write keeps ingestion idempotent on re-runs.
-    const data = {
-      name: n.name,
-      category: n.category as PoiCategory,
-      lat: n.lat,
-      lon: n.lon,
-      city: n.city,
-      barangay: n.barangay,
-      region: n.region,
-      province: n.province,
-      truthLayer: n.truthLayer,
-    };
-    if (n.osmId != null) {
-      const existing = await prisma.poi.findFirst({ where: { osmId: n.osmId }, select: { id: true } });
-      if (existing) {
-        await prisma.poi.update({ where: { id: existing.id }, data });
-      } else {
-        await prisma.poi.create({ data: { ...data, osmId: n.osmId, source: 'osm' } });
-      }
-    } else {
-      await prisma.poi.create({ data: { ...data, source: 'manual' } });
-    }
-    loaded++;
+
+  const src = (n: NonNullable<ReturnType<typeof normalizePoi>>) => opts.source ?? (n.osmId != null ? 'osm' : 'manual');
+  const prov = (source: string) => opts.provenance ?? (source === 'osm' ? 'osm:overpass' : null);
+  const valuesRow = (n: NonNullable<ReturnType<typeof normalizePoi>>) => {
+    const source = src(n);
+    return Prisma.sql`(${n.name}, ${n.category}::"PoiCategory", ${n.lat}, ${n.lon}, ${n.city}, ${n.barangay}, ${n.region}, ${n.province}, ${source}::"PoiSource", ${prov(source)}, ${n.truthLayer}::"TruthLayer", ${n.osmId})`;
+  };
+
+  for (const batch of chunk(withId)) {
+    await db.$executeRaw(Prisma.sql`
+      INSERT INTO poi (name, category, lat, lon, city, barangay, region, province, source, provenance, truth_layer, osm_id)
+      VALUES ${Prisma.join(batch.map((n) => valuesRow(n!)))}
+      ON CONFLICT (osm_id) DO UPDATE SET
+        name = EXCLUDED.name, category = EXCLUDED.category, lat = EXCLUDED.lat, lon = EXCLUDED.lon,
+        city = EXCLUDED.city, barangay = EXCLUDED.barangay, region = EXCLUDED.region,
+        province = EXCLUDED.province, source = EXCLUDED.source, provenance = EXCLUDED.provenance,
+        truth_layer = EXCLUDED.truth_layer`);
+    loaded += batch.length;
+  }
+  for (const batch of chunk(noId)) {
+    await db.$executeRaw(Prisma.sql`
+      INSERT INTO poi (name, category, lat, lon, city, barangay, region, province, source, provenance, truth_layer, osm_id)
+      VALUES ${Prisma.join(batch.map((n) => valuesRow(n!)))}`);
+    loaded += batch.length;
   }
   return { received: rows.length, loaded, skipped, deduped };
 }
 
 /** Load BIR zonal rows. Upsert on the natural key. */
-export async function loadZonal(rows: RawZonal[]): Promise<LoadReport> {
+export async function loadZonal(rows: RawZonal[], opts: LoadOpts = {}): Promise<LoadReport> {
+  const db = opts.db ?? appPrisma;
   const seen = new Set<string>();
   let skipped = 0;
   let deduped = 0;
@@ -79,7 +107,7 @@ export async function loadZonal(rows: RawZonal[]): Promise<LoadReport> {
     const key = zonalNaturalKey(n);
     if (seen.has(key)) { deduped++; continue; }
     seen.add(key);
-    await prisma.zonalValue.upsert({
+    await db.zonalValue.upsert({
       where: { zonal_natural_key: { region: n.region, cityMunicipality: n.cityMunicipality, barangay: n.barangay, rdo: n.rdo, classificationCode: n.classificationCode } },
       update: { province: n.province, lowPhpSqm: n.lowPhpSqm, highPhpSqm: n.highPhpSqm, truthLayer: n.truthLayer, notes: n.notes },
       create: { region: n.region, province: n.province, cityMunicipality: n.cityMunicipality, barangay: n.barangay, rdo: n.rdo, classificationCode: n.classificationCode, lowPhpSqm: n.lowPhpSqm, highPhpSqm: n.highPhpSqm, truthLayer: n.truthLayer, notes: n.notes },
@@ -93,7 +121,8 @@ export async function loadZonal(rows: RawZonal[]): Promise<LoadReport> {
  * Load lease comps. lease_comp has no unique natural key, so we clear each
  * (format, corridor) group present in the batch then insert — idempotent per group.
  */
-export async function loadLease(rows: RawLease[]): Promise<LoadReport> {
+export async function loadLease(rows: RawLease[], opts: LoadOpts = {}): Promise<LoadReport> {
+  const db = opts.db ?? appPrisma;
   const seen = new Set<string>();
   let skipped = 0;
   let deduped = 0;
@@ -110,12 +139,12 @@ export async function loadLease(rows: RawLease[]): Promise<LoadReport> {
   const groups = new Map<string, { format: string; corridor: string }>();
   for (const n of norm) if (n) groups.set(`${n.format}|${n.corridor}`, { format: n.format, corridor: n.corridor });
   for (const g of groups.values()) {
-    await prisma.leaseComp.deleteMany({ where: { format: g.format, corridor: g.corridor } });
+    await db.leaseComp.deleteMany({ where: { format: g.format, corridor: g.corridor } });
   }
   let loaded = 0;
   for (const n of norm) {
     if (!n) continue;
-    await prisma.leaseComp.create({
+    await db.leaseComp.create({
       data: {
         format: n.format,
         corridor: n.corridor,
@@ -156,7 +185,8 @@ const TRUTH_LAYERS = new Set(['verified', 'assumed', 'projected']);
 
 /** Load NCR mall roster. Upsert on mall_name; geom from lat/lon via raw SQL. Rows with an
  *  invalid tier/footfall are skipped (never fabricated to a default). */
-export async function loadMalls(rows: RawMall[]): Promise<LoadReport> {
+export async function loadMalls(rows: RawMall[], opts: LoadOpts = {}): Promise<LoadReport> {
+  const db = opts.db ?? appPrisma;
   const seen = new Set<string>();
   let skipped = 0;
   let deduped = 0;
@@ -182,54 +212,59 @@ export async function loadMalls(rows: RawMall[]): Promise<LoadReport> {
       province: r.province?.trim() || null,
       truthLayer: tl as 'verified' | 'assumed' | 'projected',
     };
-    const existing = await prisma.mallProperty.findFirst({ where: { mallName: name }, select: { id: true } });
+    const existing = await db.mallProperty.findFirst({ where: { mallName: name }, select: { id: true } });
     const row = existing
-      ? await prisma.mallProperty.update({ where: { id: existing.id }, data })
-      : await prisma.mallProperty.create({ data });
+      ? await db.mallProperty.update({ where: { id: existing.id }, data })
+      : await db.mallProperty.create({ data });
     // Populate geom from lat/lon (no DB trigger on mall_property).
     if (data.lat != null && data.lon != null) {
-      await prisma.$executeRaw`UPDATE mall_property SET geom = ST_SetSRID(ST_MakePoint(${data.lon}, ${data.lat}), 4326)::geography WHERE id = ${row.id}`;
+      await db.$executeRaw`UPDATE mall_property SET geom = ST_SetSRID(ST_MakePoint(${data.lon}, ${data.lat}), 4326)::geography WHERE id = ${row.id}`;
     }
     loaded++;
   }
   return { received: rows.length, loaded, skipped, deduped };
 }
 
-/** Load PSA demographic rows. Upsert on psgc_code; store a point geom via raw SQL. */
-export async function loadDemographics(rows: Array<RawDemo & { lat?: number; lon?: number }>): Promise<LoadReport> {
+/**
+ * Load PSA demographic rows. Upsert on psgc_code (F-22: chunked multi-row statement per batch).
+ * geom (a ~600 m MultiPolygon buffer around the centroid — a placeholder until real R-02/R-04
+ * barangay polygons replace it) is folded into the INSERT so there's no extra round trip per row.
+ */
+export async function loadDemographics(
+  rows: Array<RawDemo & { lat?: number; lon?: number }>,
+  opts: LoadOpts = {},
+): Promise<LoadReport> {
+  const db = opts.db ?? appPrisma;
   const seen = new Set<string>();
   let skipped = 0;
   let deduped = 0;
-  let loaded = 0;
+  const norm: Array<{ n: NonNullable<ReturnType<typeof normalizeDemo>>; lat?: number; lon?: number }> = [];
   for (const r of rows) {
     const n = normalizeDemo(r);
     if (!n) { skipped++; continue; }
     if (seen.has(n.psgcCode)) { deduped++; continue; }
     seen.add(n.psgcCode);
-    // find-then-write (like the POI loader) so this is idempotent regardless of how
-    // Prisma exposes the psgc_code unique selector — avoids the WhereUnique quirk.
-    const data = {
-      barangay: n.barangay, city: n.city, population: n.population,
-      incomeBand: n.incomeBand, renterSharePct: n.renterSharePct,
-      daytimePop: n.daytimePop, truthLayer: n.truthLayer,
-    };
-    const existing = await prisma.demographicCell.findFirst({ where: { psgcCode: n.psgcCode }, select: { id: true } });
-    if (existing) {
-      await prisma.demographicCell.update({ where: { id: existing.id }, data });
-    } else {
-      await prisma.demographicCell.create({ data: { psgcCode: n.psgcCode, ...data } });
-    }
-    // Set a small circular polygon geom around the cell centroid so containment/
-    // proximity joins work. (Real PSGC barangay polygons from R-02/R-04 replace this.)
+    norm.push({ n, lat: r.lat, lon: r.lon });
+  }
+
+  let loaded = 0;
+  const valuesRow = ({ n, lat, lon }: { n: NonNullable<ReturnType<typeof normalizeDemo>>; lat?: number; lon?: number }) => {
     // ST_Multi to match the MultiPolygon column (R-04 widened it from Polygon).
-    if (r.lat != null && r.lon != null) {
-      await prisma.$executeRaw`
-        UPDATE demographic_cell
-        SET geom = ST_Multi(ST_Buffer(ST_SetSRID(ST_MakePoint(${r.lon}, ${r.lat}), 4326)::geography, 600)::geometry)::geography
-        WHERE psgc_code = ${n.psgcCode}
-      `;
-    }
-    loaded++;
+    const geom = lat != null && lon != null
+      ? Prisma.sql`ST_Multi(ST_Buffer(ST_SetSRID(ST_MakePoint(${lon}, ${lat}), 4326)::geography, 600)::geometry)::geography`
+      : Prisma.sql`NULL`;
+    return Prisma.sql`(${n.psgcCode}, ${n.barangay}, ${n.city}, ${n.population}, ${n.incomeBand}, ${n.renterSharePct}, ${n.daytimePop}, ${n.truthLayer}::"TruthLayer", ${geom})`;
+  };
+
+  for (const batch of chunk(norm)) {
+    await db.$executeRaw(Prisma.sql`
+      INSERT INTO demographic_cell (psgc_code, barangay, city, population, income_band, renter_share_pct, daytime_pop, truth_layer, geom)
+      VALUES ${Prisma.join(batch.map(valuesRow))}
+      ON CONFLICT (psgc_code) DO UPDATE SET
+        barangay = EXCLUDED.barangay, city = EXCLUDED.city, population = EXCLUDED.population,
+        income_band = EXCLUDED.income_band, renter_share_pct = EXCLUDED.renter_share_pct,
+        daytime_pop = EXCLUDED.daytime_pop, truth_layer = EXCLUDED.truth_layer, geom = EXCLUDED.geom`);
+    loaded += batch.length;
   }
   return { received: rows.length, loaded, skipped, deduped };
 }

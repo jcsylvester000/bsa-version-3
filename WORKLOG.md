@@ -5,6 +5,69 @@ The cross-thread state record. Read this (with the Master Instruction and the cu
 
 ---
 
+## 2026-09-25 — F-22 batch loaders + F-23 /api/brands cache (⏳ awaiting push)
+
+**Skills:** 02 Database (batched writes / direct pooled client), 03 API, 05 Cost, 11 Code QA.
+
+### F-22 — reference-data loaders batched
+- `prisma/scriptDb.ts` (new): a script-only PrismaClient on the DIRECT (pooled) connection — a normal
+  TCP client, NOT the Neon HTTP adapter — so bulk writes get multi-row statements over a warm connection.
+- `lib/ingest/loaders.ts`: `loadPoi` and `loadDemographics` now write chunked (500/statement) multi-row
+  `INSERT … ON CONFLICT DO UPDATE` instead of find-then-write per row. POI upserts on osm_id (id-less
+  rows insert), demographics on psgc_code with the geom buffer folded into the statement. All five
+  loaders take an optional `db` (default: app client); zonal/lease/malls kept per-row (lower volume /
+  delete-insert). Idempotency preserved (upsert semantics).
+- Scripts (`ingest.ts`, `ingestOsm.ts`, `populate.ts`) pass `db: scriptDb()` for the batched loaders
+  and disconnect it at the end.
+- Result: a province-scale POI/demographic load goes from tens of thousands of round trips to
+  ceil(N/500) statements — minutes, not hours.
+- Test: `tests/unit/batchLoaders.test.ts` (+3) — captures the SQL, asserts chunking + ON CONFLICT shape.
+
+### F-23 — /api/brands cache
+- Was one ILIKE full scan of poi PER candidate brand (~40), sequentially, every call. Now ONE scan with
+  a per-brand CASE aggregate, and the (catalog-wide, not per-user) response is cached in memory for 5 min.
+  Franchise Screening loads instantly; a background POI ingest shows within the TTL.
+- **464 tests pass**, app + scripts typecheck clean, build compiles.
+- Workbook: F-22, F-23 → Done (31 Done total).
+- **Owner note:** bulk loaders now prefer `DIRECT_URL` — set it (Neon pooled URL) in the script env, else
+  they fall back to `DATABASE_URL`.
+
+---
+
+## 2026-09-25 — F-15 accessibility pillar + F-18 provenance/ages/re-run (⏳ awaiting push; NEW MIGRATION)
+
+**Skills:** 02 Database, 01 Senior Web & App, 06 Research (OSM transport tags), 07 PH Broker (commuter access), 11 Code QA.
+
+### F-15 — Site Fit accessibility pillar (was always empty)
+- `lib/modules/siteFitMath.ts`: pure `scoreAccessibility({nearestTransportM,countWithinWalkM,covered})`
+  — distance to a transport node weighted 0.65 over density 0.35; null when the layer isn't loaded here.
+- `lib/modules/siteFit.ts`: queries `poi category='transport'` (nearest within 5 km, count within 500 m)
+  and fills the pillar (Verified). If no transport node within 5 km → pillar stays null, so scores are
+  UNCHANGED until the transport layer is loaded, then improve where it exists.
+- Transport ingest: `lib/places/osmService.ts` gains `transportInBbox` (jeepney/bus stops, terminals,
+  rail/LRT/MRT); `establishmentsInTiles` gained an optional `query` override so the same adaptive tiler
+  drives it. `prisma/ingestOsm.ts` gains a `--transport` step (tiled, resumable via poi_coverage
+  vertical `__transport__`). Scripts: `db:ingest:osm:transport[:cavite|:batangas]`. Unnamed stops kept
+  (position is what matters), labelled generically.
+- Test: `tests/unit/accessibility.test.ts` (+8).
+
+### F-18 — provenance, real ages, historical re-run
+- Schema + migration `20260927000001_poi_provenance`: `PoiSource` gains `google`; `poi.provenance` text.
+  `loadPoi(rows, {source, provenance})` stamps it — OSM sweep rows now carry `osm:bulk-sweep` /
+  `osm:brand-branches` / `osm:transport` instead of being mislabelled `manual`.
+- `prisma/enrichAgeProfiles.ts`: uses a real PSA age-sex table when present
+  (`prisma/data/demographics/age_profile.real.json`, keyed by PSGC) → Verified; falls back to the
+  modelled income-band proxy → Projected. Format documented in `age_profile.README.md`.
+- `prisma/rerunHistorical.ts` + `db:rerun-historical`: re-runs old runs with `refresh` (drives the slices
+  to completion) so historical runs pick up current scoring. Flags: `--status=`, `--run=`, `--dry`.
+- **461 tests pass**, app + scripts typecheck clean, build compiles.
+- Workbook: F-15, F-18 → Done (29 Done total).
+- **Owner actions:** deploy migration `20260927000001_poi_provenance`; run `db:ingest:osm:transport`
+  (+ regional) to populate accessibility; optionally drop the real PSA age file then `db:enrich-age`;
+  run `db:rerun-historical` once to refresh old runs.
+
+---
+
 ## 2026-09-25 — Pipeline integrity: F-05, F-06 (⏳ awaiting push; NEW MIGRATION)
 
 **Skills:** 02 Database (claim + rollback), 03 API, 04 Security, 11 Code QA.

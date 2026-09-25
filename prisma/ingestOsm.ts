@@ -23,11 +23,13 @@ import { loadPoi } from '../lib/ingest/loaders';
 import type { RawPoi } from '../lib/ingest/normalize';
 import { getRegion, type RegionKey, REGION_KEYS } from '../lib/geo/regions';
 import { prisma } from '@/lib/db/prisma';
+import { scriptDb, disconnectScriptDb } from './scriptDb';
 import { bboxKey, bboxCentre, type BBox } from '@/lib/geo/tiling';
 import {
   establishmentsInBbox,
   establishmentsInTiles,
   brandBranchesInBbox,
+  transportInBbox,
   osmTagToPoiCategory,
   type OsmPlace,
 } from '../lib/places/osmService';
@@ -82,14 +84,15 @@ const BRAND_PULL = [
   'Go Hotels', 'Red Planet', 'RedDoorz', 'Kumon',
 ];
 
-interface Args { quick: boolean; competitors: boolean; brands: boolean; region: RegionKey; force: boolean; }
+interface Args { quick: boolean; competitors: boolean; brands: boolean; transport: boolean; region: RegionKey; force: boolean; }
 
 function parseArgs(argv: string[]): Args {
-  const a: Args = { quick: false, competitors: false, brands: false, region: 'ncr', force: false };
+  const a: Args = { quick: false, competitors: false, brands: false, transport: false, region: 'ncr', force: false };
   for (const x of argv) {
     if (x === '--quick') a.quick = true;
     else if (x === '--competitors') a.competitors = true;
     else if (x === '--brands') a.brands = true;
+    else if (x === '--transport') a.transport = true;
     else if (x === '--force') a.force = true;
     else if (x.startsWith('--region=')) {
       const r = x.slice('--region='.length) as RegionKey;
@@ -97,8 +100,9 @@ function parseArgs(argv: string[]): Args {
       else { console.error(`Unknown --region=${r}; use one of ${REGION_KEYS.join(', ')}`); process.exit(1); }
     }
   }
-  // If neither flag is set, do both.
-  if (!a.competitors && !a.brands) { a.competitors = true; a.brands = true; }
+  // If no layer flag is set, do the establishment layers (transport is opt-in via --transport,
+  // or included when nothing else is specified).
+  if (!a.competitors && !a.brands && !a.transport) { a.competitors = true; a.brands = true; a.transport = true; }
   return a;
 }
 
@@ -118,6 +122,7 @@ function toRawPoi(p: OsmPlace, region: RegionKey, categoryOverride?: string): Ra
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
+  const db = scriptDb(); // F-22: batched writes over the direct pooled connection
   const region = getRegion(args.region)!;
   const REGION_BBOX = region.bbox;
   console.log(`OSM (Overpass) ${region.name} ingest — competitors:${args.competitors} brands:${args.brands} quick:${args.quick}`);
@@ -137,7 +142,7 @@ async function main() {
       for (const v of verticals) {
         try {
           const places = await establishmentsInBbox(v, REGION_BBOX, { max: 150 });
-          const rep = await loadPoi(places.map((p) => toRawPoi(p, args.region, 'competitor')));
+          const rep = await loadPoi(places.map((p) => toRawPoi(p, args.region, 'competitor')), { db, source: 'osm', provenance: 'osm:bulk-sweep' });
           totalLoaded += rep.loaded;
           console.log(`   ${v}: ${places.length} found → ${rep.loaded} loaded`);
         } catch (e) { failed.push(`vertical:${v}`); console.log(`   ${v}: FAILED — ${e instanceof Error ? e.message : e}`); }
@@ -162,7 +167,7 @@ async function main() {
             onStartTileDone: async (tile, places, info) => {
               // Always load what we captured; only checkpoint the tile as done when it fully
               // succeeded, so a tile with an Overpass failure inside is retried on the next run.
-              const rep = await loadPoi(places.map((p) => toRawPoi(p, args.region, 'competitor')));
+              const rep = await loadPoi(places.map((p) => toRawPoi(p, args.region, 'competitor')), { db, source: 'osm', provenance: 'osm:bulk-sweep' });
               totalLoaded += rep.loaded;
               if (!info.complete) return;
               const c = bboxCentre(tile as BBox);
@@ -189,7 +194,7 @@ async function main() {
       try {
         const places = await brandBranchesInBbox(b, REGION_BBOX, { max: 200 });
         const rows = places.map((p) => toRawPoi(p, args.region, 'competitor'));
-        const rep = await loadPoi(rows);
+        const rep = await loadPoi(rows, { db, source: 'osm', provenance: 'osm:brand-branches' });
         totalLoaded += rep.loaded;
         console.log(`   ${b}: ${places.length} found → ${rep.loaded} loaded`);
       } catch (e) {
@@ -198,6 +203,47 @@ async function main() {
       }
       await pause();
     }
+  }
+
+  // --- 3. Transport layer (F-15 accessibility) — tiled so dense metros aren't truncated -------
+  if (args.transport) {
+    console.log(`\n[3] Transport sweep (jeepney/bus stops, terminals, rail) across ${region.name}…`);
+    try {
+      if (args.quick) {
+        const places = await transportInBbox(REGION_BBOX, { max: 400 });
+        const rep = await loadPoi(places.map((p) => toRawPoi(p, args.region, 'transport')), { db, source: 'osm', provenance: 'osm:transport' });
+        totalLoaded += rep.loaded;
+        console.log(`   transport: ${places.length} found → ${rep.loaded} loaded (quick, single-bbox)`);
+      } else {
+        // Reuse the establishment tiler by wrapping the transport query as a "vertical".
+        const stats = await establishmentsInTiles('__transport__', REGION_BBOX, {
+          max: 800,
+          query: (bbox) => transportInBbox(bbox, { max: 800 }),
+          shouldProcess: async (tile) => {
+            if (args.force) return true;
+            const cov = await prisma.poiCoverage.findUnique({
+              where: { coverage_cell_vertical: { cellKey: `bulk:${bboxKey(tile as BBox)}`, vertical: '__transport__' } },
+              select: { source: true },
+            });
+            return !(cov && cov.source === 'bulk');
+          },
+          onStartTileDone: async (tile, places, info) => {
+            const rep = await loadPoi(places.map((p) => toRawPoi(p, args.region, 'transport')), { db, source: 'osm', provenance: 'osm:transport' });
+            totalLoaded += rep.loaded;
+            if (!info.complete) return;
+            const c = bboxCentre(tile as BBox);
+            await prisma.poiCoverage.upsert({
+              where: { coverage_cell_vertical: { cellKey: `bulk:${bboxKey(tile as BBox)}`, vertical: '__transport__' } },
+              update: { lat: c.lat, lon: c.lon, poiCount: places.length, fetchedAt: new Date(), source: 'bulk' },
+              create: { cellKey: `bulk:${bboxKey(tile as BBox)}`, vertical: '__transport__', lat: c.lat, lon: c.lon, poiCount: places.length, source: 'bulk' },
+            });
+          },
+        });
+        const warn = stats.failedTiles > 0 ? ` — ${stats.failedTiles} tile(s) hit Overpass errors and will retry on the next run` : '';
+        console.log(`   transport: ${stats.processed}/${stats.startTiles} tiles (${stats.skipped} skipped, ${stats.splits} splits) → ${stats.total} nodes${warn}`);
+      }
+    } catch (e) { failed.push('transport'); console.log(`   transport: FAILED — ${e instanceof Error ? e.message : e}`); }
+    await pause();
   }
 
   console.log(`\nOSM ingest complete — ${totalLoaded} POI rows loaded/updated.`);
@@ -214,6 +260,7 @@ main()
     process.exit(1);
   })
   .then(async () => {
+    await disconnectScriptDb();
     const { prisma } = await import('@/lib/db/prisma');
     await prisma.$disconnect();
   });

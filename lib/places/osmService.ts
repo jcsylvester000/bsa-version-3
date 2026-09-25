@@ -203,6 +203,76 @@ export async function establishmentsInBbox(
 }
 
 /**
+ * Public-transport nodes inside a bounding box (F-15 accessibility layer): jeepney/PUV & bus
+ * stops, terminals/stations, and rail/LRT/MRT/tram stops. `bbox` = [south, west, north, east].
+ * These carry `category='transport'` when loaded. Unnamed stops are common in PH OSM data, so —
+ * unlike the establishment sweeps — a node with no name is kept and given a generic label, since
+ * for accessibility the node's POSITION is what matters, not its name.
+ */
+const TRANSPORT_SELECTORS = [
+  '"highway"="bus_stop"',
+  '"amenity"="bus_station"',
+  '"public_transport"="station"',
+  '"public_transport"="platform"',
+  '"public_transport"="stop_position"',
+  '"railway"="station"',
+  '"railway"="halt"',
+  '"railway"="tram_stop"',
+  '"amenity"="ferry_terminal"',
+];
+
+export async function transportInBbox(
+  bbox: [number, number, number, number],
+  opts: { max?: number; fast?: boolean } = {},
+): Promise<OsmPlace[]> {
+  const [s, w, n, e] = bbox;
+  const parts = TRANSPORT_SELECTORS
+    .map((sel) => `  node[${sel}](${s},${w},${n},${e});\n  way[${sel}](${s},${w},${n},${e});`)
+    .join('\n');
+  const serverTimeout = opts.fast ? 25 : QUERY_TIMEOUT_S;
+  const ql = `[out:json][timeout:${serverTimeout}];\n(\n${parts}\n);\nout center ${opts.max ?? 800};`;
+  const elements = await runOverpass(ql, opts.fast);
+  if (!opts.fast) await sleep(POLITE_DELAY_MS);
+  // Keep unnamed stops: label them generically from their tag so the accessibility layer isn't
+  // decimated by PH's sparse stop naming.
+  const out: OsmPlace[] = [];
+  for (const el of elements) {
+    const lat = el.lat ?? el.center?.lat;
+    const lon = el.lon ?? el.center?.lon;
+    if (lat == null || lon == null) continue;
+    const tag = deriveTransportTag(el.tags);
+    out.push({
+      osmId: el.id,
+      name: el.tags?.name?.trim() || transportLabel(tag),
+      lat, lon,
+      osmTag: tag,
+      brand: el.tags?.operator?.trim() || null,
+    });
+  }
+  return out;
+}
+
+function deriveTransportTag(tags?: Record<string, string>): string | null {
+  if (!tags) return null;
+  if (tags.railway) return `railway=${tags.railway}`;
+  if (tags.amenity === 'bus_station') return 'amenity=bus_station';
+  if (tags.amenity === 'ferry_terminal') return 'amenity=ferry_terminal';
+  if (tags.highway === 'bus_stop') return 'highway=bus_stop';
+  if (tags.public_transport) return `public_transport=${tags.public_transport}`;
+  return 'transport';
+}
+
+function transportLabel(tag: string | null): string {
+  const t = tag ?? '';
+  if (t.includes('railway=station') || t.includes('railway=halt')) return 'Rail station';
+  if (t.includes('tram_stop')) return 'Rail/LRT stop';
+  if (t.includes('bus_station')) return 'Bus/PUV terminal';
+  if (t.includes('ferry')) return 'Ferry terminal';
+  if (t.includes('bus_stop') || t.includes('platform') || t.includes('stop_position')) return 'Jeepney/bus stop';
+  return 'Transport stop';
+}
+
+/**
  * A named brand's branches across a bounding box (NCR). Matches the brand on OSM's
  * name/brand/operator tags case-insensitively. Used to map where a chain already
  * operates → saturation and white-space. `bbox` = [south, west, north, east].
@@ -245,6 +315,9 @@ export async function establishmentsInTiles(
     max?: number;
     tileDeg?: number;
     minTileDeg?: number;
+    /** Override the per-tile query (default: establishmentsInBbox for `vertical`). Lets the same
+     *  adaptive tiler drive non-vertical layers such as transport (F-15). */
+    query?: (tile: [number, number, number, number]) => Promise<OsmPlace[]>;
     shouldProcess?: (tile: [number, number, number, number]) => Promise<boolean> | boolean;
     /** `complete` is false when some sub-tile still errored at min size (so the caller can load
      *  what it got but NOT checkpoint the start-tile, leaving it to be retried on the next run). */
@@ -256,6 +329,7 @@ export async function establishmentsInTiles(
   } = {},
 ): Promise<{ startTiles: number; processed: number; skipped: number; splits: number; total: number; failedTiles: number }> {
   const cap = opts.max ?? 400;
+  const queryTile = opts.query ?? ((tile: [number, number, number, number]) => establishmentsInBbox(vertical, tile, { max: cap }));
   const tileDeg = opts.tileDeg ?? 0.05; // smaller start-tiles → lighter Overpass queries, fewer 504s
   const minTileDeg = opts.minTileDeg ?? 0.02;
   const startTiles = subdivide(bbox as BBox, tileDeg);
@@ -270,7 +344,7 @@ export async function establishmentsInTiles(
   async function collect(tile: BBox, seen: Map<string, OsmPlace>, failed: { n: number }): Promise<void> {
     let places: OsmPlace[] | null = null;
     try {
-      places = await establishmentsInBbox(vertical, tile, { max: cap });
+      places = await queryTile(tile);
     } catch (e) {
       if (bboxHeightDeg(tile) > minTileDeg) {
         splits++;

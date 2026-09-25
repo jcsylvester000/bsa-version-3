@@ -31,6 +31,7 @@ import {
   type BrandDef, type PullReport,
 } from '../lib/ingest/places';
 import { loadZonal, loadDemographics, loadLease } from '../lib/ingest/loaders';
+import { scriptDb, disconnectScriptDb } from './scriptDb';
 import { hasPlacesKey } from '../lib/places/placesService';
 
 const DATA = path.join(process.cwd(), 'prisma', 'data');
@@ -131,7 +132,7 @@ async function main() {
   // --- 5. Curated real reference files ------------------------------------
   console.log('\n[5/6] Curated real reference data (BIR zonal / PSA demographics / lease comps)…');
   console.log(`  zonal        ${JSON.stringify(await loadZonal(read('zonal.real.json')))}`);
-  console.log(`  demographics ${JSON.stringify(await loadDemographics(read('demographics.real.json')))}`);
+  console.log(`  demographics ${JSON.stringify(await loadDemographics(read('demographics.real.json'), { db: scriptDb() }))}`);
   console.log(`  lease        ${JSON.stringify(await loadLease(read('lease.real.json')))}`);
 
   // --- 6. Methodology doc chunks (AI substrate) ---------------------------
@@ -188,6 +189,7 @@ main()
     process.exit(1);
   })
   .then(async () => {
+    await disconnectScriptDb();
     const { prisma } = await import('@/lib/db/prisma');
     await prisma.$disconnect();
   });

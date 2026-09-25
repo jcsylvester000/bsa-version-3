@@ -24,6 +24,40 @@ export interface SiteFitResult {
   flags: string[];
 }
 
+/**
+ * Accessibility pillar (F-15): how easy the site is to reach by public transport — the signal
+ * that matters most for Filipino commuter footfall. Built from the transport POI layer
+ * (jeepney/bus stops, terminals, rail/LRT/MRT stations) near the site.
+ *
+ *  - `nearestTransportM`: distance to the closest transport node found within the scan window,
+ *    or null when NONE was found (either the transport layer isn't loaded for this area, or the
+ *    site is genuinely off the network).
+ *  - `countWithinWalkM`: transport nodes within a short walk.
+ *  - `covered`: whether the transport layer exists near the site at all. When false we return
+ *    null (no score) rather than a false "0 accessibility" — the same honesty rule the other
+ *    pillars use for an unloaded layer.
+ *
+ * Distance to a stop is weighted above raw density: a single stop at the door beats six stops
+ * a kilometre away for a customer deciding whether they can get there.
+ */
+export interface AccessibilityInput {
+  nearestTransportM: number | null;
+  countWithinWalkM: number;
+  covered: boolean;
+}
+
+export function scoreAccessibility(i: AccessibilityInput): number | null {
+  if (!i.covered || i.nearestTransportM == null) return null;
+  const NEAR_M = 150; // at/under this, effectively at the door → full distance score
+  const FAR_M = 800; // at/over this, too far to count as walkable transit → zero distance score
+  const distScore =
+    i.nearestTransportM <= NEAR_M ? 100 : i.nearestTransportM >= FAR_M ? 0
+      : Math.round((1 - (i.nearestTransportM - NEAR_M) / (FAR_M - NEAR_M)) * 100);
+  const DENSE = 6; // stops within the walk radius for a full density score
+  const densityScore = Math.min(100, Math.round((i.countWithinWalkM / DENSE) * 100));
+  return Math.round((distScore * 0.65 + densityScore * 0.35) * 10) / 10;
+}
+
 /** Weighted mean over the pillars that have a score. */
 export function compositeScore(pillars: Pillar[]): number | null {
   const scored = pillars.filter((p) => p.score != null && Number.isFinite(p.score));

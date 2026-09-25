@@ -10,6 +10,7 @@ import 'dotenv/config'; // load .env so DATABASE_URL is available when run via `
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { loadPoi, loadZonal, loadDemographics, loadLease, loadMalls } from '../lib/ingest/loaders';
+import { scriptDb, disconnectScriptDb } from './scriptDb';
 
 const DATA = path.join(process.cwd(), 'prisma', 'data');
 const read = (f: string) => JSON.parse(readFileSync(path.join(DATA, f), 'utf8'));
@@ -27,9 +28,10 @@ async function main() {
   };
 
   console.log('Ingesting reference data (real NCR files where available)…');
-  await run('poi', () => loadPoi(read('poi.sample.json')));
+  const db = scriptDb(); // F-22: batched writes over the direct pooled connection
+  await run('poi', () => loadPoi(read('poi.sample.json'), { db }));
   await run('zonal', () => loadZonal(readReal('zonal.real.json', 'zonal.sample.json')));
-  await run('demographics', () => loadDemographics(readReal('demographics.real.json', 'demographics.sample.json')));
+  await run('demographics', () => loadDemographics(readReal('demographics.real.json', 'demographics.sample.json'), { db }));
   await run('lease', () => loadLease(readReal('lease.real.json', 'lease.sample.json')));
   await run('malls', () => loadMalls(read('malls.ncr.json')));
   console.log('Ingestion complete.');
@@ -41,6 +43,7 @@ main()
     process.exit(1);
   })
   .then(async () => {
+    await disconnectScriptDb();
     const { prisma } = await import('@/lib/db/prisma');
     await prisma.$disconnect();
   });

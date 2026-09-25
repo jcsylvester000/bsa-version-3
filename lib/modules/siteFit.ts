@@ -6,12 +6,17 @@
  */
 import 'server-only';
 import { prisma } from '@/lib/db/prisma';
-import { scoreSiteFit, type Pillar, type SiteFitResult } from './siteFitMath';
+import { scoreSiteFit, scoreAccessibility, type Pillar, type SiteFitResult } from './siteFitMath';
 import type { TruthLayer } from '@/lib/truth/truthLayer';
 
 export type { SiteFitResult } from './siteFitMath';
 
 const DEMAND_RADIUS_M = 1200;
+/** Transport nodes within a short walk count toward the accessibility density (F-15). */
+const ACCESS_WALK_M = 500;
+/** If NO transport node exists within this window, the layer isn't loaded here (or the site is
+ *  off the network) → accessibility stays null rather than inventing a "0". */
+const ACCESS_COVERAGE_M = 5000;
 /**
  * Wider radius for the nearest-cell demand fallback where the layer is thin (F3).
  * Set to cover realistic gaps in the current sparse NCR demographic sample; the real
@@ -119,14 +124,31 @@ export async function runSiteFit(
   const demandScore = hasDemo ? clamp(((population - 2000) / (40000 - 2000)) * 100) : null;
   // Competition headroom: fewer competitors = more headroom. 100 at 0, 0 at >=12.
   const competitionScore = hasPoi ? clamp(100 - (competitorCount / 12) * 100) : null;
-  // Accessibility: placeholder pillar until a transport/road layer is ingested —
-  // left null so it neither helps nor invents a signal.
-  const accessScore: number | null = null;
+  // Accessibility pillar (F-15): distance to and density of transport nodes near the site.
+  // Reads the transport POI layer (category='transport'), which the OSM ingest loads per region
+  // (`db:ingest:osm:transport`). When that layer isn't loaded for this area no node is found
+  // within the coverage window and the pillar stays null — so scores are unchanged until the
+  // transport layer exists, then improve where it does.
+  const transRows = await prisma.$queryRaw<Array<{ nearest: number | null; cnt: number | null }>>`
+    SELECT MIN(ST_Distance(geom, ST_SetSRID(ST_MakePoint(${site.lon}, ${site.lat}), 4326)::geography)) AS nearest,
+           COUNT(*) FILTER (
+             WHERE ST_DWithin(geom, ST_SetSRID(ST_MakePoint(${site.lon}, ${site.lat}), 4326)::geography, ${ACCESS_WALK_M})
+           )::int AS cnt
+    FROM poi
+    WHERE category = 'transport'
+      AND ST_DWithin(geom, ST_SetSRID(ST_MakePoint(${site.lon}, ${site.lat}), 4326)::geography, ${ACCESS_COVERAGE_M})
+  `;
+  const nearestTransportM = transRows[0]?.nearest != null ? Number(transRows[0].nearest) : null;
+  const accessScore = scoreAccessibility({
+    nearestTransportM,
+    countWithinWalkM: transRows[0]?.cnt ?? 0,
+    covered: nearestTransportM != null,
+  });
 
   const pillars: Pillar[] = [
     { key: 'demand', label: 'Catchment demand', score: demandScore, weight: 0.5, truthLayer: demandTruth },
     { key: 'competition', label: 'Competition headroom', score: competitionScore, weight: 0.35, truthLayer: 'verified' as TruthLayer },
-    { key: 'accessibility', label: 'Accessibility', score: accessScore, weight: 0.15, truthLayer: 'assumed' as TruthLayer },
+    { key: 'accessibility', label: 'Accessibility', score: accessScore, weight: 0.15, truthLayer: 'verified' as TruthLayer },
   ];
 
   return scoreSiteFit(pillars);

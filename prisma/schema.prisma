@@ -144,6 +144,7 @@ enum PoiCategory {
 
 enum PoiSource {
   osm
+  google
   manual
 }
 
@@ -342,6 +343,9 @@ model Poi {
   region     String?
   province   String?
   source     PoiSource   @default(osm)
+  /// Free-text provenance detail beyond the coarse `source` enum, e.g. "osm:overpass",
+  /// "osm:bulk-sweep", "google:places". NULL for legacy rows loaded before F-18.
+  provenance String?
   truthLayer TruthLayer  @default(verified) @map("truth_layer")
   osmId      BigInt?     @unique @map("osm_id")
 
