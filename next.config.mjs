@@ -57,10 +57,15 @@ const securityHeaders = [
   ...(isDev ? [] : [{ key: 'Strict-Transport-Security', value: 'max-age=31536000; includeSubDomains' }]),
 ];
 
+// Build id shown in the app so you can confirm which build is live (audit F-50). Netlify sets
+// COMMIT_REF at build time; bake the short SHA into the client bundle as NEXT_PUBLIC_BUILD_ID.
+const buildId = (process.env.COMMIT_REF || process.env.VERCEL_GIT_COMMIT_SHA || '').slice(0, 7) || 'dev';
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
+  env: { NEXT_PUBLIC_BUILD_ID: buildId },
   // Prisma is a server-only dependency; keep it external so it is never bundled to the client.
   experimental: {
     serverComponentsExternalPackages: ['@prisma/client', 'bcryptjs', '@react-pdf/renderer'],

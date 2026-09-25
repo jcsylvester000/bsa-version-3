@@ -4,13 +4,15 @@
 # Netlify serverless functions, so this is NOT a static export — the full app
 # (auth, Prisma → Neon, the deterministic pipeline) runs server-side on Netlify.
 #
-# Prisma note: `prisma generate` must run at build time so the client matches the
-# schema. The build command below runs it before `next build`. DATABASE_URL and the
-# other secrets are set in the Netlify UI (Site settings → Environment variables),
-# never committed here.
+# Prisma note: `prisma generate` must run at build time so the client matches the schema, and
+# `prisma migrate deploy` applies any pending migrations BEFORE the new code goes live — so the code
+# and the database schema are never out of sync (audit F-49). migrate deploy uses DIRECT_URL (the
+# non-pooled Neon connection); set DIRECT_URL alongside DATABASE_URL in the Netlify env. If a
+# migration fails the build fails, which is intended — a bad migration must not ship.
+# DATABASE_URL / DIRECT_URL / AUTH_SECRET and the other secrets are set in the Netlify UI, never here.
 
 [build]
-  command = "npx prisma generate && npm run build"
+  command = "npx prisma migrate deploy && npx prisma generate && npm run build"
   publish = ".next"
 
 [build.environment]

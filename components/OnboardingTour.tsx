@@ -27,7 +27,7 @@ interface Step {
 const STEPS: Step[] = [
   {
     title: 'Welcome to BSA 👋',
-    body: "This is your Business Site Analysis workspace — the tool that helps you decide, with real data, whether a location is worth opening and whether it will quietly eat into the branches you already run. Over the next minute I'll walk you through the four screens you'll live in day to day. Nothing here replaces your judgment as a broker; BSA just puts the numbers in front of you so the conversation with a franchisee is grounded, not guessed.",
+    body: "This is your Business Site Analysis workspace — the tool that helps you decide, with real data, whether a location is worth opening and whether it will quietly eat into the branches you already run. Over the next minute I'll walk you through how it works. Nothing here replaces your judgment as a broker; BSA just puts the numbers in front of you so the conversation with a franchisee is grounded, not guessed.",
     highlight: 'BSA sharpens the site decision with data — you still close the deal.',
   },
   {
@@ -43,16 +43,14 @@ const STEPS: Step[] = [
     highlight: 'Open any saved run to see the ranked shortlist — edit and re-run anytime.',
   },
   {
-    anchor: 'nav-modules',
-    title: 'The Intelligence modules',
-    body: 'This is where BSA reads each site from four angles. Territory Guard checks whether a new branch adds sales or cannibalises the ones you already have. Lease Benchmark shows how a site\'s asking rent compares to the corridor so a franchisee never signs a ten-year lease blind. Daypart Demand maps when the foot traffic actually shows up, and White-Space Map finds the gaps worth chasing. Look for the ⓘ icon on any result — it explains, in plain terms, how to read the number and how much to trust it.',
-    highlight: 'Four lenses on every site — and the ⓘ icon tells you how to read each number.',
+    title: 'Open a site to see every angle',
+    body: 'From the shortlist, open any site to read it from four angles, each on its own tab. Territory Guard checks whether a new branch adds sales or cannibalises the ones you already run. Lease Benchmark shows how a site\'s asking rent sits against the corridor so a franchisee never signs a ten-year lease blind. Daypart Demand maps when the foot traffic actually shows up, and White-Space finds nearby gaps worth chasing. Every figure carries an honesty label — Verified, Assumed or Projected — so you always know how much to trust it.',
+    highlight: 'Four lenses on every site — each figure labelled Verified, Assumed or Projected.',
   },
   {
-    anchor: 'nav-reports',
-    title: 'Export a Site Report',
-    body: "Once you've settled on a site, generate a clean, branded report your team — or a franchisee — can actually act on. It pulls together the shortlist, the scores, and the reasoning behind them into one shareable document, with every figure still carrying its honesty label so nobody mistakes an estimate for a measured fact. That's the whole loop: intake, analyse, report.",
-    highlight: 'Turn the analysis into a shareable, branded report — one clean document.',
+    title: 'The Final Report tells you Go or No-Go',
+    body: "The Final Report tab rolls all of that into one clear call — Proceed, Proceed with caution, or No-Go — with a short reason and the findings behind it. It's the same verdict you see on the dashboard, so nothing contradicts itself. When you've settled on a site, Export site PDF gives you a clean, branded one-pager to share with your team or a franchisee. That's the whole loop: intake, analyse, decide.",
+    highlight: 'One clear Proceed / Caution / No-Go call — export it as a branded PDF.',
   },
   {
     title: "You're all set 🎉",

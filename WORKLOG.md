@@ -92,6 +92,32 @@ and clear any site stuck in `generating` by regenerating.
 
 ---
 
+## 2026-09-25 — Audit fixes batch 2 (F-04, F-32, F-33, F-48, F-49, F-50)
+
+- **F-48 — CI.** `.github/workflows/ci.yml` runs npm ci → prisma generate → typecheck → test → build
+  on every push and PR (dummy env values; no DB needed).
+- **F-49 — migrate on deploy.** Netlify build command is now
+  `npx prisma migrate deploy && npx prisma generate && npm run build`, so pending migrations apply
+  (via DIRECT_URL) before the new code goes live; a failed migration fails the build.
+- **F-50 — build id.** `next.config.mjs` bakes the short COMMIT_REF into `NEXT_PUBLIC_BUILD_ID`; the
+  signed-in footer shows `· build <sha>` so you can confirm which build is live (ends the
+  "the fix didn't deploy" confusion).
+- **F-32 — mobile navigation.** New `components/MobileNav.tsx`: a hamburger in the mobile top bar opens
+  a slide-over drawer with the same SidebarNav items + Settings + Logout (closes on route change,
+  backdrop, Escape; focus-visible rings). Phones can now reach every screen.
+- **F-33 — onboarding tour.** Rewrote the two steps that pointed at the removed `nav-modules` /
+  `nav-reports` items; they now describe the per-site tabs and the Final Report / PDF, matching the
+  current app.
+- **F-04 — pipeline time limit.** `export const maxDuration = 26` (+ force-dynamic) on
+  `/api/runs/[id]/run` so a slow first site gets the full platform window instead of being killed
+  mid-processing and retried forever. The double POI-cache warm is already idempotent (no-op when the
+  area is covered). Cleaned the route's stale AI comments.
+
+**426/426 tests, typecheck clean, `next build` compiles.** Audit workbook updated (6 marked Done).
+⚠️ Owner: set `DIRECT_URL` in Netlify env (used by migrate deploy) if not already set.
+
+---
+
 ## 2026-09-25 — Audit fixes batch 1 (F-01, F-02, F-03, F-07)
 
 Started on the audit's "do first" list (docs/BSA_Application_Audit.xlsx).

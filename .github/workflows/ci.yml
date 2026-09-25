@@ -1,0 +1,38 @@
+name: CI
+
+# Typecheck, unit tests and a production build on every push and pull request, so broken
+# code can't reach main unnoticed (audit F-48). No live database or secrets are needed:
+# the app pages are dynamic (not statically generated at build), and the Prisma client is
+# created lazily, so build + tests run against dummy env values.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    env:
+      # Dummy values so the fail-closed guards (AUTH_SECRET length, DATABASE_URL presence)
+      # don't trip during `next build`. No real database is contacted.
+      AUTH_SECRET: ci-dummy-auth-secret-at-least-32-chars-long
+      DATABASE_URL: postgresql://user:pass@localhost:5432/bsa?sslmode=disable
+      DIRECT_URL: postgresql://user:pass@localhost:5432/bsa?sslmode=disable
+      NODE_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Generate Prisma client
+        run: npx prisma generate
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Unit tests
+        run: npm test
+      - name: Production build
+        run: npm run build

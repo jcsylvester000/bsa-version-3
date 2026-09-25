@@ -6,6 +6,7 @@ import { isUuid } from '@/lib/util/uuid';
 import { LogoutButton } from '@/components/LogoutButton';
 import { GridLogo } from '@/components/GridLogo';
 import { SidebarNav } from '@/components/SidebarNav';
+import { MobileNav } from '@/components/MobileNav';
 import { OnboardingTour } from '@/components/OnboardingTour';
 import { BROKER_DISCLAIMER_SHORT } from '@/lib/truth/guardrailCopy';
 
@@ -51,14 +52,20 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <div className="flex-1">
         {/* Mobile top bar */}
         <header className="flex items-center justify-between border-b border-ink-border bg-ink-panel-2 px-4 py-3 md:hidden">
-          <Link href="/runs" className="flex items-center">
-            <GridLogo className="h-7 w-auto" />
-          </Link>
+          <div className="flex items-center gap-2">
+            <MobileNav email={session.email} />
+            <Link href="/runs" className="flex items-center">
+              <GridLogo className="h-7 w-auto" />
+            </Link>
+          </div>
           <LogoutButton />
         </header>
         <main className="mx-auto max-w-7xl px-6 py-8">{children}</main>
-        {/* RA 9646 / broker-supplementation notice on every signed-in page. */}
-        <footer className="mx-auto max-w-7xl px-6 pb-6 text-[11px] leading-relaxed text-ink-muted">{BROKER_DISCLAIMER_SHORT}</footer>
+        {/* RA 9646 / broker-supplementation notice on every signed-in page, plus the running build id. */}
+        <footer className="mx-auto max-w-7xl px-6 pb-6 text-xs leading-relaxed text-ink-muted">
+          {BROKER_DISCLAIMER_SHORT}
+          <span className="ml-2 opacity-60">· build {process.env.NEXT_PUBLIC_BUILD_ID ?? 'dev'}</span>
+        </footer>
       </div>
 
       <OnboardingTour show={showTour} />

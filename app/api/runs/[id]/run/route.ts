@@ -9,15 +9,16 @@ import { audit } from '@/lib/audit/audit';
 
 /**
  * POST /api/runs/[id]/run — execute one time-boxed slice of the deterministic pipeline.
- * The client re-invokes until `complete: true`. Body `{ refresh: true }` restarts a finished
- * run (also clears its cached AI analyses, which would no longer match the new figures).
+ * The client re-invokes until `complete: true`. Body `{ refresh: true }` restarts a finished run.
  *
- * AI generation is deliberately NOT done here (Batch 2): fanning out one live-model call per
- * site inside this request blew through the serverless function limit. When the run
- * completes, the client requests each site's analysis separately via
- * POST /api/analysis-report (one site per invocation, locked against double-billing), and the
- * Analysis tab generates on demand for any site still missing one.
+ * Each slice self-limits to PIPELINE_BUDGET_MS (~5.5s) and hands back to the client, but at least
+ * one site always runs fully — so the function must be allowed the full platform budget or a slow
+ * first site is killed mid-processing and retried forever (audit F-04). maxDuration pins that.
  */
+// Netlify synchronous functions allow up to 26s; give the slice the full window.
+export const maxDuration = 26;
+export const dynamic = 'force-dynamic';
+
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getSession();
   if (!session) return errors.unauthorized();
@@ -29,7 +30,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   if (!canAccessRun(session, run)) return errors.forbidden();
 
   // Body `{ refresh: true }` (first call of a manual re-run) recomputes a finished run from
-  // scratch; later calls (no body) resume the time-boxed slices.
+  // scratch; later calls (no body) resume the time-boxed slices. The Final Report recommendation
+  // is derived live from the refreshed module results, so there is nothing extra to regenerate.
   const body = (await req.json().catch(() => null)) as { refresh?: unknown } | null;
   const refresh = body?.refresh === true;
 
