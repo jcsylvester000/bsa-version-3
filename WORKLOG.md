@@ -171,6 +171,25 @@ and clear any site stuck in `generating` by regenerating.
 
 ---
 
+## 2026-09-26 — Audit fixes batch 5 (F-21 done, F-12 partial — schema keys + indexes)
+
+New migration `20260926000000_schema_keys_indexes` (idempotent, non-destructive):
+- **F-21 (done):** `@@index([pipelineRunId])` on `module_result` (filtered on every dashboard load, the
+  report composer, and the ON DELETE CASCADE — previously unindexed); dropped the duplicate GiST index
+  on `demographic_cell.geom` (`_geom_gist` left over from init alongside `_geom_gix`); added the missing
+  `prisma/migrations/migration_lock.toml`. (Residual micro-opt, not done: rewriting nearest-row lookups
+  to the KNN `<->` operator — low impact on small tables.)
+- **F-12 (partial):** added a `region` column + index to `demographic_cell` and made
+  `db:load-demographics` stamp the PSA region, enabling region-scoped catchment/white-space reads.
+  NOT done (deferred — risky on existing rows + needs loader coordination): a unique key on
+  `mall_property (region, mall_name)` and a natural key on `lease_comp`.
+
+**430 tests, typecheck clean, `next build` compiles.** Audit workbook: 17 Done, F-12 In progress.
+**⚠️ Owner:** deploy applies the migration automatically now (F-49); to apply locally run
+`npx prisma migrate deploy`.
+
+---
+
 ## 2026-09-26 — Audit fixes batch 4 (F-08, F-09, F-10 — regional data honesty)
 
 Removed the last NCR assumptions from provincial scoring.

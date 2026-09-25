@@ -448,11 +448,14 @@ model DemographicCell {
   ageProfile   Json?      @map("age_profile")
   renterSharePct Decimal? @map("renter_share_pct") @db.Decimal(5, 2)
   daytimePop   Int?       @map("daytime_pop")
+  /// PSA region (e.g. 'NCR', 'IV-A') — enables region-scoped catchment/white-space reads (F-12).
+  region       String?
   /// MultiPolygon (R-04): the barangay boundary from admin_boundary, or the legacy 600 m circle
   /// (coerced to MultiPolygon). Catchment reads use ST_DWithin over this.
   geom         Unsupported("geography(MultiPolygon, 4326)")?
   truthLayer   TruthLayer @default(verified) @map("truth_layer")
 
+  @@index([region])
   @@map("demographic_cell")
 }
 
@@ -531,6 +534,8 @@ model ModuleResult {
 
   @@unique([candidateSiteId, module], name: "site_module_key")
   @@index([module])
+  // Every dashboard load, the report composer and the cascade delete filter by run (audit F-21).
+  @@index([pipelineRunId])
   @@map("module_result")
 }
 

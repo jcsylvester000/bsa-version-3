@@ -13,7 +13,7 @@
 import 'dotenv/config';
 import { readFileSync } from 'node:fs';
 import { prisma } from '@/lib/db/prisma';
-import { REGION_KEYS, type RegionKey } from '@/lib/geo/regions';
+import { REGION_KEYS, getRegion, type RegionKey } from '@/lib/geo/regions';
 import { parseCsv } from '@/lib/util/csv';
 import { demographicsRowFrom } from '@/lib/geo/demographicsRow';
 
@@ -55,6 +55,7 @@ async function main() {
   console.log(`Demographics — region=${args.region} rows=${records.length}`);
   if (records.length === 0) { console.error('No rows parsed. Check the CSV.'); process.exit(1); }
 
+  const region = getRegion(args.region)?.psaRegion ?? null; // stamp the PSA region for scoped reads (F-12)
   let loaded = 0, noPop = 0, noGeom = 0, skipped = 0;
   for (const rec of records) {
     const row = demographicsRowFrom(rec);
@@ -64,8 +65,8 @@ async function main() {
     // always carry a real population, so Verified here.
     await prisma.demographicCell.upsert({
       where: { psgcCode: row.psgcCode },
-      update: { barangay: row.barangay, city: row.city, population: row.population, incomeBand: row.incomeBand, daytimePop: row.daytimePop, truthLayer: 'verified' },
-      create: { psgcCode: row.psgcCode, barangay: row.barangay, city: row.city, population: row.population, incomeBand: row.incomeBand, daytimePop: row.daytimePop, truthLayer: 'verified' },
+      update: { barangay: row.barangay, city: row.city, population: row.population, incomeBand: row.incomeBand, daytimePop: row.daytimePop, region, truthLayer: 'verified' },
+      create: { psgcCode: row.psgcCode, barangay: row.barangay, city: row.city, population: row.population, incomeBand: row.incomeBand, daytimePop: row.daytimePop, region, truthLayer: 'verified' },
     });
     // Copy the barangay boundary geometry (if loaded) so catchment ST_DWithin works over the real area.
     const upd = await prisma.$executeRaw`
