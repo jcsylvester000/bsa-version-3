@@ -1,6 +1,6 @@
 'use client';
 
-import { fmtInt } from '@/lib/util/format';
+import { fmtInt, fmtPeso } from '@/lib/util/format';
 import { summariseSite } from '@/lib/modules/siteVerdict';
 import { LEASE_POSITION_LABEL, ZONAL_FLOOR_NOTE } from '@/lib/truth/guardrailCopy';
 import { useState } from 'react';
@@ -155,7 +155,7 @@ function tl(v: string | null | undefined, fallback: TL): TL {
 }
 /** Missing numbers display as "—", never as a fabricated 0. */
 const fmtPct = (v: number | null | undefined): string => (v == null ? '—' : `${v}%`);
-const fmtPeso = (v: number | null | undefined): string => (v == null ? '—' : `₱${fmtInt(v)}`);
+// fmtPeso now comes from lib/util/format (single source; identical behaviour). F-45.
 
 /** 0–23 → "12 NN", "3 PM", "6 AM" (Manila convention; no locale/ICU dependence). */
 function fmtHour(h: number): string {

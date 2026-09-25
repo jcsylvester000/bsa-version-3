@@ -74,7 +74,7 @@ export default async function RunsPage({ searchParams }: { searchParams: { runId
             runId={run.id}
             runName={run.name ?? null}
             createdAt={run.createdAt ? run.createdAt.toISOString() : null}
-            brandName={run.franchisor.brandName}
+            brandName={run.franchisor?.brandName ?? 'Unknown brand'}
             vertical={run.vertical}
             siteCount={run._count.sites}
             data={dash}
@@ -108,7 +108,7 @@ export default async function RunsPage({ searchParams }: { searchParams: { runId
   const usingMock = isMockUser(session) && dbRuns.length === 0;
   const allRuns = usingMock
     ? DEMO_RUNS.map((r) => ({ id: r.id, name: null as string | null, franchisor: { brandName: r.brandName }, vertical: r.vertical, status: r.status as string, _count: { sites: r.siteCount }, createdAt: null as Date | null, intake: null as { version: number } | null }))
-    : dbRuns.map((r) => ({ id: r.id, name: r.name as string | null, franchisor: r.franchisor, vertical: r.vertical, status: r.status as string, _count: r._count, createdAt: r.createdAt as Date | null, intake: r.intake ? { version: r.intake.version } : null }));
+    : dbRuns.map((r) => ({ id: r.id, name: r.name as string | null, franchisor: r.franchisor ?? { brandName: 'Unknown brand' }, vertical: r.vertical, status: r.status as string, _count: r._count, createdAt: r.createdAt as Date | null, intake: r.intake ? { version: r.intake.version } : null }));
 
   // Per-run result counts + area (design v2 · B3). One flat read of the listed runs' sites
   // (≤ 50 runs × 5 sites) — no include/transaction, safe under the Neon HTTP adapter.

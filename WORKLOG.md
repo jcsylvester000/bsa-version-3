@@ -171,6 +171,23 @@ and clear any site stuck in `generating` by regenerating.
 
 ---
 
+## 2026-09-26 — F-45 (helper dedup) + harden a null-franchisor server crash
+
+- **F-45:** `siteVerdict.ts` and `SiteIntelligenceTabs.tsx` now use the single shared `fmtPeso`
+  (`lib/util/format.ts`) instead of local copies. `VERDICT_COLOR` was already single-source
+  (`lib/geo/mapGeometry.ts`, design pass). The two `fmtPhp`s are intentionally different (backend
+  reason-strings with no ₱ vs UI with ₱ + null handling), left as-is.
+- **Prod #329 triage / hardening:** a live Server-Components render error (#329, digest in the Netlify
+  log) on the signed-in pages. Hardened the one genuine latent crash it could be: `run.franchisor.brandName`
+  assumed the relation is never null — an orphaned run (franchisor deleted) would throw during SSR.
+  Now `run.franchisor?.brandName ?? 'Unknown brand'` on the runs list, run detail and site pages.
+  The actual cause must be read from the Netlify function log (digest) — most likely a pending Prisma
+  migration on the deployed DB or a null relation.
+
+**433 tests, typecheck clean, `next build` compiles.** Audit workbook: 19 Done.
+
+---
+
 ## 2026-09-26 — Audit fix F-14 (lease-comp freshness)
 
 `observedDate` was only used to sort comps — never surfaced. Added a pure `leaseFreshness()` in

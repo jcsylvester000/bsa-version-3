@@ -11,6 +11,7 @@
  * The three site-viability modules (Territory, Lease, Daypart) drive the call; White-Space is shown
  * as an opportunity note but does not move the verdict for THIS site.
  */
+import { fmtPeso as peso } from '@/lib/util/format';
 
 export type SiteClass = 'proceed' | 'cautious' | 'no_go';
 export type Tone = 'go' | 'caution' | 'nogo' | 'muted';
@@ -53,7 +54,6 @@ const CLASS_LABEL: Record<SiteClass, { label: string; tone: 'go' | 'caution' | '
 };
 
 const toneValue = (t: Tone): number => (t === 'go' ? 1 : t === 'nogo' ? -1 : 0);
-const peso = (n: number): string => `₱${Math.round(n).toLocaleString('en-US')}`;
 
 /** Territory tone + finding from its verdict (adds → go, mixed → caution, redistributes → no-go). */
 function territoryFinding(t: SummaryInput['territory']): SiteFinding | null {

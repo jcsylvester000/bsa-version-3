@@ -109,7 +109,7 @@ export default async function SiteReportPage({ searchParams }: { searchParams: {
       <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
         <div className="flex flex-col gap-2">
           <Link href={`/runs?runId=${runId}`} className="link inline-flex min-h-tap items-center self-start text-body">← Site Dashboard</Link>
-          <p className="overline">{run.franchisor.brandName}{site.city ? ` · ${site.city}` : ''}</p>
+          <p className="overline">{run.franchisor?.brandName ?? 'Unknown brand'}{site.city ? ` · ${site.city}` : ''}</p>
           <h1 className="text-h1">{site.label}</h1>
           <p className="text-body text-ink-muted">Full site intelligence — one site, every module.</p>
         </div>
