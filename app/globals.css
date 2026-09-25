@@ -3,140 +3,186 @@
 @tailwind utilities;
 
 /* ============================================================================
-   Dark "Site Intelligence" theme — matches the Visual Prototype mockups.
+   BSA v2 tokens. Channels are "R G B" so Tailwind opacity modifiers work (bg-go/15).
+   Dark is the default; add data-theme="light" to <html> for the light theme.
    ============================================================================ */
+:root,
+[data-theme='dark'] {
+  --bg: 14 25 47;            /* Midnight */
+  --panel: 28 51 94;         /* Nile Blue */
+  --panel-2: 21 37 74;
+  --hover: 37 64 105;
+  --border: 42 67 114;       /* decorative hairline */
+  --border-strong: 112 132 168; /* inputs / secondary buttons — 3.3:1 */
+  --text: 237 242 251;
+  --text-muted: 169 182 206; /* was #94A3BE — now 6.1:1 on Nile Blue */
+  --heading: 237 242 251;
+  --accent-text: 226 185 133; /* Burly Wood */
+  --focus: 226 185 133;
+  --go: 92 203 152;          /* #5CCB98 — 6.2:1 */
+  --caution: 232 182 76;     /* #E8B64C — 6.7:1 */
+  --nogo: 242 140 134;       /* #F28C86 — 5.3:1 (old #D9534F failed at 3.15) */
+  --projected: 179 154 232;  /* #B39AE8 — 5.2:1 (old #9B7BD4 failed at 3.67) */
+  --on-status: 14 25 47;     /* Midnight on solid verdict fills (≥7.4:1) */
+  color-scheme: dark;
+}
+[data-theme='light'] {
+  --bg: 246 244 241;
+  --panel: 255 255 255;
+  --panel-2: 240 238 234;
+  --hover: 234 237 243;
+  --border: 210 210 210;     /* Iron */
+  --border-strong: 122 134 155;
+  --text: 14 25 47;
+  --text-muted: 74 88 115;
+  --heading: 28 51 94;
+  --accent-text: 142 90 59;
+  --focus: 28 51 94;
+  --go: 30 122 82;
+  --caution: 138 90 0;
+  --nogo: 179 38 30;
+  --projected: 107 79 176;
+  --on-status: 255 255 255;
+  color-scheme: light;
+}
+
 body {
-  @apply bg-ink-bg text-ink-text font-body antialiased;
+  @apply bg-ink-bg font-body text-body text-ink-text antialiased;
 }
 
 h1, h2, h3, h4 {
-  @apply font-heading text-ink-text;
+  @apply font-heading font-normal text-ink-heading;
 }
+
+a { @apply text-accent-text; }
+a:hover { @apply text-ink-text; }
 
 @layer components {
   /* Surfaces */
-  .card {
-    @apply rounded-xl border border-ink-border bg-ink-panel;
-  }
-  .card-inset {
-    @apply rounded-lg border border-ink-border bg-ink-panel-2;
-  }
+  .card { @apply rounded-card border border-ink-border bg-ink-panel shadow-e1; }
+  .card-inset { @apply rounded-xl border border-ink-border bg-ink-panel-2; }
+  .focus-ring { @apply focus-visible:shadow-focus focus-visible:outline-none; }
+
+  /* Headings / text helpers */
+  .overline { @apply text-overline uppercase text-ink-muted; }
+  .rationale { @apply font-serif text-rationale text-ink-text; }
 
   /* KPI stat tile */
-  .stat-tile {
-    @apply rounded-xl border border-ink-border bg-ink-panel-2 p-4;
-  }
-  .stat-label {
-    @apply text-[11px] font-medium uppercase tracking-wider text-ink-muted;
-  }
-  .stat-value {
-    @apply mt-1 text-3xl font-bold text-ink-text;
-  }
+  .stat-tile { @apply card-inset flex flex-col gap-1.5 p-4; }
+  .stat-label { @apply text-label text-ink-muted; }
+  .stat-value { @apply text-stat tabular-nums text-ink-text; }
+  .stat-empty { @apply border-dashed border-ink-border-strong; }
 
-  /* Truth Layer chip */
-  .tl-chip {
-    @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium;
-  }
-  .tl-verified { @apply bg-verified/15 text-verified; }
-  .tl-assumed { @apply bg-assumed/15 text-assumed; }
-  .tl-projected { @apply bg-projected/20 text-projected; }
+  /* Truth Layer chip — outlined, glyph + word (never filled, so it stays quieter than verdicts) */
+  .tl-chip { @apply inline-flex h-6 items-center gap-1 rounded-chip border px-1.5 text-chip uppercase; }
+  .tl-chip-sm { @apply h-[22px] w-[22px] justify-center px-0 text-[12px] font-bold; }
+  .tl-verified { @apply border-verified/55 text-verified; }
+  .tl-assumed { @apply border-assumed/55 text-assumed; }
+  .tl-projected { @apply border-projected/60 text-projected; }
 
-  /* Verdict / status pill */
-  .pill { @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold; }
-  .pill-go { @apply bg-go/15 text-go; }
-  .pill-caution { @apply bg-caution/15 text-caution; }
-  .pill-nogo { @apply bg-nogo/15 text-nogo; }
-  .pill-new { @apply bg-accent/15 text-accent; }
+  /* Verdict pill — solid fill + circled icon + word */
+  .pill { @apply inline-flex h-8 items-center gap-2 whitespace-nowrap rounded-full pl-1.5 pr-3 text-sm font-semibold text-on-status; }
+  .pill-icon { @apply grid h-5 w-5 place-items-center rounded-full bg-midnight text-[11px]; }
+  .pill-go { @apply bg-go; }
+  .pill-caution { @apply bg-caution; }
+  .pill-nogo { @apply bg-nogo; }
+  .pill-go .pill-icon { @apply text-go; }
+  .pill-caution .pill-icon { @apply text-caution; }
+  .pill-nogo .pill-icon { @apply text-nogo; }
+  .pill-empty { @apply border border-dashed border-ink-border-strong bg-transparent px-3 font-medium text-ink-muted; }
+  .pill-new { @apply h-6 border border-accent-text/60 bg-transparent px-2 text-[11px] tracking-wide text-accent-text; }
 
-  /* Buttons */
-  .btn-accent {
-    @apply rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-ink-bg transition hover:brightness-110 disabled:opacity-50;
-  }
-  .btn-ghost {
-    @apply rounded-lg border border-ink-border px-4 py-2 text-sm font-medium text-ink-text transition hover:bg-ink-hover;
-  }
+  /* Verdict hero (Final Report) */
+  .verdict-hero { @apply flex flex-col justify-between gap-6 p-8 text-on-status; }
+  .verdict-hero-go { @apply verdict-hero bg-go; }
+  .verdict-hero-caution { @apply verdict-hero bg-caution; }
+  .verdict-hero-nogo { @apply verdict-hero bg-nogo; }
+  .verdict-hero-empty { @apply verdict-hero border-r border-dashed border-ink-border-strong bg-ink-panel-2 text-ink-text; }
+
+  /* Buttons — 44px min, one .btn-primary per view */
+  .btn { @apply focus-ring inline-flex min-h-tap items-center justify-center gap-2 rounded-control px-4 text-body font-medium transition disabled:cursor-not-allowed; }
+  .btn-lg { @apply min-h-[48px] px-5; }
+  .btn-primary { @apply btn bg-accent font-semibold text-accent-on hover:bg-accent-hover disabled:bg-ink-border disabled:text-ink-muted; }
+  .btn-secondary { @apply btn border border-ink-border-strong text-ink-text hover:border-ink-muted hover:bg-ink-hover disabled:border-ink-border disabled:text-ink-border-strong; }
+  .btn-danger { @apply btn border border-nogo text-nogo hover:bg-nogo hover:text-on-status; }
+  /* Legacy aliases — existing markup keeps working */
+  .btn-accent { @apply btn-primary; }
+  .btn-ghost { @apply btn-secondary; }
+  .link { @apply focus-ring rounded text-accent-text underline-offset-4 hover:underline; }
 
   /* Inputs */
-  .field {
-    @apply w-full rounded-lg border border-ink-border bg-ink-panel-2 px-3 py-2 text-sm text-ink-text placeholder:text-ink-muted focus:border-accent focus:outline-none;
-  }
+  .field { @apply focus-ring min-h-[48px] w-full rounded-control border border-ink-border-strong bg-ink-panel-2 px-3.5 text-body text-ink-text placeholder:text-ink-muted focus:border-accent-soft disabled:border-dashed disabled:border-ink-border disabled:text-ink-border-strong; }
+  .field-error { @apply border-2 border-nogo; }
+  .field-label { @apply text-label text-ink-muted; }
+  .field-help { @apply text-label font-normal text-ink-muted; }
+  .field-msg { @apply text-label font-normal text-nogo; }
+
+  /* Tabs — underline, roving tabindex */
+  .tab { @apply focus-ring inline-flex min-h-[52px] items-center gap-1.5 whitespace-nowrap border-b-[3px] border-transparent px-4 text-body text-ink-muted hover:text-ink-text; }
+  .tab-active { @apply border-accent font-semibold text-ink-text; }
+
+  /* Table */
+  .table-head { @apply bg-ink-panel-2 text-overline uppercase text-ink-muted; }
+  .table-row { @apply focus-ring border-t border-ink-border transition hover:bg-ink-hover; }
 
   /* Sidebar nav item */
-  .nav-item {
-    @apply flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-ink-muted transition hover:bg-ink-hover hover:text-ink-text;
-  }
-  .nav-item-active {
-    @apply bg-ink-hover text-ink-text;
-  }
+  .nav-item { @apply focus-ring flex min-h-tap items-center gap-3 rounded-control px-3 text-body text-ink-muted transition hover:bg-ink-hover hover:text-ink-text; }
+  .nav-item-active { @apply bg-ink-hover font-semibold text-ink-text shadow-[inset_3px_0_0_#BE8562]; }
+
+  /* Feedback */
+  .toast { @apply flex items-center gap-3 rounded-xl bg-[#EDF2FB] px-4 py-3.5 text-body text-midnight shadow-e2; }
+  .modal { @apply w-full max-w-md rounded-modal border border-ink-border-strong bg-ink-panel p-6 text-ink-text shadow-e3 backdrop:bg-midnight/70; }
+  .empty-state { @apply card-inset flex flex-col gap-2.5 border-dashed border-ink-border-strong p-6; }
+  .error-state { @apply flex flex-col gap-2.5 rounded-xl border border-nogo/55 bg-nogo/10 p-6; }
+  .notice-ra { @apply border-t border-ink-border pt-4 text-label font-normal leading-relaxed text-ink-muted; }
 }
 
 /* ============================================================================
-   Input readability guard. The theme is dark (inputs = dark panel + light text),
-   but browser AUTOFILL forces a white/yellow background with the browser's own
-   dark text — which on a dark form can render light-on-white (invisible). Pin the
-   autofill fill + text so values are always readable, and guarantee native form
-   controls inherit the dark-theme colors even before Tailwind classes apply.
+   Input readability guard (kept from v1, now token-driven). Browser autofill forces its own
+   colours; pin fill + text so values stay readable in both themes.
    ============================================================================ */
 input, select, textarea {
-  color: #0b1426;            /* dark text — visible if any light background wins */
-  background-color: #15254A; /* deep navy inset by default */
+  color: rgb(var(--text));
+  background-color: rgb(var(--panel-2));
 }
 input.field, select.field, textarea.field {
-  /* !important so a .field input is ALWAYS light-on-dark and can never fall back to the
-     near-black base color above (which rendered typed values invisible on the dark form). */
-  color: #EDF2FB !important;
-  background-color: #15254A;
+  color: rgb(var(--text)) !important;
+  background-color: rgb(var(--panel-2));
 }
-input.field::placeholder, textarea.field::placeholder { color: #94A3BE; }
-/* Chrome/Safari autofill: keep the dark field bg + light text instead of white. */
+input.field::placeholder, textarea.field::placeholder { color: rgb(var(--text-muted)); }
 input:-webkit-autofill,
 input:-webkit-autofill:hover,
 input:-webkit-autofill:focus,
 textarea:-webkit-autofill,
 select:-webkit-autofill {
-  -webkit-text-fill-color: #EDF2FB !important;
-  -webkit-box-shadow: 0 0 0 1000px #15254A inset !important;
-  box-shadow: 0 0 0 1000px #15254A inset !important;
-  caret-color: #EDF2FB;
+  -webkit-text-fill-color: rgb(var(--text)) !important;
+  -webkit-box-shadow: 0 0 0 1000px rgb(var(--panel-2)) inset !important;
+  box-shadow: 0 0 0 1000px rgb(var(--panel-2)) inset !important;
+  caret-color: rgb(var(--text));
   transition: background-color 9999s ease-in-out 0s;
 }
-/* Native option list stays readable on the OS dropdown surface. */
 select.field option { color: #0b1426; background-color: #ffffff; }
 
 /* ============================================================================
-   Analysis Sequence — the 8-second futuristic "system is computing" overlay
-   that plays on every data load. Pure CSS motion; respects reduced-motion.
+   Analysis Sequence overlay — unchanged from v1.
    ============================================================================ */
 @keyframes as-fade-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes as-fade-out { from { opacity: 1; } to { opacity: 0; visibility: hidden; } }
 @keyframes as-rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-
-/* Radar sweep (Territory Guard motif) */
 @keyframes as-radar-sweep { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 @keyframes as-radar-ping { 0% { transform: scale(0.2); opacity: 0.9; } 100% { transform: scale(1); opacity: 0; } }
-
-/* Scanning bar that travels across a panel */
 @keyframes as-scan-x { 0% { left: -20%; } 100% { left: 120%; } }
 @keyframes as-scan-y { 0% { top: -20%; } 100% { top: 120%; } }
-
-/* Grid cells lighting up (White-Space / Dashboard motif) */
 @keyframes as-cell-pulse { 0%,100% { opacity: 0.12; } 50% { opacity: 0.85; } }
-
-/* Bars / curve growing (Lease / Daypart motif) */
 @keyframes as-bar-grow { from { transform: scaleY(0.05); } to { transform: scaleY(1); } }
-
-/* Glowing progress ring stroke */
 @keyframes as-ring-dash { from { stroke-dashoffset: 283; } to { stroke-dashoffset: 0; } }
 @keyframes as-spin { to { transform: rotate(360deg); } }
-
-/* Streaming characters / blinking cursor */
 @keyframes as-blink { 0%,49% { opacity: 1; } 50%,100% { opacity: 0; } }
+@keyframes skeleton { 0% { background-position: -400px 0; } 100% { background-position: 400px 0; } }
 
-/* Overall container timing (8s then fade) */
 .as-overlay { animation: as-fade-in 0.35s ease-out both; }
 .as-overlay-out { animation: as-fade-out 0.5s ease-in both; }
 .as-reveal { animation: as-rise 0.55s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
-
 .as-radar-line { transform-origin: center; animation: as-radar-sweep 2.2s linear infinite; }
 .as-radar-ping { transform-origin: center; animation: as-radar-ping 2.2s ease-out infinite; }
 .as-scan { animation: as-scan-x 1.8s ease-in-out infinite; }
@@ -145,8 +191,6 @@ select.field option { color: #0b1426; background-color: #ffffff; }
 .as-ring-stroke { animation: as-ring-dash 8s linear both; }
 .as-spin { animation: as-spin 1.4s linear infinite; }
 .as-cursor { animation: as-blink 1s step-end infinite; }
-
-/* Subtle moving grid backdrop */
 .as-gridbg {
   background-image:
     linear-gradient(rgba(190,133,98,0.10) 1px, transparent 1px),
@@ -154,37 +198,52 @@ select.field option { color: #0b1426; background-color: #ffffff; }
   background-size: 26px 26px;
   animation: as-fade-in 0.6s ease-out both;
 }
+.skeleton {
+  background: linear-gradient(90deg, rgb(var(--panel)) 0, rgb(var(--hover)) 50%, rgb(var(--panel)) 100%);
+  background-size: 800px 100%;
+  animation: skeleton 1.4s linear infinite;
+  border-radius: 6px;
+}
 
 @media (prefers-reduced-motion: reduce) {
-  .as-radar-line, .as-radar-ping, .as-scan, .as-cell, .as-bar, .as-ring-stroke, .as-spin, .as-cursor {
+  .as-radar-line, .as-radar-ping, .as-scan, .as-cell, .as-bar, .as-ring-stroke, .as-spin, .as-cursor, .skeleton {
     animation: none !important;
   }
 }
 
-/* MapLibre popups inherit the dark theme.
-   !important throughout so our dark styling always beats MapLibre's own stylesheet
-   (loaded via the JS import), which otherwise renders a white popup with pale,
-   near-invisible text on the dark map. */
+/* ============================================================================
+   MapLibre popups + controls inherit the theme (!important beats MapLibre's own CSS).
+   ============================================================================ */
 .maplibregl-popup-content {
-  background: #1C335E !important;
-  color: #EDF2FB !important;
-  border: 1px solid #2A4372 !important;
-  border-radius: 8px !important;
+  background: rgb(var(--panel)) !important;
+  color: rgb(var(--text)) !important;
+  border: 1px solid rgb(var(--border-strong)) !important;
+  border-radius: 10px !important;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45) !important;
-  font-size: 12px;
-  padding: 8px 12px !important;
+  font-size: 14px;
+  line-height: 1.45;
+  padding: 10px 40px 10px 12px !important;
 }
 .maplibregl-popup-tip {
-  border-top-color: #1C335E !important;
-  border-bottom-color: #1C335E !important;
+  border-top-color: rgb(var(--panel)) !important;
+  border-bottom-color: rgb(var(--panel)) !important;
 }
-/* Close button visible on the dark surface. */
 .maplibregl-popup-close-button {
-  color: #94A3BE !important;
-  font-size: 16px;
-  padding: 0 5px !important;
+  color: rgb(var(--text-muted)) !important;
+  font-size: 18px;
+  width: 44px;
+  height: 44px;
+  padding: 0 !important;
 }
 .maplibregl-popup-close-button:hover {
   background: transparent !important;
-  color: #EDF2FB !important;
+  color: rgb(var(--text)) !important;
 }
+.maplibregl-ctrl-group button { width: 44px !important; height: 44px !important; }
+
+/* Map marker recipes (HTML markers) — shape carries meaning, colour reinforces it. */
+.mk-site { width: 32px; height: 32px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); background: #BE8562; border: 3px solid #0E192F; box-shadow: 0 0 0 2px #E2B985; }
+.mk-outlet { width: 22px; height: 22px; border-radius: 50%; background: #EDF2FB; border: 3px solid #1C335E; }
+.mk-direct { width: 16px; height: 16px; transform: rotate(45deg); background: rgb(var(--nogo)); border: 2px solid #0E192F; }
+.mk-adjacent { width: 14px; height: 14px; background: rgb(var(--caution)); border: 2px solid #0E192F; }
+.mk-other { width: 8px; height: 8px; border-radius: 50%; background: rgb(var(--border-strong)); }

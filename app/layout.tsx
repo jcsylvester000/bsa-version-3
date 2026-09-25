@@ -8,7 +8,9 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    // Theme: dark by default. The light tokens exist in globals.css ([data-theme='light']); a Settings
+    // toggle (cookie → this attribute, rendered server-side) is deferred — see docs/DESIGN_V2_CHECKLIST.md.
+    <html lang="en" data-theme="dark">
       <head>
         {/* GRID brand type: Cantata One (headings), Poppins (body), Judson (serif accent). */}
         <link rel="preconnect" href="https://fonts.googleapis.com" />
