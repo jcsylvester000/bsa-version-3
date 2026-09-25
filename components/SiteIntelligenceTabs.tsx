@@ -4,6 +4,8 @@ import { fmtInt } from '@/lib/util/format';
 import { summariseSite } from '@/lib/modules/siteVerdict';
 import { LEASE_POSITION_LABEL, ZONAL_FLOOR_NOTE } from '@/lib/truth/guardrailCopy';
 import { useState } from 'react';
+import { FinalReportHero, FindingsList } from '@/components/FinalReport';
+import { TruthChip, TruthLegend, StatusText } from '@/components/ui/Chips';
 import { useRouter } from 'next/navigation';
 import { TerritoryMap, type MapOutlet } from '@/components/TerritoryMap';
 import { DaypartCurve, type DaypartData } from '@/components/DaypartCurve';
@@ -100,22 +102,39 @@ const TABS = [
   { key: 'lease', label: 'Lease Benchmark' },
   { key: 'daypart', label: 'Daypart Demand' },
   { key: 'whitespace', label: 'White-Space' },
-  { key: 'analysis', label: 'Analysis' },
+  { key: 'analysis', label: 'Final Report' }, // key stays `analysis` so URLs and PDFs don't break
 ] as const;
 
-type TabKey = (typeof TABS)[number]['key'];
+export type TabKey = (typeof TABS)[number]['key'];
+export const TAB_KEYS: readonly TabKey[] = TABS.map((t) => t.key);
 
-function Chip({ tone, children }: { tone: 'go' | 'caution' | 'nogo' | 'muted'; children: React.ReactNode }) {
-  const cls = tone === 'go' ? 'bg-go/10 text-go' : tone === 'nogo' ? 'bg-nogo/10 text-nogo' : tone === 'caution' ? 'bg-caution/10 text-caution' : 'bg-ink-panel-2 text-ink-muted';
-  return <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${cls}`}>{children}</span>;
+/** Extra context for the Final Report hero, loaded by site/page.tsx (README §4). */
+export interface SiteReportMeta {
+  composite?: number | null;
+  rank?: number | null;
+  total?: number | null;
+  confidence?: 'high' | 'med' | 'low' | null;
+  /** Pre-formatted Manila time. */
+  analysedAt?: string | null;
+  truthPct?: { verified: number; assumed: number; projected: number } | null;
 }
 
-function Stat({ label, value, sub }: { label: string; value: React.ReactNode; sub?: string }) {
+/** Status is never colour alone: icon + word (design v2). */
+function Chip({ tone, children }: { tone: 'go' | 'caution' | 'nogo' | 'muted'; children: React.ReactNode }) {
+  return <StatusText tone={tone}>{children}</StatusText>;
+}
+
+/** Design-system stat tile. A missing value renders the honest-gap state ("—", dashed), never 0. */
+function Stat({ label, value, sub, truth }: { label: string; value: React.ReactNode; sub?: string; truth?: TruthKey }) {
+  const empty = value == null || value === '—';
   return (
-    <div className="card-inset p-4">
-      <p className="text-xs uppercase tracking-wide text-ink-muted">{label}</p>
-      <p className="mt-1 text-2xl font-bold text-ink-text">{value}</p>
-      {sub && <p className="mt-1 text-xs text-ink-muted">{sub}</p>}
+    <div className={`stat-tile ${empty ? 'stat-empty' : ''}`}>
+      <div className="flex items-center justify-between gap-2">
+        <p className="stat-label">{label}</p>
+        {truth && !empty && <TruthChip layer={truth} />}
+      </div>
+      <p className={`stat-value ${empty ? 'text-ink-muted' : ''}`}>{value ?? '—'}</p>
+      {sub && <p className="text-label font-normal text-ink-muted">{sub}</p>}
     </div>
   );
 }
@@ -124,6 +143,9 @@ function Stat({ label, value, sub }: { label: string; value: React.ReactNode; su
 type AiCheck = { ungroundedNumbers: string[]; priceVerdictPhrases: string[]; ok: boolean };
 
 type TL = 'Verified' | 'Assumed' | 'Projected';
+type TruthKey = 'verified' | 'assumed' | 'projected';
+/** Display label → Truth Layer key for the chip components. */
+const tk = (t: TL): TruthKey => t.toLowerCase() as TruthKey;
 /** A payload's per-field truth string → display label (fallback when absent on legacy runs). */
 function tl(v: string | null | undefined, fallback: TL): TL {
   return v === 'verified' ? 'Verified' : v === 'assumed' ? 'Assumed' : v === 'projected' ? 'Projected' : fallback;
@@ -145,9 +167,9 @@ function ordinal(n: number): string {
  */
 function ContextualNote({ module }: { module: string }) {
   return (
-    <div className="mb-4 flex items-start gap-2 rounded-lg border-l-4 border-projected bg-projected/10 px-4 py-2.5">
+    <div className="mb-4 flex items-start gap-3 rounded-xl border border-projected/50 bg-projected/10 px-4 py-3">
       <span className="text-projected" aria-hidden>ⓘ</span>
-      <p className="text-xs leading-relaxed text-ink-muted">
+      <p className="text-label font-normal text-ink-muted">
         <span className="font-semibold text-projected">Contextual read.</span>{' '}
         {module} isn&apos;t the primary lens for this format — the figures below are real but
         carry lower weight in the decision. Lean on the format&apos;s primary modules for the call.
@@ -162,10 +184,10 @@ function RerunNote({ module }: { module: string }) {
   return (
     <div className="card p-6">
       <div className="flex items-start gap-3">
-        <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full bg-accent/15 text-accent" aria-hidden>↻</span>
+        <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full bg-ink-hover text-accent-text" aria-hidden>↻</span>
         <div>
-          <p className="text-sm font-semibold text-ink-text">{module} will populate on the next run</p>
-          <p className="mt-1 text-sm leading-relaxed text-ink-muted">
+          <p className="text-body font-semibold text-ink-text">{module} will populate on the next run</p>
+          <p className="mt-1 text-body text-ink-muted">
             {module} is now part of every analysis, but this run was created before that change,
             so it has no stored result yet. Re-run this analysis (New Intake → same inputs →
             Submit &amp; run, or the run&apos;s re-run button) and the result will appear here.
@@ -183,6 +205,8 @@ export function SiteIntelligenceTabs({
   vertical,
   verdict,
   runId,
+  initialTab,
+  report,
 }: {
   site: { id: string; label: string; lat: number; lon: number; siteType: string | null };
   outlets: Array<{ id: string; name: string; lat: number; lon: number; format: string | null }>;
@@ -191,8 +215,12 @@ export function SiteIntelligenceTabs({
   /** The site's weighted-composite band (candidate_site.verdict) — drives the Final Report call. */
   verdict?: string | null;
   runId?: string;
+  /** Tab to open on (from `?tab=`); defaults to the Final Report. */
+  initialTab?: TabKey;
+  /** Hero context for the Final Report (composite, rank, confidence, analysed time, truth mix). */
+  report?: SiteReportMeta;
 }) {
-  const [tab, setTab] = useState<TabKey>('territory');
+  const [tab, setTab] = useState<TabKey>(initialTab ?? 'analysis');
 
   const mapOutlets: MapOutlet[] = outlets.map((o) => ({ id: o.id, name: o.name, lat: o.lat, lon: o.lon, catchmentM: catchmentRadius(o.format) }));
 
@@ -202,29 +230,48 @@ export function SiteIntelligenceTabs({
 
   return (
     <div className="space-y-5">
-      {/* Tab bar */}
-      <div className="flex flex-wrap gap-2">
-        {TABS.map((t) => {
-          const has = payloads[t.key] != null;
-          return (
-            <button
-              key={t.key}
-              onClick={() => setTab(t.key)}
-              className={`rounded-lg px-4 py-2 text-sm font-medium transition ${
-                tab === t.key ? 'bg-accent text-ink-bg' : 'bg-ink-panel-2 text-ink-muted hover:bg-ink-hover'
-              }`}
-            >
-              {t.label}{!has && <span className="ml-1 opacity-60">·</span>}
-            </button>
-          );
-        })}
+      {/* Tab bar — underline tabs, roving tabindex, ← → to move; Truth Layer legend once per page. */}
+      <div className="flex flex-col gap-3 border-b border-ink-border lg:flex-row lg:items-end lg:justify-between">
+        <div role="tablist" aria-label="Site modules" className="-mb-px flex overflow-x-auto">
+          {TABS.map((t) => {
+            const has = t.key === 'analysis' || payloads[t.key] != null;
+            const active = tab === t.key;
+            return (
+              <button
+                key={t.key}
+                type="button"
+                role="tab"
+                id={`tab-${t.key}`}
+                aria-selected={active}
+                aria-controls="site-tabpanel"
+                tabIndex={active ? 0 : -1}
+                onClick={() => setTab(t.key)}
+                onKeyDown={(e) => {
+                  if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+                  e.preventDefault();
+                  const i = TABS.findIndex((x) => x.key === tab);
+                  const next = e.key === 'ArrowRight' ? TABS[(i + 1) % TABS.length] : TABS[(i - 1 + TABS.length) % TABS.length];
+                  setTab(next.key);
+                  requestAnimationFrame(() => document.getElementById(`tab-${next.key}`)?.focus());
+                }}
+                className={`tab ${active ? 'tab-active' : ''}`}
+              >
+                {t.label}
+                {!has && <span className="text-xs text-caution" title="No stored result — re-run to populate">≈</span>}
+              </button>
+            );
+          })}
+        </div>
+        <TruthLegend className="pb-3.5" />
       </div>
 
+      <div id="site-tabpanel" role="tabpanel" aria-labelledby={`tab-${tab}`}>
       {tab === 'territory' && <TerritoryTab site={site} outlets={mapOutlets} p={payloads.territory} primary={primary('territory')} />}
       {tab === 'lease' && <LeaseTab p={payloads.lease} primary={primary('lease')} siteId={site.id} />}
       {tab === 'daypart' && <DaypartTab p={payloads.daypart} primary={primary('daypart')} />}
       {tab === 'whitespace' && <WhiteSpaceTab p={payloads.whitespace} primary={primary('whitespace')} />}
-      {tab === 'analysis' && <AnalysisTab payloads={payloads} primary={primary} siteLabel={site.label} runId={runId} siteId={site.id} verdict={verdict} />}
+      {tab === 'analysis' && <AnalysisTab payloads={payloads} primary={primary} verdict={verdict} report={report} onOpenTab={setTab} />}
+      </div>
     </div>
   );
 }
@@ -295,9 +342,10 @@ function TerritoryTab({ site, outlets, p, primary = true }: { site: { lat: numbe
             (p.ownOutletOverlapPct ?? p.maxOverlapPct) == null
               ? 'not computed on this run — re-run the analysis'
               : (p.ownOutletOverlapPct ?? p.maxOverlapPct)! > 0
-                ? `with your nearest branch (${tl(p.truth?.overlapPct, 'Assumed')})`
-                : `no own branch in this catchment (${tl(p.truth?.overlapPct, 'Assumed')})`
+                ? 'with your nearest branch'
+                : 'no own branch in this catchment'
           }
+          truth={tk(tl(p.truth?.overlapPct, 'Assumed'))}
         />
 
         {/* Competitive saturation — the cannibalization-map signal. Projected. This is the
@@ -307,14 +355,15 @@ function TerritoryTab({ site, outlets, p, primary = true }: { site: { lat: numbe
           value={fmtPct(p.competitiveSaturationPct)}
           sub={
             !tiered
-              ? 'competitor tiers not computed on this run — re-run the pipeline (Projected)'
+              ? 'competitor tiers not computed on this run — re-run the pipeline'
               : mix
-                ? `${mix.direct} direct + ${mix.adjacent} adjacent in the catchment · weighted ${p.weightedCompetitorCount ?? mix.direct} (Projected)`
-                : `${p.competitorCount ?? 0} direct competitors in the catchment (Projected)`
+                ? `${mix.direct} direct + ${mix.adjacent} adjacent in the catchment · weighted ${p.weightedCompetitorCount ?? mix.direct}`
+                : `${p.competitorCount ?? 0} direct competitors in the catchment`
           }
+          truth={tk(tl(p.truth?.competitiveSaturation, 'Projected'))}
         />
 
-        <Stat label="Est. monthly cannibalization" value={fmtPeso(p.totalCannibalizedPhp)} sub="own-branch model (Projected)" />
+        <Stat label="Est. monthly cannibalization" value={fmtPeso(p.totalCannibalizedPhp)} sub="own-branch model" truth={tk(tl(p.truth?.cannibalizedPhp, 'Projected'))} />
 
         {/* Who you compete with — named from the Cannibalization Map. */}
         {p.competitorSet && p.competitorSet.competitors.length > 0 && (
@@ -353,12 +402,14 @@ function TerritoryTab({ site, outlets, p, primary = true }: { site: { lat: numbe
 
 /* ---- Lease -------------------------------------------------------------- */
 // Positional labels only — no price verdicts (Grid guardrail). Shared wording in lib/truth/guardrailCopy.
+// Every tone is 'muted': lease position is a statement, not a status (design v2, PATCHES §1h).
+// The module's influence on the call still reaches the Final Report through siteVerdict.ts.
 const L_VERDICT = {
-  below_market: { label: LEASE_POSITION_LABEL.below_market, tone: 'go' as const },
-  at_market: { label: LEASE_POSITION_LABEL.at_market, tone: 'caution' as const },
-  above_market: { label: LEASE_POSITION_LABEL.above_market, tone: 'caution' as const },
+  below_market: { label: LEASE_POSITION_LABEL.below_market, tone: 'muted' as const },
+  at_market: { label: LEASE_POSITION_LABEL.at_market, tone: 'muted' as const },
+  above_market: { label: LEASE_POSITION_LABEL.above_market, tone: 'muted' as const },
   insufficient_data: { label: LEASE_POSITION_LABEL.insufficient_data, tone: 'muted' as const },
-  corridor_benchmark: { label: LEASE_POSITION_LABEL.corridor_benchmark, tone: 'caution' as const },
+  corridor_benchmark: { label: LEASE_POSITION_LABEL.corridor_benchmark, tone: 'muted' as const },
 };
 function LeaseTab({ p, primary = true, siteId }: { p: SiteModulePayloads['lease']; primary?: boolean; siteId: string }) {
   const router = useRouter();
@@ -382,7 +433,7 @@ function LeaseTab({ p, primary = true, siteId }: { p: SiteModulePayloads['lease'
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) { setSaveState('error'); setSaveMsg(json?.error?.message ?? 'Could not save the asking rent.'); return; }
       setSaveState('saved');
-      setSaveMsg('Saved — the site score now includes this rent. Regenerate the Analysis tab to include it in the write-up.');
+      setSaveMsg('Saved — the site score and the Final Report now include this rent.');
       router.refresh();
     } catch { setSaveState('error'); setSaveMsg('The request failed — check your connection and try again.'); }
   }
@@ -427,32 +478,29 @@ function LeaseTab({ p, primary = true, siteId }: { p: SiteModulePayloads['lease'
         {/* Inline asking-rent check — the input the call-to-action promised. */}
         {compRents.length > 0 && (
           <div className="mt-4 border-t border-ink-border pt-3">
-            <label className="text-xs font-medium text-ink-muted">Your asking rent (₱/sqm/mo)</label>
+            <label htmlFor="asking-rent" className="field-label">Your asking rent (₱/sqm/mo)</label>
             <div className="mt-1 flex items-center gap-2">
               <input
+                id="asking-rent"
                 type="number"
                 inputMode="decimal"
                 value={askingRent}
                 onChange={(e) => setAskingRent(e.target.value)}
                 placeholder={median != null ? `corridor median ≈ ${fmtInt(median)}` : 'e.g. 1450'}
-                className="field w-48 px-2 py-1.5 text-sm"
+                className="field w-56"
               />
               {enteredPct != null && (
                 <span className="text-sm text-ink-text">
                   → <span className="font-semibold">{ordinal(enteredPct)} percentile</span>{' '}
-                  <span className={enteredPct >= 60 ? 'text-caution' : 'text-go'}>
+                  <span className="font-semibold text-ink-text">
                     ({enteredPct >= 60 ? 'above' : enteredPct <= 40 ? 'below' : 'around'} corridor median)
                   </span>
                 </span>
               )}
             </div>
             {enteredPct != null && (
-              <p className="mt-1 text-[11px] text-ink-muted">
-                {enteredPct >= 60
-                  ? 'Room to negotiate down toward the median.'
-                  : enteredPct <= 40
-                    ? 'Below the corridor median.'
-                    : 'Right around the corridor median.'}
+              <p className="mt-1 text-label font-normal text-ink-muted">
+                {`Where this rent sits among ${compRents.length} comparable leases. This is a reference point, not a price opinion.`}
               </p>
             )}
             {enteredPct != null && (
@@ -460,7 +508,8 @@ function LeaseTab({ p, primary = true, siteId }: { p: SiteModulePayloads['lease'
                 <button
                   onClick={useInScore}
                   disabled={saveState === 'saving'}
-                  className="rounded-lg border border-ink-border px-3 py-1.5 text-xs font-medium text-ink-text hover:border-accent disabled:opacity-50"
+                  type="button"
+                  className="btn-secondary"
                   title="Store this asking rent so the Lease criterion counts in the site score"
                 >
                   {saveState === 'saving' ? 'Saving…' : 'Use this rent in the site score'}
@@ -477,13 +526,14 @@ function LeaseTab({ p, primary = true, siteId }: { p: SiteModulePayloads['lease'
         sub={
           p.flags?.includes('corridor_default_fallback')
             ? `No corridor matched this site's location — showing ${p.corridor ?? 'a reference'} comps as a proxy (Projected). Treat this benchmark as indicative only.`
-            : `${n} comparable leases (${tl(p.truth?.comps, 'Assumed')})`
+            : `${n} comparable leases`
         }
+        truth={p.flags?.includes('corridor_default_fallback') ? 'projected' : tk(tl(p.truth?.comps, 'Assumed'))}
       />
-      <Stat label="Base-rent percentile" value={p.baseRentPercentile != null ? ordinal(p.baseRentPercentile) : '—'} sub="within corridor (Assumed)" />
+      <Stat label="Base-rent percentile" value={p.baseRentPercentile != null ? ordinal(p.baseRentPercentile) : '—'} sub="within corridor" truth="assumed" />
       {p.negotiatingRoomPhpSqm != null && (
         <Stat
-          label="Negotiating room to median"
+          label="Distance from corridor median"
           value={`₱${fmtInt(Math.abs(p.negotiatingRoomPhpSqm))}/sqm`}
           sub={p.negotiatingRoomPct != null ? `${Math.abs(p.negotiatingRoomPct)}% ${p.negotiatingRoomPhpSqm > 0 ? 'above' : 'below'} median` : undefined}
         />
@@ -530,7 +580,7 @@ function LeaseTab({ p, primary = true, siteId }: { p: SiteModulePayloads['lease'
                       {delta == null ? (
                         <span className="text-ink-muted">—</span>
                       ) : (
-                        <span className={delta > 0 ? 'text-caution' : delta < 0 ? 'text-go' : 'text-ink-muted'}>
+                        <span className="text-ink-muted">
                           {delta > 0 ? '+' : ''}{fmtInt(delta)} ({delta > 0 ? 'above' : delta < 0 ? 'below' : 'at'})
                         </span>
                       )}
@@ -579,10 +629,10 @@ function DaypartTab({ p, primary = true }: { p: SiteModulePayloads['daypart']; p
       )}
       <div className="space-y-3">
         {noData ? (
-          <Stat label="Catchment mix" value="Not derived" sub="demographic layer not loaded (Projected)" />
+          <Stat label="Catchment mix" value="Not derived" sub="demographic layer not loaded" truth="projected" />
         ) : (
           <>
-        <Stat label="Peak-hour demand captured" value={fmtPct(p.windowMatchPct)} sub="falls inside the format's target window (Projected)" />
+        <Stat label="Peak-hour demand captured" value={fmtPct(p.windowMatchPct)} sub="falls inside the format's target window" truth="projected" />
         <Stat label="Catchment mix" value={`${daytimePct}% daytime`} sub={`${residentialPct}% residential · peaks ${officeLed ? '11:00–14:00' : '17:00–20:00'}`} />
           </>
         )}
@@ -591,7 +641,7 @@ function DaypartTab({ p, primary = true }: { p: SiteModulePayloads['daypart']; p
             calendar (Christmas peak, Undas/Holy Week exodus dip) + vertical term-time note. */}
         {p.seasonality && (p.seasonality.peakSeason || p.seasonality.termTimeNote) && (
           <div className="card p-5">
-            <p className="mb-1 text-xs uppercase tracking-wide text-ink-muted">Seasonality (Projected)</p>
+            <div className="mb-1 flex items-center justify-between gap-2"><p className="stat-label">Seasonality</p><TruthChip layer="projected" /></div>
             {p.seasonality.peakSeason && (
               <p className="text-sm text-ink-text">
                 Peaks in <span className="font-semibold">{p.seasonality.peakSeason.label}</span>
@@ -740,13 +790,13 @@ function WhiteSpaceTab({ p }: { p: SiteModulePayloads['whitespace']; primary?: b
 
               {/* Data row — same fields Territory Guard shows, per area. */}
               <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                <Stat label="Cannibalization" value={`${Math.round(r.cannibalizationPct)}%`} sub="lower is better (Projected)" />
+                <Stat label="Cannibalization" value={`${Math.round(r.cannibalizationPct)}%`} sub="lower is better" truth="projected" />
                 <Stat
                   label="Same-concept nearby"
                   value={`${r.competitorMix.direct} direct`}
                   sub={`+ ${r.competitorMix.adjacent} adjacent in catchment`}
                 />
-                <Stat label="Population" value={fmtInt(r.population)} sub="catchment residents (Verified)" />
+                <Stat label="Population" value={fmtInt(r.population)} sub="catchment residents" truth="verified" />
                 <Stat
                   label="Nearest own branch"
                   value={r.nearestOwnM == null ? 'None nearby' : `${fmtInt(r.nearestOwnM)} m`}
@@ -786,14 +836,13 @@ function WhiteSpaceTab({ p }: { p: SiteModulePayloads['whitespace']; primary?: b
  */
 
 /** One compact label → value row inside a report section, with an optional Truth-Layer tag. */
-function ReportRow({ label, value, truth }: { label: string; value: React.ReactNode; truth?: 'Verified' | 'Assumed' | 'Projected' }) {
-  const truthCls = truth === 'Verified' ? 'text-verified' : truth === 'Assumed' ? 'text-assumed' : 'text-projected';
+function ReportRow({ label, value, truth }: { label: string; value: React.ReactNode; truth?: TL }) {
   return (
-    <div className="flex items-baseline justify-between gap-4 border-b border-ink-border/40 py-1.5 last:border-0">
-      <span className="text-sm text-ink-muted">{label}</span>
-      <span className="text-right text-sm font-medium text-ink-text">
+    <div className="flex min-h-[48px] items-center justify-between gap-4 border-b border-ink-border/40 py-2 last:border-0">
+      <span className="text-body text-ink-muted">{label}</span>
+      <span className="text-right text-body font-medium text-ink-text">
         {value}
-        {truth && <span className={`ml-2 text-[10px] uppercase tracking-wide ${truthCls}`}>({truth})</span>}
+        {truth && <span className="ml-2 inline-flex align-middle"><TruthChip layer={tk(truth)} compact /></span>}
       </span>
     </div>
   );
@@ -801,28 +850,29 @@ function ReportRow({ label, value, truth }: { label: string; value: React.ReactN
 
 /** A per-module section of the combined report: title, verdict chip, and its key figures. */
 function ReportSection({
-  title, tab, ran, verdict, verdictTone, contextual, children,
+  title, tabKey, ran, verdict, verdictTone, contextual, children, onOpenTab,
 }: {
-  title: string; tab: string; ran: boolean;
+  title: string; tabKey: TabKey; ran: boolean;
   verdict?: string; verdictTone?: 'go' | 'caution' | 'nogo' | 'muted';
   contextual?: boolean; children?: React.ReactNode;
+  onOpenTab?: (tab: TabKey) => void;
 }) {
   return (
-    <div className="card p-5">
+    <div className="card flex flex-col p-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <p className="text-sm font-semibold text-ink-text">{title}</p>
-          <p className="text-[11px] uppercase tracking-wide text-ink-muted">{tab} tab</p>
-        </div>
+        <h3 className="font-body text-title text-ink-text">{title}</h3>
         {ran && verdict ? <Chip tone={verdictTone ?? 'muted'}>{verdict}</Chip> : !ran ? <Chip tone="muted">Not run</Chip> : null}
       </div>
       {contextual && ran && (
-        <p className="mt-1 text-[11px] text-projected">Contextual read for this format — carries lower weight in the decision.</p>
+        <p className="mt-1 text-label font-normal text-projected">Contextual read for this format — carries lower weight in the decision.</p>
       )}
       {ran ? (
         <div className="mt-3">{children}</div>
       ) : (
-        <p className="mt-2 text-sm text-ink-muted">This module has no stored result for this site — re-run the analysis to populate it.</p>
+        <p className="mt-2 text-body text-ink-muted">This module has no stored result for this site — re-run the analysis to populate it.</p>
+      )}
+      {onOpenTab && (
+        <button type="button" onClick={() => onOpenTab(tabKey)} className="link mt-auto min-h-tap self-start pt-3 text-left">Open {title} ›</button>
       )}
     </div>
   );
@@ -836,19 +886,15 @@ type LeaseZonal = {
 } | null;
 
 function AnalysisTab({
-  payloads, primary, siteLabel, runId, siteId, verdict,
+  payloads, primary, verdict, report, onOpenTab,
 }: {
   payloads: SiteModulePayloads;
   primary: (m: ModuleKind) => boolean;
-  siteLabel: string;
-  runId?: string;
-  siteId: string;
   verdict?: string | null;
+  report?: SiteReportMeta;
+  onOpenTab: (tab: TabKey) => void;
 }) {
-  function exportPdf() {
-    if (!runId) return;
-    window.open(`/api/analysis-report/pdf?runId=${encodeURIComponent(runId)}&siteId=${encodeURIComponent(siteId)}`, '_blank');
-  }
+  // Export site PDF + Re-run analysis live in the site page header (design v2, PATCHES §1g).
 
   const t = payloads.territory;
   const l = payloads.lease;
@@ -893,72 +939,39 @@ function AnalysisTab({
     (k) => primary(k as ModuleKind),
     (verdict as 'go' | 'caution' | 'nogo' | null) ?? 'insufficient',
   );
-  const verdictPill =
-    summary.tone === 'go' ? 'bg-go/10 text-go border-go/40'
-      : summary.tone === 'nogo' ? 'bg-nogo/10 text-nogo border-nogo/40'
-        : 'bg-caution/10 text-caution border-caution/40';
-  const dot = (tone: string) => (tone === 'go' ? 'bg-go' : tone === 'nogo' ? 'bg-nogo' : tone === 'caution' ? 'bg-caution' : 'bg-ink-muted');
+  // Truth mix for the hero: prefer the page's module-level mix; fall back to a legacy AI context.
+  const legacyMix = payloads.analysis?.contextJson?.truthLayerSummary;
+  const truthPct = report?.truthPct ?? (legacyMix ? (() => {
+    const n = legacyMix.verified + legacyMix.assumed + legacyMix.projected || 1;
+    return { verified: Math.round((legacyMix.verified / n) * 100), assumed: Math.round((legacyMix.assumed / n) * 100), projected: Math.round((legacyMix.projected / n) * 100) };
+  })() : null);
 
   return (
-    <div className="space-y-4">
-      {/* Final report — a deterministic PROCEED / CAUTIOUS / NO-GO recommendation rolled up from
-          the module figures below. No AI, no external call; every finding traces to a module. */}
-      <div className="card p-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-xs uppercase tracking-wide text-ink-muted">Final report</p>
-            <p className="mt-1 text-lg font-bold text-ink-text">Recommendation — {siteLabel}</p>
-            <p className="mt-1 max-w-2xl text-sm text-ink-muted">
-              A single call rolled up from the modules below — Territory Guard, Lease Benchmark, Daypart Demand and White-Space.
-              Every figure is carried straight from its tab with its Truth Layer intact; nothing here is recomputed or invented.
-              {' '}<span className="text-ink-text">{ranCount} of 4 modules</span> have a stored result for this site.
-            </p>
-          </div>
-          {runId && (
-            <div className="flex shrink-0 flex-wrap gap-2">
-              <button
-                onClick={exportPdf}
-                className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-ink-bg transition hover:opacity-90"
-              >
-                Export site PDF
-              </button>
-            </div>
-          )}
-        </div>
+    <div className="space-y-5">
+      {/* Final Report — the deterministic Proceed / Proceed with caution / No-Go call first, then what
+          drove it. No AI, no external call; every finding traces to a module tab. */}
+      <FinalReportHero
+        summary={summary}
+        coverage={`${ranCount} of 4 modules`}
+        confidence={report?.confidence ?? null}
+        composite={report?.composite ?? null}
+        rank={report?.rank ?? null}
+        total={report?.total ?? null}
+        analysedAt={report?.analysedAt ?? null}
+        truthPct={truthPct}
+        limited={!(verdict === 'go' || verdict === 'caution' || verdict === 'nogo') && summary.coverage < 2}
+      />
+      {summary.findings.length > 0 && (
+        <FindingsList findings={summary.findings} keywords={summary.keywords} onOpenTab={onOpenTab} />
+      )}
 
-        {/* The recommendation */}
-        <div className="mt-4 border-t border-ink-border pt-4">
-          <div className="flex flex-wrap items-center gap-3">
-            <span className={`rounded-full border px-4 py-1.5 text-sm font-bold uppercase tracking-wide ${verdictPill}`}>{summary.label}</span>
-            {summary.coverage < 2 && <Chip tone="muted">Limited data — {summary.coverage} of 3 core modules</Chip>}
-          </div>
-          <p className="mt-3 text-[15px] leading-relaxed text-ink-text">{summary.headline}</p>
-
-          {summary.findings.length > 0 && (
-            <ul className="mt-4 space-y-2">
-              {summary.findings.map((f, i) => (
-                <li key={i} className="flex items-start gap-2.5 text-sm">
-                  <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${dot(f.tone)}`} />
-                  <span><span className="font-medium text-ink-text">{f.keyword}:</span> <span className="text-ink-muted">{f.detail}</span></span>
-                </li>
-              ))}
-            </ul>
-          )}
-
-          {summary.keywords.length > 0 && (
-            <div className="mt-4 flex flex-wrap gap-1.5">
-              {summary.keywords.map((k) => (
-                <span key={k} className="rounded bg-ink-panel-2 px-2 py-0.5 text-[11px] text-ink-muted">{k}</span>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-
+      <h2 className="pt-2 text-h2">Module summaries</h2>
+      <div className="grid gap-5 lg:grid-cols-2">
       {/* Territory Guard */}
       <ReportSection
         title="Territory Guard"
-        tab="Territory Guard"
+        tabKey="territory"
+        onOpenTab={onOpenTab}
         ran={t != null}
         verdict={T_VERDICT[tVerdict].label}
         verdictTone={T_VERDICT[tVerdict].tone}
@@ -991,7 +1004,8 @@ function AnalysisTab({
       {/* Lease Benchmark */}
       <ReportSection
         title="Lease Benchmark"
-        tab="Lease Benchmark"
+        tabKey="lease"
+        onOpenTab={onOpenTab}
         ran={l != null}
         verdict={L_VERDICT[lV].label}
         verdictTone={L_VERDICT[lV].tone}
@@ -1008,7 +1022,7 @@ function AnalysisTab({
             />
             {l.negotiatingRoomPhpSqm != null && (
               <ReportRow
-                label="Negotiating room to median"
+                label="Distance from corridor median"
                 value={`₱${fmtInt(Math.abs(l.negotiatingRoomPhpSqm))}/sqm${l.negotiatingRoomPct != null ? ` (${Math.abs(l.negotiatingRoomPct)}% ${l.negotiatingRoomPhpSqm > 0 ? 'above' : 'below'})` : ''}`}
                 truth="Assumed"
               />
@@ -1031,7 +1045,8 @@ function AnalysisTab({
       {/* Daypart Demand */}
       <ReportSection
         title="Daypart Demand"
-        tab="Daypart Demand"
+        tabKey="daypart"
+        onOpenTab={onOpenTab}
         ran={d != null}
         verdict={dNoData ? 'Catchment mix not derived' : dLabel}
         verdictTone={dNoData ? 'muted' : dTone}
@@ -1061,7 +1076,8 @@ function AnalysisTab({
       {/* White-Space */}
       <ReportSection
         title="White-Space"
-        tab="White-Space"
+        tabKey="whitespace"
+        onOpenTab={onOpenTab}
         ran={w != null && wRecs != null}
         verdict={wRecs ? (wTop.length ? `${wRecs.length} recommended area${wRecs.length === 1 ? '' : 's'}` : 'No open areas in coverage') : undefined}
         verdictTone={wRecs && wTop.length ? 'go' : 'muted'}
@@ -1092,9 +1108,10 @@ function AnalysisTab({
           <p className="mt-2 text-sm text-ink-muted">This run predates the recommendations rebuild — re-run the analysis to compute White-Space areas.</p>
         )}
       </ReportSection>
+      </div>
 
-      <p className="px-1 text-[11px] text-ink-muted">
-        The sections below are a straight consolidation of the four tabs; the written analysis above phrases only these figures.
+      <p className="px-1 text-label font-normal text-ink-muted">
+        The module summaries are a straight consolidation of the four tabs; the recommendation above is rolled up from only these figures.
         {' '}{ZONAL_FLOOR_NOTE}
       </p>
     </div>

@@ -15,15 +15,11 @@ interface Props {
   verdict: 'below_market' | 'at_market' | 'above_market' | 'insufficient_data' | 'corridor_benchmark';
 }
 
-// Dark-theme verdict colours (status palette).
-const VERDICT_COLOR: Record<string, string> = {
-  below_market: '#38a574',
-  at_market: '#BE8562',
-  above_market: '#d9534f',
-  insufficient_data: '#94A3BE',
-};
+// The asking bar is ONE neutral brand colour (Muesli) whatever its position: green/red on rent reads
+// as a good/bad price judgement, which the no-price-verdict guardrail forbids (design v2, PATCHES §1h).
+const ASKING_COLOR = '#BE8562';
 
-export function LeaseDistributionChart({ comps, median, asking, verdict }: Props) {
+export function LeaseDistributionChart({ comps, median, asking }: Props) {
   const all = [...comps, asking].filter((v): v is number => typeof v === 'number' && Number.isFinite(v));
   if (all.length === 0) return <p className="text-sm text-ink-muted">No comparable leases to plot.</p>;
 
@@ -36,7 +32,7 @@ export function LeaseDistributionChart({ comps, median, asking, verdict }: Props
   const slot = (W - 2 * padX) / Math.max(1, n + 1); // leave a slot for the asking bar
   const barW = Math.max(6, slot * 0.6);
   const yOf = (v: number) => padTop + plotH * (1 - (v - min * 0.9) / (max * 1.05 - min * 0.9));
-  const askColor = VERDICT_COLOR[verdict];
+  const askColor = ASKING_COLOR;
 
   return (
     <figure>
@@ -66,7 +62,7 @@ export function LeaseDistributionChart({ comps, median, asking, verdict }: Props
           </>
         )}
 
-        {/* asking bar (highlighted, verdict-coloured) */}
+        {/* asking bar (highlighted, neutral colour) */}
         {asking != null && (
           <g>
             <rect x={W - padX - barW} y={yOf(asking)} width={barW} height={padTop + plotH - yOf(asking)} rx={3} fill={askColor}>

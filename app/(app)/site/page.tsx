@@ -2,7 +2,10 @@ import Link from 'next/link';
 import { prisma } from '@/lib/db/prisma';
 import { getSession } from '@/lib/auth/session';
 import { canAccessRun } from '@/lib/auth/auth';
-import { SiteIntelligenceTabs, type SiteModulePayloads } from '@/components/SiteIntelligenceTabs';
+import { SiteIntelligenceTabs, TAB_KEYS, type SiteModulePayloads, type TabKey } from '@/components/SiteIntelligenceTabs';
+import { RunPipelineButton } from '@/components/RunPipelineButton';
+import { manilaShortStampYear } from '@/lib/util/manilaTime';
+import type { TruthLayer } from '@/lib/truth/truthLayer';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,9 +15,12 @@ export const dynamic = 'force-dynamic';
  * White-Space for THAT ONE site, in tabs — all from persisted module_result rows
  * (no Google calls). Falls back gracefully if a module didn't run for the vertical.
  */
-export default async function SiteReportPage({ searchParams }: { searchParams: { runId?: string; siteId?: string } }) {
+export default async function SiteReportPage({ searchParams }: { searchParams: { runId?: string; siteId?: string; tab?: string } }) {
   const session = await getSession();
   const { runId, siteId } = searchParams;
+  // `?tab=` opens a specific tab (dashboard links use tab=analysis → Final Report). Validated against
+  // the known keys so an arbitrary value can never reach the client component.
+  const initialTab: TabKey = (TAB_KEYS as readonly string[]).includes(searchParams.tab ?? '') ? (searchParams.tab as TabKey) : 'analysis';
 
   if (!runId || !siteId) {
     return <Empty msg="Pick a site from the Ranked Site Shortlist on the dashboard." />;
@@ -38,12 +44,13 @@ export default async function SiteReportPage({ searchParams }: { searchParams: {
 
   const site = await prisma.candidateSite.findUnique({
     where: { id: siteId },
-    select: { id: true, label: true, city: true, siteType: true, lat: true, lon: true, pipelineRunId: true, verdict: true, compositeScore: true },
+    select: { id: true, label: true, city: true, siteType: true, lat: true, lon: true, pipelineRunId: true, verdict: true, compositeScore: true, analyzedAt: true },
   });
   if (!site || site.pipelineRunId !== runId) return <Empty msg="Site not found in this run." />;
 
-  // Own outlets (for the Territory map) + every module result for this one site.
-  const [outlets, rows] = await Promise.all([
+  // Own outlets (for the Territory map) + every module result for this one site + the run's site
+  // scores (for "Rank n of N" on the Final Report — same ordering as the dashboard shortlist).
+  const [outlets, rows, runSites] = await Promise.all([
     prisma.outlet.findMany({
       // Reference network + this run's own typed outlets (never another user's).
       where: { franchisorId: run.franchisorId, status: 'open', OR: [{ intakeSubmissionId: null }, { intakeSubmissionId: run.intakeSubmissionId }] },
@@ -53,10 +60,41 @@ export default async function SiteReportPage({ searchParams }: { searchParams: {
       where: { candidateSiteId: siteId },
       select: { module: true, score: true, truthLayer: true, flags: true, payload: true },
     }),
+    prisma.candidateSite.findMany({
+      where: { pipelineRunId: runId },
+      select: { id: true, compositeScore: true },
+    }),
   ]);
 
   const byModule: Record<string, unknown> = {};
   for (const r of rows) byModule[r.module] = r.payload;
+
+  // Final Report hero context (design v2, README §4). Rank uses the dashboard's ordering
+  // (composite desc, unscored last). Truth mix = this site's module-level Truth Layers, the same
+  // method the dashboard uses for the run (the 'analysis' row is not a module finding).
+  const num = (v: { toString(): string } | null): number | null => (v == null ? null : Number(v.toString()));
+  const composite = num(site.compositeScore);
+  const ranked = runSites
+    .map((s) => ({ id: s.id, composite: num(s.compositeScore) }))
+    .sort((a, b) => (b.composite ?? -1) - (a.composite ?? -1));
+  const rankIdx = ranked.findIndex((s) => s.id === site.id);
+  const layers = rows.filter((r) => r.module !== 'analysis').map((r) => r.truthLayer as TruthLayer);
+  const truthPct = layers.length
+    ? {
+        verified: Math.round((layers.filter((l) => l === 'verified').length / layers.length) * 100),
+        assumed: Math.round((layers.filter((l) => l === 'assumed').length / layers.length) * 100),
+        projected: Math.round((layers.filter((l) => l === 'projected').length / layers.length) * 100),
+      }
+    : null;
+  const report = {
+    composite,
+    rank: composite != null && rankIdx >= 0 ? rankIdx + 1 : null,
+    total: composite != null ? ranked.length : null,
+    confidence: run.confidence ?? null,
+    analysedAt: site.analyzedAt ? manilaShortStampYear(site.analyzedAt) : null,
+    truthPct,
+  };
+  const pdfHref = `/api/analysis-report/pdf?runId=${encodeURIComponent(runId)}&siteId=${encodeURIComponent(siteId)}`;
 
   const payloads: SiteModulePayloads = {
     territory: (byModule.territory as SiteModulePayloads['territory']) ?? null,
@@ -67,13 +105,18 @@ export default async function SiteReportPage({ searchParams }: { searchParams: {
   };
 
   return (
-    <div>
-      <div className="mb-6">
-        <Link href={`/runs?runId=${runId}`} className="text-sm text-accent hover:underline">← Dashboard</Link>
-        <h1 className="mt-2 text-2xl font-bold text-ink-text">{site.label}</h1>
-        <p className="text-sm text-ink-muted">
-          {run.franchisor.brandName}{site.city ? ` · ${site.city}` : ''} · Full site intelligence — one site, every module.
-        </p>
+    <div className="space-y-6">
+      <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+        <div className="flex flex-col gap-2">
+          <Link href={`/runs?runId=${runId}`} className="link inline-flex min-h-tap items-center self-start text-body">← Site Dashboard</Link>
+          <p className="overline">{run.franchisor.brandName}{site.city ? ` · ${site.city}` : ''}</p>
+          <h1 className="text-h1">{site.label}</h1>
+          <p className="text-body text-ink-muted">Full site intelligence — one site, every module.</p>
+        </div>
+        <div className="flex flex-wrap gap-3">
+          <RunPipelineButton runId={runId} />
+          <a href={pdfHref} target="_blank" rel="noopener noreferrer" className="btn-primary btn-lg">Export site PDF</a>
+        </div>
       </div>
       <SiteIntelligenceTabs
         site={{ id: site.id, label: site.label, lat: site.lat, lon: site.lon, siteType: site.siteType }}
@@ -82,6 +125,8 @@ export default async function SiteReportPage({ searchParams }: { searchParams: {
         vertical={run.vertical}
         verdict={site.verdict ?? null}
         runId={runId}
+        initialTab={initialTab}
+        report={report}
       />
     </div>
   );
@@ -89,9 +134,9 @@ export default async function SiteReportPage({ searchParams }: { searchParams: {
 
 function Empty({ msg }: { msg: string }) {
   return (
-    <div className="card p-8 text-center">
-      <p className="text-sm text-ink-muted">{msg}</p>
-      <Link href="/runs" className="mt-3 inline-block text-sm text-accent hover:underline">← Back to runs</Link>
+    <div className="empty-state items-center text-center">
+      <p className="text-body text-ink-muted">{msg}</p>
+      <Link href="/runs" className="link inline-flex min-h-tap items-center">← Back to Site Dashboard</Link>
     </div>
   );
 }
