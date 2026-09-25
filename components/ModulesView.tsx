@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { TruthChip } from '@/components/TruthChip';
+import { fmtInt } from '@/lib/util/format';
 import type { TruthLayer } from '@/lib/truth/truthLayer';
 
 export interface ModuleRow {
@@ -67,7 +68,7 @@ function interpret(r: ModuleRow): Interp {
       } else {
         meaning = overlap < 30
           ? `${r1(overlap)}% own-branch overlap — mostly incremental`
-          : `${r1(overlap)}% own-branch overlap${cannib > 0 ? ` · ~₱${cannib.toLocaleString()}/mo cannibalized` : ''}`;
+          : `${r1(overlap)}% own-branch overlap${cannib > 0 ? ` · ~₱${fmtInt(cannib)}/mo cannibalized` : ''}`;
       }
       const metricLabel = bySaturation ? 'Cannibalization (competitive)' : 'Trade-area overlap';
       return { metricLabel, display: `${r1(overlap)}%`, goodness, meaning };
@@ -75,7 +76,7 @@ function interpret(r: ModuleRow): Interp {
     case 'lease': {
       const st = p.baseRentStats as { median?: number; n?: number } | undefined;
       if (p.verdict === 'corridor_benchmark' && st?.median != null) {
-        return { metricLabel: 'Corridor rent benchmark', display: `₱${Math.round(st.median).toLocaleString()}/sqm`, goodness: null,
+        return { metricLabel: 'Corridor rent benchmark', display: `₱${fmtInt(st.median)}/sqm`, goodness: null,
           meaning: `Corridor median (n=${st.n ?? 0}) — enter your asking rent to benchmark` };
       }
       const pct = num(p.baseRentPercentile);

@@ -102,8 +102,14 @@ _Last updated: 2026-09-23 — after Fix Batch 5 (review programme complete)._
   Ships Projected seasonal templates `prisma/data/traffic/{cavite,batangas}.template.json` (aadtRef null,
   owner fills from DPWH ATTAS); province seasonal direction differs from NCR (Undas=inflow spike, Holy
   Week=tourism peak/commuter dip). No migration. Mappers `lib/geo/{mallRow,trafficRow}.ts`, tests added.
-  Next: R-08 (regional QA end-to-end for a Cavite + a Batangas site) — closes the R-series; then the
-  Data/scoring (D-01..), AI (I-01..), Architecture (A-01..), Ops, Security, UX backlog items.
+  **R-08 done** — **R-series COMPLETE**. Regression guard `tests/unit/regionalQa.test.ts` (12 cases)
+  asserts Cavite/Batangas sites resolve entirely in-region (corridor + zonal IV-A, never NCR) and NCR is
+  unchanged; pins the corridor↔traffic-template contract. Handoff doc
+  `docs/qa-history/QA_JOURNEY_FINDINGS_CALABARZON.md` (wiring PASS vs owner-loaded data, per-module
+  before/after-load table, one-province load order). 412/412 tests.
+  **Next: the non-regional backlog** (all approved in `docs/BSA_Improvement_Backlog.xlsx`): Data/scoring
+  D-01.., AI I-01.., Architecture A-01.., Operations O-01.., Security S-01.., UX U-01... Provincial data
+  itself is owner-loaded via the R-02/03/04/05/06/07 loaders (each with a README).
   Region model: `lib/geo/regions.ts` is the single source of truth (bbox, Overpass areas, warm centres,
   corridors, LGU canonicalisers); `inferCorridor`/`canonicalNcrCity` are registry-backed (behaviour
   unchanged for NCR/Davao). A site's region = LGU name first, else pinned coordinate.

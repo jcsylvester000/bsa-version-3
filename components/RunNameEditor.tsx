@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { manilaShortStampYear } from '@/lib/util/manilaTime';
 
 /**
  * RunNameEditor — shows the run's name with a timestamp, and lets the owner rename it
@@ -42,9 +43,10 @@ export function RunNameEditor({
     router.refresh(); // update the card list / any other view
   }
 
-  const stamp = createdAt
-    ? new Date(createdAt).toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
-    : null;
+  // Fixed Manila-time stamp: identical on the server and in the browser. `toLocaleString`
+  // (no fixed timeZone/locale) rendered a different hour server (UTC) vs client (Manila) →
+  // React hydration error #418/#423.
+  const stamp = createdAt ? manilaShortStampYear(new Date(createdAt)) : null;
 
   if (editing) {
     return (

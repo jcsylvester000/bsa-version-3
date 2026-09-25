@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { fmtInt } from '@/lib/util/format';
 
 /**
  * Franchise Screening — the pre-site decision tool. A buyer sets budget (+ optional floor
@@ -76,7 +77,7 @@ function fmtPhp(n: number | null | undefined): string {
   if (n == null) return '—';
   if (n >= 1e6) return `₱${(n / 1e6).toFixed(n % 1e6 === 0 ? 0 : 1)}M`;
   if (n >= 1e3) return `₱${Math.round(n / 1e3)}K`;
-  return `₱${n.toLocaleString()}`;
+  return `₱${fmtInt(n)}`;
 }
 function fmtRange(r: { min: number; max: number } | null): string {
   if (!r) return '—';

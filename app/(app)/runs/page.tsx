@@ -5,6 +5,7 @@ import { canAccessRun } from '@/lib/auth/auth';
 import { isMockUser } from '@/lib/auth/mockUsers';
 import { isUuid } from '@/lib/util/uuid';
 import { safeQuery } from '@/lib/db/safeQuery';
+import { manilaShortStampYear } from '@/lib/util/manilaTime';
 import { DEMO_RUNS } from '@/lib/mock/demoData';
 import { DEMO_RUN_ID, mockTerritoryGuard, mockLeaseBenchmark } from '@/lib/mock/mockCompute';
 import { buildDashboard, type ModuleResultLite } from '@/lib/modules/dashboard';
@@ -123,7 +124,7 @@ export default async function RunsPage({ searchParams }: { searchParams: { runId
                 {r.intake && r.intake.version > 1 && <span className="shrink-0 rounded bg-ink-panel-2 px-1.5 py-0.5 text-[11px] text-accent">v{r.intake.version}</span>}
               </div>
               <p className="text-xs text-ink-muted">{r.franchisor.brandName} · {r.vertical} · {r._count.sites} sites · {r.status}</p>
-              {r.createdAt && <p className="mt-1 text-[11px] text-ink-muted">{new Date(r.createdAt).toLocaleString()}</p>}
+              {r.createdAt && <p className="mt-1 text-[11px] text-ink-muted">{manilaShortStampYear(new Date(r.createdAt))}</p>}
               <p className="mt-3 text-sm text-accent">Open dashboard →</p>
             </Link>
           ))}

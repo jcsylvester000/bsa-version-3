@@ -39,3 +39,10 @@ export function manilaLongStamp(d: Date = new Date()): string {
   const mm = String(p.min).padStart(2, '0');
   return `${MONTHS_LONG[p.monthIdx]} ${p.day}, ${p.year} at ${p.h}:${mm} ${p.ampm}`;
 }
+
+/** "Aug 3, 2026, 3:24 PM" — short stamp WITH the year (run list / name editor). */
+export function manilaShortStampYear(d: Date = new Date()): string {
+  const p = manilaParts(d);
+  const mm = String(p.min).padStart(2, '0');
+  return `${MONTHS[p.monthIdx]} ${p.day}, ${p.year}, ${p.h}:${mm} ${p.ampm}`;
+}

@@ -5,6 +5,62 @@ The cross-thread state record. Read this (with the Master Instruction and the cu
 
 ---
 
+## 2026-09-25 — HOTFIX: React hydration #418/#423 (locale/timezone drift) + 502 triage
+
+Reported: console `Minified React error #418` + `#423`, and repeated `POST /api/analysis-report 502`.
+
+**Hydration (#418 text mismatch → #423 recovery) — ROOT CAUSE + FIX.** Client components are
+server-rendered then hydrated; any formatting that depends on the *runtime's* locale or timezone
+differs between the server (UTC / server locale) and the browser (Manila / user locale), so the
+SSR HTML ≠ the hydration HTML → #418, and React's recovery re-render → #423. Two classes remained
+after Batch 5:
+- **Dates without a fixed timezone.** `RunNameEditor` used `new Date(x).toLocaleString(undefined,…)`
+  → server showed the UTC hour, browser the Manila hour. Now `manilaShortStampYear` (new, in
+  `lib/util/manilaTime.ts` — same ICU-free +8h method as the other stamps). `runs/page.tsx` (a
+  server component, so not a hydration bug but it showed UTC) switched to the same stamp for
+  correctness.
+- **Numbers via `.toLocaleString()`.** ~15 call sites across `SiteIntelligenceTabs`, `ReportView`,
+  `ModulesView`, `FranchiseScreeningView` grouped digits with the runtime locale (server "1,234"
+  vs a non-en browser "1.234"). New `lib/util/format.ts` (`fmtInt`/`fmtPeso`) groups with a fixed
+  comma, no ICU — identical on both sides. All client-component `.toLocaleString()` calls replaced;
+  `tests/unit/format.test.ts` added. Grep confirms no live `.toLocale*` left in any `'use client'`
+  file. **414/414 tests, typecheck clean, `next build` compiles.**
+
+**502 on /api/analysis-report — TRIAGE (not caused by the recent work).** The route already maps a
+missing migration to **503** (`db_migration_pending`) and a bad provider config to **503**
+(`config_*`); a **502** is only reached for `timeout` or an `internal`/provider error. Verified the
+AI/report path (`lib/ai/analysisReport.ts`, `analysisContext.ts`, `reportComposer.ts`) reads **none**
+of the R-01…R-07 columns, so R-05/06/07 did not introduce it. The exact cause is in the 502 response
+body: `details[0].message` (the red error box in the UI also prints `[reason: …]`). Likely `timeout`
+(VectorShift slow / Netlify function timeout < 26s) — owner-side env/config, see PROJECT_MEMORY
+"Pending owner actions". No code change until the reason code is read.
+
+---
+
+## 2026-09-24 — R-08: Regional QA end-to-end (Cavite + Batangas) — DONE (closes the R-series)
+
+Skills: 08 User Journey QA, 09 Documentation. Verifies the CALABARZON expansion is coherent end-to-end
+and permanently guards the province→NCR regression. No new feature code — a regression test + handoff doc.
+
+- **Regression guard (`tests/unit/regionalQa.test.ts`, 12 cases):** walks representative Cavite
+  (Bacoor, Imus, Dasmariñas, General Trias, Tagaytay) and Batangas (Batangas City, Lipa, Sto. Tomas,
+  Tanauan) sites through the live resolvers — `regionForSite → canonicalCity → inferCorridor →
+  psaRegion → corridor key`. Asserts each resolves **entirely in-region**, that no provincial corridor
+  is an NCR corridor and the zonal region is **IV-A not NCR** (the pre-R-06 "Bacoor → NCR Las Piñas"
+  bug can't return silently), and that NCR (Makati/BGC/Ortigas) is unchanged. Also pins the
+  corridor↔traffic-template contract (renaming a registry corridor without updating its template fails).
+- **Handoff doc (`docs/qa-history/QA_JOURNEY_FINDINGS_CALABARZON.md`):** the two-part result — wiring
+  PASS (done, guarded) vs data (owner-loaded per module) — with a per-module before/after-load table
+  showing the honest-degradation behaviour, the guardrail confirmations, and the one-province load
+  order (R-02 → R-03 → R-04/05/06/07).
+- **412/412 tests, typecheck clean, `next build` compiles.**
+
+**R-series (R-01…R-08) COMPLETE** — Cavite & Batangas are wired through every module; the remaining work
+is the owner data loads (each with a loader + README) and then the non-regional backlog (Data/scoring
+D-01.., AI I-01.., Architecture A-01.., Ops, Security, UX).
+
+---
+
 ## 2026-09-24 — R-07: Malls + traffic seasonality for Cavite/Batangas — CODE COMPLETE (owner data)
 
 Skills: 01 Web/App, 02 Database, 07 Broker. Feeds the Mall Match module and the Daypart &

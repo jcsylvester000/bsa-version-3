@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { TruthChip } from '@/components/TruthChip';
+import { fmtInt } from '@/lib/util/format';
 import { ScoreBar } from '@/components/ui/Panel';
 import { ReportDownloadModal } from '@/components/ReportDownloadModal';
 import type { TruthLayer, Confidence } from '@/lib/truth/truthLayer';
@@ -212,9 +213,9 @@ function RangeChart({ range }: { range: { min: number; median: number; max: numb
         <div className="absolute top-1/2 h-3 w-0.5 -translate-y-1/2 bg-ink-text" style={{ left: `${medianPct}%` }} />
       </div>
       <div className="mt-1 flex justify-between text-[11px] text-ink-muted">
-        <span>₱{range.min.toLocaleString()}</span>
-        <span className="font-medium text-ink-text">median ₱{range.median.toLocaleString()} · n={range.n}</span>
-        <span>₱{range.max.toLocaleString()}</span>
+        <span>₱{fmtInt(range.min)}</span>
+        <span className="font-medium text-ink-text">median ₱{fmtInt(range.median)} · n={range.n}</span>
+        <span>₱{fmtInt(range.max)}</span>
       </div>
     </div>
   );

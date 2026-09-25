@@ -1,6 +1,7 @@
 'use client';
 
 import { manilaShortStamp } from '@/lib/util/manilaTime';
+import { fmtInt } from '@/lib/util/format';
 import { LEASE_POSITION_LABEL, ZONAL_FLOOR_NOTE } from '@/lib/truth/guardrailCopy';
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -129,7 +130,7 @@ function tl(v: string | null | undefined, fallback: TL): TL {
 }
 /** Missing numbers display as "—", never as a fabricated 0. */
 const fmtPct = (v: number | null | undefined): string => (v == null ? '—' : `${v}%`);
-const fmtPeso = (v: number | null | undefined): string => (v == null ? '—' : `₱${Math.round(v).toLocaleString()}`);
+const fmtPeso = (v: number | null | undefined): string => (v == null ? '—' : `₱${fmtInt(v)}`);
 
 function ordinal(n: number): string {
   const s = ['th', 'st', 'nd', 'rd'], v = n % 100;
@@ -430,7 +431,7 @@ function LeaseTab({ p, primary = true, siteId }: { p: SiteModulePayloads['lease'
                 inputMode="decimal"
                 value={askingRent}
                 onChange={(e) => setAskingRent(e.target.value)}
-                placeholder={median != null ? `corridor median ≈ ${Math.round(median).toLocaleString()}` : 'e.g. 1450'}
+                placeholder={median != null ? `corridor median ≈ ${fmtInt(median)}` : 'e.g. 1450'}
                 className="field w-48 px-2 py-1.5 text-sm"
               />
               {enteredPct != null && (
@@ -480,7 +481,7 @@ function LeaseTab({ p, primary = true, siteId }: { p: SiteModulePayloads['lease'
       {p.negotiatingRoomPhpSqm != null && (
         <Stat
           label="Negotiating room to median"
-          value={`₱${Math.abs(p.negotiatingRoomPhpSqm).toLocaleString()}/sqm`}
+          value={`₱${fmtInt(Math.abs(p.negotiatingRoomPhpSqm))}/sqm`}
           sub={p.negotiatingRoomPct != null ? `${Math.abs(p.negotiatingRoomPct)}% ${p.negotiatingRoomPhpSqm > 0 ? 'above' : 'below'} median` : undefined}
         />
       )}
@@ -521,13 +522,13 @@ function LeaseTab({ p, primary = true, siteId }: { p: SiteModulePayloads['lease'
                 return (
                   <tr key={i} className="border-t border-ink-border">
                     <td className="px-3 py-2 text-ink-muted">{i + 1}</td>
-                    <td className="px-3 py-2 font-medium text-ink-text">₱{r.toLocaleString()}</td>
+                    <td className="px-3 py-2 font-medium text-ink-text">₱{fmtInt(r)}</td>
                     <td className="px-3 py-2">
                       {delta == null ? (
                         <span className="text-ink-muted">—</span>
                       ) : (
                         <span className={delta > 0 ? 'text-caution' : delta < 0 ? 'text-go' : 'text-ink-muted'}>
-                          {delta > 0 ? '+' : ''}{delta.toLocaleString()} ({delta > 0 ? 'above' : delta < 0 ? 'below' : 'at'})
+                          {delta > 0 ? '+' : ''}{fmtInt(delta)} ({delta > 0 ? 'above' : delta < 0 ? 'below' : 'at'})
                         </span>
                       )}
                     </td>
@@ -649,7 +650,7 @@ function WhiteSpaceTab({ p }: { p: SiteModulePayloads['whitespace']; primary?: b
           <div>
             <p className="text-sm font-semibold text-ink-text">No low-cannibalization areas in current coverage</p>
             <p className="mt-1 text-sm leading-relaxed text-ink-muted">
-              White-Space scanned {scanned.toLocaleString()} barangay{scanned === 1 ? '' : 's'} for {conceptLabel} and
+              White-Space scanned {fmtInt(scanned)} barangay{scanned === 1 ? '' : 's'} for {conceptLabel} and
               found none with a cannibalization score at or below {threshold} — every area we hold data for is already
               contested by same-concept rivals or sits on top of one of your branches. That itself is a finding: this
               network&apos;s territory is saturated for this concept at the current data coverage.
@@ -685,7 +686,7 @@ function WhiteSpaceTab({ p }: { p: SiteModulePayloads['whitespace']; primary?: b
         </p>
         <p className="mt-1 text-sm text-ink-muted">
           Areas with a cannibalization score of {threshold} or less for {conceptLabel} — low same-concept overlap and
-          real demand. Scored the same way as Territory Guard, across {scanned.toLocaleString()} barangay
+          real demand. Scored the same way as Territory Guard, across {fmtInt(scanned)} barangay
           {scanned === 1 ? '' : 's'}. Cannibalization is Projected.
         </p>
       </div>
@@ -742,10 +743,10 @@ function WhiteSpaceTab({ p }: { p: SiteModulePayloads['whitespace']; primary?: b
                   value={`${r.competitorMix.direct} direct`}
                   sub={`+ ${r.competitorMix.adjacent} adjacent in catchment`}
                 />
-                <Stat label="Population" value={r.population.toLocaleString()} sub="catchment residents (Verified)" />
+                <Stat label="Population" value={fmtInt(r.population)} sub="catchment residents (Verified)" />
                 <Stat
                   label="Nearest own branch"
-                  value={r.nearestOwnM == null ? 'None nearby' : `${Math.round(r.nearestOwnM).toLocaleString()} m`}
+                  value={r.nearestOwnM == null ? 'None nearby' : `${fmtInt(r.nearestOwnM)} m`}
                   sub={r.nearestOwnM == null ? 'no self-cannibalization' : 'from your closest outlet'}
                 />
               </div>
@@ -1103,7 +1104,7 @@ function AnalysisTab({
             {l.negotiatingRoomPhpSqm != null && (
               <ReportRow
                 label="Negotiating room to median"
-                value={`₱${Math.abs(l.negotiatingRoomPhpSqm).toLocaleString()}/sqm${l.negotiatingRoomPct != null ? ` (${Math.abs(l.negotiatingRoomPct)}% ${l.negotiatingRoomPhpSqm > 0 ? 'above' : 'below'})` : ''}`}
+                value={`₱${fmtInt(Math.abs(l.negotiatingRoomPhpSqm))}/sqm${l.negotiatingRoomPct != null ? ` (${Math.abs(l.negotiatingRoomPct)}% ${l.negotiatingRoomPhpSqm > 0 ? 'above' : 'below'})` : ''}`}
                 truth="Assumed"
               />
             )}
@@ -1163,7 +1164,7 @@ function AnalysisTab({
       >
         {w && wRecs && (
           <div>
-            <ReportRow label="Barangays scanned" value={(w.scanned ?? 0).toLocaleString()} truth="Verified" />
+            <ReportRow label="Barangays scanned" value={fmtInt(w.scanned ?? 0)} truth="Verified" />
             <ReportRow label="Cannibalization threshold" value={`≤ ${w.threshold ?? 40}`} truth="Projected" />
             {wProposed?.cannibalizationPct != null && (
               <ReportRow label="This site's cannibalization" value={`${Math.round(wProposed.cannibalizationPct)}%`} truth="Projected" />
