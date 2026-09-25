@@ -106,13 +106,14 @@ Applied the official GRID Property Ventures brand guidelines app-wide.
 - **Typography (`app/layout.tsx` + tailwind `fontFamily`):** loaded Cantata One (headings), Poppins
   (body), Judson (serif accent) from Google Fonts with preconnect. `font-heading` = Cantata One,
   `font-body` = Poppins, `font-serif` = Judson.
-- **Logo (`components/GridLogo.tsx`):** theme-aware inline SVG of the three-wave mark (earth · water ·
-  wind) in the Burly Wood → Muesli tans, with a `GridMark` (waves only) and `GridLogo` (waves +
-  "GRID / PROPERTY VENTURES" wordmark in Cantata One, inheriting `currentColor`). SVG rather than the
-  white-background PNG so it sits cleanly on the dark navy UI and scales crisply. Applied to the
-  sidebar header, the mobile top bar, and the login screen (full lockup). The supplied raster is kept
-  at `public/brand/grid-logo-horizontal.png` for light/print use. Verified the mark renders correctly
-  on the dark theme (rasterised preview). The branded PDF already used Nile Blue + Muesli — unchanged.
+- **Logo (`components/GridLogo.tsx`):** uses the ACTUAL supplied horizontal logo (waves + "GRID /
+  PROPERTY VENTURES"), not a recreation. The artwork has a white background + navy wordmark, so it was
+  processed (PIL) into a dark-theme asset `public/brand/grid-logo-dark.png` — white background knocked
+  out to transparent and the navy wordmark lightened to `#EDF2FB`, tan waves unchanged — so it reads on
+  the navy UI. `GridLogo` renders that image; applied to the sidebar header, mobile top bar and login.
+  Original raster kept at `grid-logo-horizontal.png` for light/print. (An earlier SVG wave-mark
+  recreation was replaced at the owner's request to use the exact logo.) Branded PDF already used Nile
+  Blue + Muesli — unchanged.
 
 **421/421 tests, typecheck clean, `next build` compiles.** No DB change.
 

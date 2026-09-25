@@ -50,7 +50,7 @@ export default function LoginPage() {
     <main className="grid min-h-screen place-items-center bg-ink-bg px-4">
       <div className="w-full max-w-sm rounded-2xl border border-ink-border bg-ink-panel p-8 shadow-2xl">
         <div className="mb-6">
-          <GridLogo className="text-ink-text" markClassName="h-11 w-11" />
+          <GridLogo className="h-12 w-auto" />
           <p className="mt-3 text-sm font-semibold text-ink-text">Business Site Analysis</p>
           <p className="text-xs text-ink-muted">Sign in to continue</p>
         </div>
