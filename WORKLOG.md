@@ -5,6 +5,30 @@ The cross-thread state record. Read this (with the Master Instruction and the cu
 
 ---
 
+## 2026-09-25 — Layout & login polish (⏳ awaiting push)
+
+User report (screenshots): main content hugged the left, words scrunched, want full-width with edge padding; login left panel empty → blend an Unsplash photo.
+
+- **Root-cause bug:** `VerdictPill` (`pill-${key}`) and `FinalReportHero` (`verdict-hero-${tone}`) build class
+  names dynamically, so Tailwind purged `pill-caution`/`pill-nogo`/`verdict-hero-*` — the Caution pill rendered
+  with no fill (near-invisible) and the Final Report hero lost its verdict colour block. Fixed with a
+  `safelist` in `tailwind.config.ts` (also `tl-*`). Verified present in the compiled CSS.
+- **App shell** (`app/(app)/layout.tsx`): removed the 1192px cap — main + footer now span the full width
+  with responsive edge padding (16 → 24 → 40 → 56 → 80px). Rail 248 → 264px; nav labels no-wrap; account
+  block restacked (email, role chip, then Settings / Log out as two equal buttons — no more "Log / out").
+- **Forms:** `.field-label` is now `block`, so every label sits above its control (Screening's Source /
+  Capital tier / Truth Layer / Sort by were squeezed inline).
+- **Site page tabs:** tabs keep natural width, legend moves beside them only at xl+, scrollbar hidden
+  (`.scrollbar-none` utility) — no more "Final Re…" clipping.
+- **Dashboard / Final Report:** right rail 340 → 420px at 2xl, header buttons stay on one row, hero
+  verdict column 400 → 460px at 2xl. **Screening:** card grid adds a 4th column at 2xl.
+- **Login:** left panel now blends a Makati-at-night Unsplash photo (Eula Xandrea Dimapilis, hotlinked,
+  credited) under navy gradients + a muesli glow; larger headline. CSP `img-src` allows images.unsplash.com.
+- 477 tests pass, typecheck clean, build compiles. Not visually verified in-sandbox (no headless browser) —
+  check after deploy.
+
+---
+
 ## 2026-09-25 — Final sweep: F-13, F-25, F-43, F-46, F-51, F-52 + owner runbook (⏳ awaiting push; NEW MIGRATION already listed)
 
 Goal: complete everything code-completable; hand the rest to the owner with a runbook.

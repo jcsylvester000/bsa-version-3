@@ -113,7 +113,8 @@ a:hover { @apply text-ink-text; }
   /* Inputs */
   .field { @apply focus-ring min-h-[48px] w-full rounded-control border border-ink-border-strong bg-ink-panel-2 px-3.5 text-body text-ink-text placeholder:text-ink-muted focus:border-accent-soft disabled:border-dashed disabled:border-ink-border disabled:text-ink-border-strong; }
   .field-error { @apply border-2 border-nogo; }
-  .field-label { @apply text-label text-ink-muted; }
+  /* Block so every label sits ABOVE its control (it was inline, squeezing "Source [▾]" side by side). */
+  .field-label { @apply block text-label text-ink-muted; }
   .field-help { @apply text-label font-normal text-ink-muted; }
   .field-msg { @apply text-label font-normal text-nogo; }
 
@@ -247,3 +248,9 @@ select.field option { color: #0b1426; background-color: #ffffff; }
 .mk-direct { width: 16px; height: 16px; transform: rotate(45deg); background: rgb(var(--nogo)); border: 2px solid #0E192F; }
 .mk-adjacent { width: 14px; height: 14px; background: rgb(var(--caution)); border: 2px solid #0E192F; }
 .mk-other { width: 8px; height: 8px; border-radius: 50%; background: rgb(var(--border-strong)); }
+
+/* Horizontal scrollers (tab bars) keep swipe/scroll but hide the chunky OS scrollbar. */
+@layer utilities {
+  .scrollbar-none { scrollbar-width: none; -ms-overflow-style: none; }
+  .scrollbar-none::-webkit-scrollbar { display: none; }
+}

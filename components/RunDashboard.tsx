@@ -56,7 +56,7 @@ export function RunDashboard({
     <div className="space-y-7">
       {/* Header */}
       <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-        <div className="flex flex-col gap-2">
+        <div className="flex min-w-0 flex-col gap-2">
           <p className="overline flex items-center gap-2.5">
             {brandName} · {humanizeVertical(vertical)}
             {version > 1 && <span className="rounded-chip bg-ink-hover px-2 py-0.5 tracking-normal text-accent-text">v{version}</span>}
@@ -69,7 +69,7 @@ export function RunDashboard({
           )}
           <p className="text-body text-ink-muted">{siteCount} candidate site{siteCount === 1 ? '' : 's'} evaluated · Truth Layer active</p>
         </div>
-        <div className="flex flex-wrap gap-3">
+        <div className="flex flex-wrap gap-3 lg:shrink-0 lg:justify-end">
           {!mock && intakeId && (
             <Link href={`/intake?edit=${intakeId}`} className="btn-secondary btn-lg" title="Load these inputs, edit, and run a new version">✎ Edit & rerun</Link>
           )}
@@ -134,7 +134,7 @@ export function RunDashboard({
         <p className="text-label font-normal text-ink-muted">— {noVerdict} site{noVerdict === 1 ? '' : 's'} without a call yet (not enough data).</p>
       )}
 
-      <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
+      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_340px] 2xl:grid-cols-[minmax(0,1fr)_420px]">
         {/* Ranked shortlist */}
         <section className="card overflow-hidden">
           <div className="flex flex-wrap items-baseline justify-between gap-2 px-6 pb-3.5 pt-5">

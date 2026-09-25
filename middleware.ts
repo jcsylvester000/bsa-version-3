@@ -45,7 +45,8 @@ function buildCsp(nonce: string): string {
     `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${isDev ? " 'unsafe-eval'" : ''}`,
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' data: https://fonts.gstatic.com",
-    `img-src 'self' data: blob: ${tiles}`,
+    // images.unsplash.com: the login panel photo (hotlinked per Unsplash guidelines).
+    `img-src 'self' data: blob: https://images.unsplash.com ${tiles}`,
     `connect-src 'self' ${tiles}${isDev ? ' ws: wss:' : ''}`,
     "worker-src 'self' blob:",
     "child-src 'self' blob:",

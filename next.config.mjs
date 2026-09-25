@@ -35,7 +35,7 @@ const csp = [
   `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ''}`,
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' data: https://fonts.gstatic.com",
-  `img-src 'self' data: blob: ${tiles}`,
+  `img-src 'self' data: blob: https://images.unsplash.com ${tiles}`,
   `connect-src 'self' ${tiles}${isDev ? ' ws: wss:' : ''}`,
   "worker-src 'self' blob:",
   "child-src 'self' blob:",

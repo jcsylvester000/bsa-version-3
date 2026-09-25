@@ -246,8 +246,10 @@ export function SiteIntelligenceTabs({
   return (
     <div className="space-y-5">
       {/* Tab bar — underline tabs, roving tabindex, ← → to move; Truth Layer legend once per page. */}
-      <div className="flex flex-col gap-3 border-b border-ink-border lg:flex-row lg:items-end lg:justify-between">
-        <div role="tablist" aria-label="Site modules" className="-mb-px flex overflow-x-auto">
+      {/* Tabs never squeeze: they keep their natural width and the legend only sits beside them on
+          wide screens (xl+); below that it drops underneath. No visible scrollbar. */}
+      <div className="flex flex-col gap-x-6 gap-y-2 border-b border-ink-border xl:flex-row xl:items-end xl:justify-between">
+        <div role="tablist" aria-label="Site modules" className="scrollbar-none -mb-px flex shrink-0 overflow-x-auto">
           {TABS.map((t) => {
             const has = t.key === 'analysis' || payloads[t.key] != null;
             const active = tab === t.key;
@@ -277,7 +279,7 @@ export function SiteIntelligenceTabs({
             );
           })}
         </div>
-        <TruthLegend className="pb-3.5" />
+        <TruthLegend className="shrink-0 pb-3.5 xl:justify-end" />
       </div>
 
       <div id="site-tabpanel" role="tabpanel" aria-labelledby={`tab-${tab}`}>

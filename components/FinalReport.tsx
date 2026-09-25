@@ -44,7 +44,7 @@ export function FinalReportHero({
   const confNote = confidence === 'high' ? 'safe to act on with normal diligence' : confidence === 'low' ? 'verify before acting' : 'confirm key assumptions';
 
   return (
-    <section aria-labelledby="verdict-label" className="grid overflow-hidden rounded-hero border border-ink-border bg-ink-panel lg:grid-cols-[400px_minmax(0,1fr)]">
+    <section aria-labelledby="verdict-label" className="grid overflow-hidden rounded-hero border border-ink-border bg-ink-panel lg:grid-cols-[400px_minmax(0,1fr)] 2xl:grid-cols-[460px_minmax(0,1fr)]">
       <div className={heroCls}>
         <div className="flex flex-col gap-4">
           {limited ? (
@@ -70,7 +70,7 @@ export function FinalReportHero({
         </div>
       </div>
 
-      <div className="flex flex-col gap-6 p-6 md:px-9 md:py-8">
+      <div className="flex flex-col justify-center gap-6 p-6 md:px-10 md:py-9">
         <p className="rationale text-pretty">{summary.headline}</p>
         {thinData && (
           <p className="text-label font-normal text-ink-muted">

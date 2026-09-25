@@ -439,7 +439,7 @@ export function FranchiseScreeningView() {
           <BrandAutocomplete value={search} onChange={setSearch} brands={allBrands} resultCount={rows.length} />
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-3">
+        <div className="grid gap-5 sm:grid-cols-3">
           <PresetField
             label="Your budget"
             hint="Total you can commit. Pick a preset or choose Other… to type (e.g. 1.5M)."
@@ -464,7 +464,7 @@ export function FranchiseScreeningView() {
         </div>
 
         {/* Secondary filters — all live. */}
-        <div className="mt-4 flex flex-wrap items-end gap-4 border-t border-ink-border pt-4">
+        <div className="mt-5 flex flex-wrap items-end gap-x-5 gap-y-4 border-t border-ink-border pt-5">
           <label className="block">
             <span className="field-label">Source</span>
             <select value={source} onChange={(e) => setSource(e.target.value as SourceFilter)} className="field mt-1.5 w-44">
@@ -515,7 +515,7 @@ export function FranchiseScreeningView() {
 
       {/* Results */}
       {loading ? (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3" aria-busy="true" aria-label="Loading the franchise catalogue">
+        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4" aria-busy="true" aria-label="Loading the franchise catalogue">
           {Array.from({ length: 6 }).map((_, i) => <div key={i} className="skeleton h-56" />)}
         </div>
       ) : (
@@ -563,7 +563,7 @@ export function FranchiseScreeningView() {
               <button type="button" onClick={clearAll} className="btn-secondary self-start">Clear filters</button>
             </div>
           ) : (
-            <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <ul className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
               {pageRows.map((b) => {
                 const supplier = isSupplier(b);
                 const badge = tierBadge(b.investment?.min);

@@ -43,7 +43,7 @@ export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
                   aria-current={active ? 'page' : undefined}
                   className={`nav-item ${active ? 'nav-item-active' : ''}`}
                 >
-                  <span className="flex-1">{it.label}</span>
+                  <span className="flex-1 whitespace-nowrap">{it.label}</span>
                   {it.isNew && <NewTag />}
                 </Link>
               );

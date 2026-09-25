@@ -27,30 +27,32 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <a href="#main" className="btn-primary sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50">Skip to content</a>
 
       {/* Left rail (desktop) */}
-      <aside className="sticky top-0 hidden h-screen w-[248px] shrink-0 border-r border-ink-border bg-ink-panel-2 md:flex md:flex-col">
+      <aside className="sticky top-0 hidden h-screen w-[264px] shrink-0 border-r border-ink-border bg-ink-panel-2 md:flex md:flex-col">
         <div className="flex flex-col gap-2.5 px-5 pb-3.5 pt-[22px]">
           <GridLogo className="h-11 w-auto self-start" />
           <p className="overline text-xs tracking-[0.16em]">Business Site Analysis</p>
         </div>
         <SidebarNav />
-        <div className="mt-auto flex flex-col gap-2.5 border-t border-ink-border p-4">
-          <Link href="/settings" className="link truncate text-label font-normal text-ink-text" title="Account settings">{session.email}</Link>
-          <div className="flex items-center justify-between gap-2">
-            <span className="rounded-full bg-ink-hover px-2 py-0.5 text-chip uppercase text-ink-muted">{session.role}</span>
-            <div className="flex items-center">
-              <Link href="/settings" className="focus-ring inline-flex min-h-tap items-center rounded-control px-2 text-label font-normal text-ink-muted hover:text-ink-text">Settings</Link>
-              <LogoutButton />
-            </div>
+        {/* Account block — stacked so nothing wraps mid-word ("Log / out") in the 248px rail. */}
+        <div className="mt-auto flex flex-col gap-3 border-t border-ink-border px-5 py-4">
+          <div className="flex min-w-0 flex-col gap-1.5">
+            <Link href="/settings" className="link truncate text-label font-normal text-ink-text" title={session.email}>{session.email}</Link>
+            <span className="self-start whitespace-nowrap rounded-full bg-ink-hover px-2.5 py-0.5 text-chip uppercase tracking-wide text-ink-muted">{session.role}</span>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <Link href="/settings" className="btn-secondary min-h-[40px] whitespace-nowrap px-3 text-label font-normal">Settings</Link>
+            <LogoutButton className="btn-secondary min-h-[40px] whitespace-nowrap px-3 text-label font-normal" />
           </div>
         </div>
       </aside>
 
-      {/* Content */}
+      {/* Content — fills the whole viewport beside the rail, with comfortable edge padding that grows
+          on wide screens (it used to be capped at 1192px and hug the left edge). */}
       <div className="flex min-w-0 flex-1 flex-col">
         <MobileNav email={session.email} role={session.role} />
-        <main id="main" className="w-full max-w-[1192px] px-4 py-5 md:px-12 md:py-8">{children}</main>
+        <main id="main" className="w-full px-4 py-6 sm:px-6 md:px-10 md:py-9 xl:px-14 2xl:px-20">{children}</main>
         {/* RA 9646 / broker-supplementation notice on every signed-in page — present but calm. */}
-        <footer className="mt-auto w-full max-w-[1192px] px-4 pb-7 md:px-12">
+        <footer className="mt-auto w-full px-4 pb-7 sm:px-6 md:px-10 xl:px-14 2xl:px-20">
           <div className="notice-ra flex items-start gap-3">
             <span className="shrink-0 rounded-chip border border-ink-border px-1.5 py-0.5 text-chip text-ink-muted">RA 9646</span>
             <p>

@@ -10,6 +10,14 @@ const v = (name: string) => `rgb(var(--${name}) / <alpha-value>)`;
 const config: Config = {
   darkMode: ['class', '[data-theme="dark"]'],
   content: ['./app/**/*.{ts,tsx}', './components/**/*.{ts,tsx}'],
+  // Classes built from a variable (e.g. `pill-${key}`, `verdict-hero-${tone}`, `tl-${layer}`) are
+  // invisible to Tailwind's scanner and were being purged — the Caution/No-Go pills rendered with no
+  // fill and the Final Report hero lost its verdict colour. Keep them explicitly.
+  safelist: [
+    'pill-go', 'pill-caution', 'pill-nogo', 'pill-empty',
+    'verdict-hero-go', 'verdict-hero-caution', 'verdict-hero-nogo', 'verdict-hero-empty',
+    'tl-verified', 'tl-assumed', 'tl-projected',
+  ],
   theme: {
     extend: {
       colors: {

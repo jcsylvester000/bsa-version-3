@@ -5,6 +5,11 @@ import { useRouter } from 'next/navigation';
 import { GridLogo } from '@/components/GridLogo';
 import { BROKER_DISCLAIMER_SHORT } from '@/lib/truth/guardrailCopy';
 
+/** Makati skyline at night — Unsplash (free licence), hotlinked per Unsplash guidelines. CSP allows
+ *  images.unsplash.com in middleware.ts. Sized for a ~1600px-wide panel. */
+const LOGIN_PHOTO =
+  'https://images.unsplash.com/photo-1521367887256-cd1eb3a83057?auto=format&fit=crop&w=1800&q=70';
+
 /**
  * Sign-in / register form. F-27: the demo accounts are only prefilled and hinted when the server
  * says demo logins are actually enabled (`demo` prop from isMockAuth()); on a real deployment the
@@ -59,17 +64,37 @@ export function LoginForm({ demo }: { demo: boolean }) {
 
   return (
     <main className="grid min-h-screen bg-ink-bg lg:grid-cols-[minmax(0,1fr)_520px]">
-      {/* Left panel (desktop) — mockup C1 */}
-      <section className="hidden flex-col justify-between border-r border-ink-border bg-ink-panel-2 p-14 lg:flex">
-        <GridLogo className="h-16 w-auto self-start" />
-        <div className="flex max-w-xl flex-col gap-5">
-          <p className="overline">Business Site Analysis</p>
-          <h1 className="font-heading text-[40px] leading-[1.15]">Check a site before you commit.</h1>
-          <p className="rationale text-body-lg">
-            Territory, rent position, demand timing and white-space for up to five sites — rolled into one clear call you can take to your client.
-          </p>
+      {/* Left panel (desktop) — Makati at night, blended into the brand navy. The photo sits under two
+          gradients: a left-to-right navy wash so the copy stays readable, and a bottom fade into the
+          panel so the disclaimer sits on solid colour. Decorative only (alt=""). */}
+      <section className="relative hidden overflow-hidden border-r border-ink-border bg-ink-panel-2 lg:flex">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={LOGIN_PHOTO}
+          alt=""
+          aria-hidden
+          className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-60 mix-blend-luminosity"
+        />
+        <div aria-hidden className="pointer-events-none absolute inset-0 bg-gradient-to-r from-ink-panel-2 via-ink-panel-2/80 to-ink-panel-2/20" />
+        <div aria-hidden className="pointer-events-none absolute inset-0 bg-gradient-to-t from-ink-panel-2 via-transparent to-ink-panel-2/60" />
+        <div aria-hidden className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_85%_20%,rgba(190,133,98,0.18),transparent_55%)]" />
+
+        <div className="relative z-10 flex w-full flex-col justify-between p-14 xl:p-20">
+          <GridLogo className="h-16 w-auto self-start" />
+          <div className="flex max-w-2xl flex-col gap-6">
+            <p className="overline">Business Site Analysis</p>
+            <h1 className="font-heading text-[44px] leading-[1.1] xl:text-[56px]">Check a site before you commit.</h1>
+            <p className="rationale max-w-xl text-body-lg">
+              Territory, rent position, demand timing and white-space for up to five sites — rolled into one clear call you can take to your client.
+            </p>
+          </div>
+          <div className="flex flex-col gap-3">
+            <p className="notice-ra max-w-xl">{BROKER_DISCLAIMER_SHORT}</p>
+            <p className="text-xs text-ink-muted/80">
+              Photo: Eula Xandrea Dimapilis / <a href="https://unsplash.com/photos/aerial-photography-of-city-buildings-at-night-1Y0-8A4mkEc" target="_blank" rel="noopener noreferrer" className="underline decoration-dotted underline-offset-2 hover:text-ink-text">Unsplash</a>
+            </p>
+          </div>
         </div>
-        <p className="notice-ra max-w-xl">{BROKER_DISCLAIMER_SHORT}</p>
       </section>
 
       {/* Form column */}
