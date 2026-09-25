@@ -1,7 +1,9 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
 import { fmtInt } from '@/lib/util/format';
+import { TruthChip } from '@/components/ui/Chips';
 
 /**
  * Franchise Screening — the pre-site decision tool. A buyer sets budget (+ optional floor
@@ -98,16 +100,15 @@ function tierKey(min: number | null | undefined): TierFilter | null {
 }
 function tierBadge(min: number | null | undefined): { label: string; cls: string } | null {
   const k = tierKey(min);
-  if (k === 'entry') return { label: 'Entry', cls: 'bg-go/15 text-go' };
-  if (k === 'mid') return { label: 'Mid', cls: 'bg-accent/15 text-accent' };
-  if (k === 'institutional') return { label: 'Institutional', cls: 'bg-projected/20 text-projected' };
+  // Neutral outlined tags: a capital tier is a fact about the brand, not a good/bad status.
+  if (k === 'entry') return { label: 'Entry tier', cls: 'border border-ink-border-strong text-ink-text' };
+  if (k === 'mid') return { label: 'Mid tier', cls: 'border border-ink-border-strong text-ink-text' };
+  if (k === 'institutional') return { label: 'Institutional', cls: 'border border-ink-border-strong text-ink-text' };
   return null;
 }
-function truthCls(t: string | null): string {
+function truthKey(t: string | null): 'verified' | 'assumed' | 'projected' {
   const v = (t ?? '').toLowerCase();
-  if (v === 'verified') return 'tl-chip tl-verified';
-  if (v === 'assumed') return 'tl-chip tl-assumed';
-  return 'tl-chip tl-projected';
+  return v === 'verified' ? 'verified' : v === 'assumed' ? 'assumed' : 'projected';
 }
 function parseBudget(s: string): number | null {
   const t = s.trim().toLowerCase().replace(/[₱,\s]/g, '');
@@ -134,9 +135,9 @@ function PresetField({
   const [custom, setCustom] = useState(!isPreset);
   return (
     <label className="block">
-      <span className="text-sm font-medium text-ink-text">{label}</span>
+      <span className="field-label">{label}</span>
       {custom ? (
-        <div className="mt-1 flex gap-2">
+        <div className="mt-1.5 flex gap-2">
           <input
             autoFocus
             value={value}
@@ -144,20 +145,20 @@ function PresetField({
             placeholder="Type a value"
             className="field"
           />
-          <button type="button" onClick={() => { setCustom(false); onChange(''); }} className="btn-ghost shrink-0 text-xs">Presets</button>
+          <button type="button" onClick={() => { setCustom(false); onChange(''); }} className="btn-secondary shrink-0">Presets</button>
         </div>
       ) : (
         <select
           value={presets.includes(value) ? value : ''}
           onChange={(e) => { if (e.target.value === '__other__') { setCustom(true); onChange(''); } else onChange(e.target.value); }}
-          className="field mt-1"
+          className="field mt-1.5"
         >
           <option value="">Any</option>
           {presets.map((p) => <option key={p} value={p}>{p}{suffix ?? ''}</option>)}
           <option value="__other__">Other…</option>
         </select>
       )}
-      <span className="mt-1 block text-[11px] text-ink-muted">{hint}</span>
+      <span className="field-help mt-1.5 block">{hint}</span>
     </label>
   );
 }
@@ -272,8 +273,8 @@ function BrandAutocomplete({
   return (
     <div ref={boxRef} className="relative">
       <label className="block">
-        <span className="text-sm font-medium text-ink-text">Search a brand</span>
-        <div className="relative mt-1">
+        <span className="field-label">Search a brand</span>
+        <div className="relative mt-1.5">
           <input
             value={value}
             onChange={(e) => { onChange(e.target.value); setOpen(true); }}
@@ -291,7 +292,7 @@ function BrandAutocomplete({
               type="button"
               onClick={() => { onChange(''); setOpen(false); }}
               aria-label="Clear search"
-              className="absolute right-2 top-1/2 -translate-y-1/2 rounded px-1 text-ink-muted hover:text-ink-text"
+              className="focus-ring absolute right-1 top-1/2 grid h-10 w-10 -translate-y-1/2 place-items-center rounded text-ink-muted hover:text-ink-text"
             >
               ✕
             </button>
@@ -411,6 +412,18 @@ export function FranchiseScreeningView() {
   // empty page.
   useEffect(() => { setPage(1); }, [budget, space, vertical, tier, truth, source, search, hideOutOfReach, sortKey, pageSize]);
 
+  // Active-filter chips (mockup D1): each removable on its own.
+  const activeChips: Array<{ key: string; label: string; clear: () => void }> = [
+    ...(search.trim() ? [{ key: 'q', label: `“${search.trim()}”`, clear: () => setSearch('') }] : []),
+    ...(budget ? [{ key: 'budget', label: `Up to ₱${budget}`, clear: () => setBudget('') }] : []),
+    ...(space ? [{ key: 'space', label: `${space} sqm`, clear: () => setSpace('') }] : []),
+    ...(vertical ? [{ key: 'vertical', label: VERTICALS.find((v) => v.value === vertical)?.label ?? vertical, clear: () => setVertical('') }] : []),
+    ...(source !== 'all' ? [{ key: 'source', label: source === 'pfa' ? 'PFA directory' : 'Original catalogue', clear: () => setSource('all') }] : []),
+    ...(tier !== 'all' ? [{ key: 'tier', label: `${tier[0].toUpperCase()}${tier.slice(1)} tier`, clear: () => setTier('all') }] : []),
+    ...(truth !== 'all' ? [{ key: 'truth', label: `${truth[0].toUpperCase()}${truth.slice(1)} only`, clear: () => setTruth('all') }] : []),
+    ...(hideOutOfReach ? [{ key: 'reach', label: 'Within reach only', clear: () => setHideOutOfReach(false) }] : []),
+  ];
+
   function clearAll() {
     setBudget(''); setSpace(''); setVertical(''); setTier('all'); setTruth('all');
     setSource('all'); setSearch(''); setHideOutOfReach(false); setSortKey('fit');
@@ -443,8 +456,8 @@ export function FranchiseScreeningView() {
             suffix=" sqm"
           />
           <label className="block">
-            <span className="text-sm font-medium text-ink-text">Vertical</span>
-            <select value={vertical} onChange={(e) => setVertical(e.target.value)} className="field mt-1">
+            <span className="field-label">Vertical</span>
+            <select value={vertical} onChange={(e) => setVertical(e.target.value)} className="field mt-1.5">
               {VERTICALS.map((v) => <option key={v.value} value={v.value}>{v.label}</option>)}
             </select>
           </label>
@@ -453,16 +466,16 @@ export function FranchiseScreeningView() {
         {/* Secondary filters — all live. */}
         <div className="mt-4 flex flex-wrap items-end gap-4 border-t border-ink-border pt-4">
           <label className="block">
-            <span className="text-[11px] font-medium uppercase tracking-wide text-ink-muted">Source</span>
-            <select value={source} onChange={(e) => setSource(e.target.value as SourceFilter)} className="field mt-1 w-40">
+            <span className="field-label">Source</span>
+            <select value={source} onChange={(e) => setSource(e.target.value as SourceFilter)} className="field mt-1.5 w-44">
               <option value="all">All sources</option>
               <option value="pfa">PFA directory</option>
               <option value="existing">Original catalogue</option>
             </select>
           </label>
           <label className="block">
-            <span className="text-[11px] font-medium uppercase tracking-wide text-ink-muted">Capital tier</span>
-            <select value={tier} onChange={(e) => setTier(e.target.value as TierFilter)} className="field mt-1 w-40">
+            <span className="field-label">Capital tier</span>
+            <select value={tier} onChange={(e) => setTier(e.target.value as TierFilter)} className="field mt-1.5 w-44">
               <option value="all">All tiers</option>
               <option value="entry">Entry (≤₱600K)</option>
               <option value="mid">Mid (≤₱6M)</option>
@@ -470,8 +483,8 @@ export function FranchiseScreeningView() {
             </select>
           </label>
           <label className="block">
-            <span className="text-[11px] font-medium uppercase tracking-wide text-ink-muted">Truth Layer</span>
-            <select value={truth} onChange={(e) => setTruth(e.target.value as TruthFilter)} className="field mt-1 w-40">
+            <span className="field-label">Truth Layer</span>
+            <select value={truth} onChange={(e) => setTruth(e.target.value as TruthFilter)} className="field mt-1.5 w-44">
               <option value="all">Any</option>
               <option value="verified">Verified only</option>
               <option value="assumed">Assumed</option>
@@ -479,114 +492,149 @@ export function FranchiseScreeningView() {
             </select>
           </label>
           <label className="block">
-            <span className="text-[11px] font-medium uppercase tracking-wide text-ink-muted">Sort by</span>
-            <select value={sortKey} onChange={(e) => setSortKey(e.target.value as SortKey)} className="field mt-1 w-44">
+            <span className="field-label">Sort by</span>
+            <select value={sortKey} onChange={(e) => setSortKey(e.target.value as SortKey)} className="field mt-1.5 w-48">
               <option value="fit">Best fit</option>
               <option value="investment">Lowest investment</option>
               <option value="payback">Fastest payback</option>
               <option value="space">Smallest space</option>
             </select>
           </label>
-          <label className="flex cursor-pointer items-center gap-2 pb-2 text-sm text-ink-text">
-            <input type="checkbox" checked={hideOutOfReach} onChange={(e) => setHideOutOfReach(e.target.checked)} className="h-4 w-4 accent-[#BE8562]" />
+          <label className="flex min-h-[48px] cursor-pointer items-center gap-2 text-body text-ink-text">
+            <input type="checkbox" checked={hideOutOfReach} onChange={(e) => setHideOutOfReach(e.target.checked)} className="h-5 w-5 accent-[#BE8562]" />
             Hide out-of-reach
           </label>
-          <button onClick={clearAll} className="btn-ghost ml-auto pb-2 text-sm">Reset filters</button>
+          <button type="button" onClick={clearAll} className="btn-secondary ml-auto">Reset filters</button>
         </div>
-        {error && <p className="mt-3 text-sm text-nogo">{error}</p>}
+        {error && (
+          <div role="alert" className="error-state mt-4 flex-row items-start gap-2 p-3 text-body">
+            <span className="font-bold text-nogo" aria-hidden>✕</span> <span>{error}</span>
+          </div>
+        )}
       </div>
 
       {/* Results */}
       {loading ? (
-        <div className="card p-8 text-center text-sm text-ink-muted">Loading the franchise catalogue…</div>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3" aria-busy="true" aria-label="Loading the franchise catalogue">
+          {Array.from({ length: 6 }).map((_, i) => <div key={i} className="skeleton h-56" />)}
+        </div>
       ) : (
         <>
-          <div className="flex flex-wrap items-center gap-3 text-sm text-ink-muted">
+          <div className="flex flex-wrap items-center gap-3 text-body text-ink-muted" aria-live="polite">
             <span>
               {rows.length > 0 && <>Showing <span className="font-semibold text-ink-text">{firstRow}–{lastRow}</span> of </>}
               <span className="font-semibold text-ink-text">{rows.length}</span> brands
-              {budgetPhp != null && <> · budget <span className="font-semibold text-ink-text">{fmtPhp(budgetPhp)}</span></>}
-              {floorAreaSqm != null && <> · {floorAreaSqm} sqm</>}
             </span>
-            <span className="pill pill-go">{affordable} within reach</span>
-            <label className="ml-auto flex items-center gap-2 text-xs text-ink-muted">
+            {rows.length > 0 && <span className="font-semibold text-go">✓ {affordable} within reach</span>}
+            <label className="ml-auto flex items-center gap-2 text-label font-normal">
               Show
-              <select
-                value={pageSize}
-                onChange={(e) => setPageSize(Number(e.target.value))}
-                className="field w-20 py-1"
-              >
+              <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))} className="field w-24">
                 {PAGE_SIZES.map((n) => <option key={n} value={n}>{n}</option>)}
               </select>
               per page
             </label>
           </div>
 
-          {rows.length === 0 ? (
-            <div className="card p-8 text-center text-sm text-ink-muted">No brands match these filters. Try widening the budget or clearing a filter.</div>
-          ) : (
-            <div className="card overflow-hidden p-0">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-ink-border bg-ink-panel-2 text-left text-xs uppercase tracking-wide text-ink-muted">
-                      <th className="px-3 py-2 font-medium">Fit</th>
-                      <th className="px-3 py-2 font-medium">Brand</th>
-                      <th className="px-3 py-2 font-medium">Tier</th>
-                      <th className="px-3 py-2 font-medium">Total investment</th>
-                      <th className="px-3 py-2 font-medium">Franchise fee</th>
-                      <th className="px-3 py-2 font-medium">Min space</th>
-                      <th className="px-3 py-2 font-medium">Payback</th>
-                      <th className="px-3 py-2 font-medium">Truth</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {pageRows.map((b) => {
-                      const supplier = isSupplier(b);
-                      const badge = tierBadge(b.investment?.min);
-                      const dim = b.overBudget || b.overSpace || supplier;
-                      return (
-                        <tr key={b.brand} className={`border-b border-ink-border align-top ${dim ? 'opacity-55' : ''}`}>
-                          <td className="px-3 py-2"><span className="text-lg font-bold text-ink-text">{supplier ? '—' : b.fitScore}</span></td>
-                          <td className="px-3 py-2">
-                            <p className="font-medium text-ink-text">
-                              {b.brand}
-                              {sourceOf(b) === 'pfa' && !supplier && <span className="ml-2 pill pill-new align-middle text-[10px]">PFA</span>}
-                            </p>
-                            <p className="text-[11px] text-ink-muted">{b.category ?? b.vertical ?? ''}</p>
-                            {b.reasons[0] && <p className={`mt-0.5 text-[11px] ${dim ? 'text-nogo' : 'text-go'}`}>{b.reasons[0]}</p>}
-                          </td>
-                          <td className="px-3 py-2">
-                            {supplier
-                              ? <span className="pill bg-ink-panel-2 text-ink-muted">Supplier</span>
-                              : badge ? <span className={`pill ${badge.cls}`}>{badge.label}</span> : <span className="text-ink-muted">—</span>}
-                          </td>
-                          <td className="px-3 py-2 text-ink-text">{fmtRange(b.investment)}</td>
-                          <td className="px-3 py-2 text-ink-text">{fmtRange(b.franchiseFee)}</td>
-                          <td className="px-3 py-2 text-ink-text">{b.minSqm != null ? `${b.minSqm} sqm` : '—'}</td>
-                          <td className="px-3 py-2 text-ink-text">{fmtPayback(b.payback)}</td>
-                          <td className="px-3 py-2">{b.truthLayer ? <span className={truthCls(b.truthLayer)}>{b.truthLayer}{b.confidence != null ? ` ${b.confidence}%` : ''}</span> : <span className="text-ink-muted">—</span>}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-              {/* Pagination controls */}
-              {totalPages > 1 && (
-                <div className="flex flex-wrap items-center justify-between gap-3 border-t border-ink-border px-3 py-3 text-sm">
-                  <span className="text-ink-muted">Page <span className="font-semibold text-ink-text">{safePage}</span> of {totalPages}</span>
-                  <div className="flex items-center gap-2">
-                    <button onClick={() => setPage(1)} disabled={safePage === 1} className="btn-ghost px-2 py-1 text-xs disabled:opacity-40">« First</button>
-                    <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={safePage === 1} className="btn-ghost px-2 py-1 text-xs disabled:opacity-40">‹ Prev</button>
-                    <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={safePage === totalPages} className="btn-ghost px-2 py-1 text-xs disabled:opacity-40">Next ›</button>
-                    <button onClick={() => setPage(totalPages)} disabled={safePage === totalPages} className="btn-ghost px-2 py-1 text-xs disabled:opacity-40">Last »</button>
-                  </div>
-                </div>
-              )}
+          {activeChips.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-label font-normal text-ink-muted">Active:</span>
+              {activeChips.map((c) => (
+                <button
+                  key={c.key}
+                  type="button"
+                  onClick={c.clear}
+                  className="focus-ring inline-flex min-h-[36px] items-center gap-2 rounded-full border border-ink-border-strong bg-ink-panel-2 px-3 text-label text-ink-text hover:bg-ink-hover"
+                  aria-label={`Remove filter ${c.label}`}
+                >
+                  {c.label} <span aria-hidden className="text-ink-muted">✕</span>
+                </button>
+              ))}
+              <button type="button" onClick={clearAll} className="link min-h-[36px] px-1 text-label">Clear all</button>
             </div>
           )}
-          <p className="text-[11px] text-ink-muted">
+
+          {rows.length === 0 ? (
+            // D2 — no results
+            <div className="empty-state">
+              <p className="text-title">No brands match</p>
+              <p className="text-body text-ink-muted">
+                Nothing fits these filters{search.trim() ? <> for “{search.trim()}”</> : null}. Try removing a filter or widening the budget.
+              </p>
+              <button type="button" onClick={clearAll} className="btn-secondary self-start">Clear filters</button>
+            </div>
+          ) : (
+            <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {pageRows.map((b) => {
+                const supplier = isSupplier(b);
+                const badge = tierBadge(b.investment?.min);
+                const outOfReach = b.overBudget || b.overSpace;
+                return (
+                  <li key={b.brand} className={`card flex flex-col gap-4 p-5 ${supplier ? 'opacity-70' : ''}`}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-body text-title text-ink-text">{b.brand}</p>
+                        <p className="truncate text-label font-normal text-ink-muted">{b.category ?? b.vertical ?? '—'}</p>
+                      </div>
+                      <div className="flex shrink-0 flex-col items-end gap-1.5">
+                        {b.truthLayer && <TruthChip layer={truthKey(b.truthLayer)} title={b.confidence != null ? `${b.truthLayer} · ${b.confidence}% confidence` : undefined} />}
+                        {sourceOf(b) === 'pfa' && !supplier && <span className="pill pill-new">PFA</span>}
+                      </div>
+                    </div>
+
+                    <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
+                      <div>
+                        <dt className="stat-label">Investment</dt>
+                        <dd className="text-body font-semibold tabular-nums text-ink-text">{fmtRange(b.investment)}</dd>
+                      </div>
+                      <div>
+                        <dt className="stat-label">Space</dt>
+                        <dd className="text-body font-semibold tabular-nums text-ink-text">{b.minSqm != null ? `${b.minSqm} sqm+` : '—'}</dd>
+                      </div>
+                      <div>
+                        <dt className="stat-label">Franchise fee</dt>
+                        <dd className="text-body tabular-nums text-ink-text">{fmtRange(b.franchiseFee)}</dd>
+                      </div>
+                      <div>
+                        <dt className="stat-label">Payback</dt>
+                        <dd className="text-body tabular-nums text-ink-text">{fmtPayback(b.payback)}</dd>
+                      </div>
+                    </dl>
+
+                    <div className="flex flex-wrap items-center gap-2 text-label font-normal">
+                      {supplier
+                        ? <span className="rounded-chip border border-ink-border px-2 py-0.5 text-ink-muted">Supplier — not a franchise offer</span>
+                        : badge ? <span className={`rounded-chip px-2 py-0.5 ${badge.cls}`}>{badge.label}</span> : null}
+                      {!supplier && <span className="tabular-nums text-ink-muted" title="How well this brand fits your budget and space (0–100)">Fit {b.fitScore}</span>}
+                      {!supplier && (
+                        <span className={outOfReach ? 'text-ink-muted' : 'font-semibold text-go'}>
+                          {outOfReach ? `— ${b.reasons[0] ?? 'Out of reach'}` : `✓ ${b.reasons[0] ?? 'Within reach'}`}
+                        </span>
+                      )}
+                    </div>
+
+                    {!supplier && (
+                      <Link href={`/intake?brand=${encodeURIComponent(b.brand)}`} className="btn-secondary mt-auto w-full">
+                        Start intake with this brand
+                      </Link>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+
+          {totalPages > 1 && (
+            <nav aria-label="Pages" className="flex flex-wrap items-center justify-between gap-3">
+              <span className="text-label font-normal text-ink-muted">Page <span className="font-semibold text-ink-text">{safePage}</span> of {totalPages}</span>
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={() => setPage(1)} disabled={safePage === 1} className="btn-secondary">« First</button>
+                <button type="button" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={safePage === 1} className="btn-secondary">‹ Prev</button>
+                <button type="button" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={safePage === totalPages} className="btn-secondary">Next ›</button>
+                <button type="button" onClick={() => setPage(totalPages)} disabled={safePage === totalPages} className="btn-secondary">Last »</button>
+              </div>
+            </nav>
+          )}
+          <p className="notice-ra">
             Figures are franchisor-stated ranges parsed from the requirements matrix, each carrying its Truth Layer
             classification. Payback is normalized to years; “(est.)” marks a franchisor estimate. This screens which
             brands to consider — validate the shortlist, then run a site analysis on the winners. BSA sharpens the

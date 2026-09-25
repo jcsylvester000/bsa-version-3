@@ -15,13 +15,11 @@ export default async function ScreeningPage() {
 
   return (
     <div>
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-ink-text">Franchise Screening</h1>
-        <p className="mt-1 max-w-3xl text-sm text-ink-muted">
-          Before you pick a site, pick the right brands. Enter your budget and the floor area you have,
-          and BSA ranks the franchise catalogue by how well each fits — investment, footprint and payback
-          compared side by side, every figure tagged with its Truth Layer. Shortlist here, then run a full
-          site analysis on the winners.
+      <div className="mb-6 flex flex-col gap-1.5">
+        <h1 className="text-h1">Franchise Screening</h1>
+        <p className="max-w-3xl text-body text-ink-muted">
+          Browse brands by what they require. Set your budget and floor area, compare investment, space and
+          payback side by side — every figure tagged with its Truth Layer — then pick one to start an intake.
         </p>
       </div>
       <FranchiseScreeningView />

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { computeCompleteness } from '@/lib/modules/completeness';
 import { verticalForBrand } from '@/lib/brands/brandVertical';
@@ -103,8 +103,10 @@ function SelectOrManual({ label, value, onChange, options, placeholder }: { labe
 
 const STEPS = ['Business vertical', 'Brand & requirements', 'Existing outlets', 'Candidate sites'];
 
-export function SteppedIntakeWizard({ franchisors, mockMode = false, mockRunId, editIntakeId = null }: {
+export function SteppedIntakeWizard({ franchisors, mockMode = false, mockRunId, editIntakeId = null, initialBrand = null }: {
   franchisors: Array<{ id: string; brandName: string }>; mockMode?: boolean; mockRunId?: string; editIntakeId?: string | null;
+  /** Brand name handed over from Franchise Screening ("Start intake with this brand"). */
+  initialBrand?: string | null;
 }) {
   const router = useRouter();
   const [step, setStep] = useState(0);
@@ -154,6 +156,24 @@ export function SteppedIntakeWizard({ franchisors, mockMode = false, mockRunId, 
     }).catch(() => {});
   }
   useEffect(() => { loadFranchisors(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+
+  // Hand-over from Franchise Screening: once the catalog loads, preselect that brand and its
+  // vertical (only among brands this user can see — the catalog API applies visibility). One-shot.
+  const appliedInitialBrand = useRef(false);
+  useEffect(() => {
+    if (appliedInitialBrand.current || !initialBrand || editIntakeId || franchisorGroups.length === 0) return;
+    appliedInitialBrand.current = true;
+    const want = initialBrand.trim().toLowerCase();
+    for (const g of franchisorGroups) {
+      const b = g.brands.find((x) => x.brandName.trim().toLowerCase() === want);
+      if (b) {
+        setBizType('franchisor');
+        if (b.vertical) setVertical(b.vertical);
+        setFranchisorId(b.id);
+        return;
+      }
+    }
+  }, [franchisorGroups, initialBrand, editIntakeId]);
 
   // Edit-and-rerun: preload the previous intake's inputs, and remember its lineage so
   // submitting creates a NEW VERSION rather than a brand-new intake.

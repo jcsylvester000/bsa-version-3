@@ -8,9 +8,11 @@ import { SteppedIntakeWizard } from '@/components/SteppedIntakeWizard';
 
 export const dynamic = 'force-dynamic';
 
-export default async function IntakePage({ searchParams }: { searchParams: { edit?: string } }) {
+export default async function IntakePage({ searchParams }: { searchParams: { edit?: string; brand?: string } }) {
   const session = await getSession();
   const editIntakeId = searchParams.edit ?? null;
+  // From Franchise Screening. Only a hint: the wizard matches it against the brands this user can see.
+  const initialBrand = (searchParams.brand ?? '').slice(0, 120) || null;
 
   // Brand list for the intake dropdown — the same visibility rule as /api/franchisors
   // (shared catalog + brands the user created + their own client brand; staff see all).
@@ -29,20 +31,21 @@ export default async function IntakePage({ searchParams }: { searchParams: { edi
 
   return (
     <div>
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-ink-text">{editIntakeId ? 'Edit & rerun' : 'New Intake'}</h1>
-        <p className="text-sm text-ink-muted">
+      <div className="mb-6 flex flex-col gap-1.5">
+        <h1 className="text-h1">{editIntakeId ? 'Edit & rerun' : 'New Intake'}</h1>
+        <p className="text-body text-ink-muted">
           {editIntakeId
             ? 'Your previous inputs are loaded — change anything and submit to create a new version.'
             : 'Four quick steps: pick the vertical, add your brief, your outlets, and the candidate sites.'}
         </p>
       </div>
       {franchisors.length === 0 && !usingMock && !editIntakeId ? (
-        <div className="card p-8 text-center text-ink-muted">
-          No franchisor on file yet. Create one before starting an intake.
+        <div className="empty-state">
+          <p className="text-title">No brands on file yet</p>
+          <p className="text-body text-ink-muted">Create a franchise brand before starting an intake.</p>
         </div>
       ) : (
-        <SteppedIntakeWizard franchisors={franchisors} mockMode={usingMock} mockRunId={DEMO_RUN_ID} editIntakeId={editIntakeId} />
+        <SteppedIntakeWizard franchisors={franchisors} mockMode={usingMock} mockRunId={DEMO_RUN_ID} editIntakeId={editIntakeId} initialBrand={initialBrand} />
       )}
     </div>
   );
