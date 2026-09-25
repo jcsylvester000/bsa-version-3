@@ -19,5 +19,5 @@
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
-  "exclude": ["node_modules", "_to_delete", "**/_to_delete/**"]
+  "exclude": ["node_modules", "_to_delete", "**/_to_delete/**", "e2e/**", "playwright.config.ts"]
 }

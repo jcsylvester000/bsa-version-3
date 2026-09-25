@@ -6,6 +6,7 @@ import { isUuid } from '@/lib/util/uuid';
 import { ok, errors } from '@/lib/api/respond';
 import { runPipeline } from '@/lib/modules/orchestrator';
 import { audit } from '@/lib/audit/audit';
+import { captureException } from '@/lib/monitoring/report';
 
 /**
  * POST /api/runs/[id]/run — execute one time-boxed slice of the deterministic pipeline.
@@ -38,8 +39,9 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   let result;
   try {
     result = await runPipeline(run.id, { refresh });
-  } catch {
-    // Logged + run marked `failed` inside runPipeline. Generic message to the client.
+  } catch (err) {
+    // Run already marked `failed` inside runPipeline. Report to the monitor; generic message out.
+    await captureException(err, { code: 'pipeline_failed', route: `POST /api/runs/${run.id}/run` });
     return errors.server('The analysis could not be completed. Please try again.');
   }
 

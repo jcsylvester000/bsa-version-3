@@ -118,15 +118,21 @@ export async function loadZonal(rows: RawZonal[], opts: LoadOpts = {}): Promise<
 }
 
 /**
- * Load lease comps. lease_comp has no unique natural key, so we clear each
- * (format, corridor) group present in the batch then insert — idempotent per group.
+ * Load lease comps. lease_comp has no unique natural key, so a re-load replaces each
+ * (format, corridor) group present in the batch.
+ *
+ * F-13: INSERT-then-DELETE, not delete-then-insert. The old code deleted a corridor's comps first and
+ * then inserted — a failure in between (or a killed script) left the corridor EMPTY, silently breaking
+ * every Lease Benchmark against it. Now we snapshot the existing rows' ids, insert the new rows, and
+ * only then delete the old ids. A failure before the delete leaves harmless duplicates (a re-run
+ * cleans them), never a wiped corridor. No transaction needed, so it's safe on any client.
  */
 export async function loadLease(rows: RawLease[], opts: LoadOpts = {}): Promise<LoadReport> {
   const db = opts.db ?? appPrisma;
   const seen = new Set<string>();
   let skipped = 0;
   let deduped = 0;
-  const norm: ReturnType<typeof normalizeLease>[] = [];
+  const norm: NonNullable<ReturnType<typeof normalizeLease>>[] = [];
   for (const r of rows) {
     const n = normalizeLease(r);
     if (!n) { skipped++; continue; }
@@ -135,15 +141,20 @@ export async function loadLease(rows: RawLease[], opts: LoadOpts = {}): Promise<
     seen.add(key);
     norm.push(n);
   }
-  // Clear the (format, corridor) groups this batch touches, then insert fresh.
+
   const groups = new Map<string, { format: string; corridor: string }>();
-  for (const n of norm) if (n) groups.set(`${n.format}|${n.corridor}`, { format: n.format, corridor: n.corridor });
+  for (const n of norm) groups.set(`${n.format}|${n.corridor}`, { format: n.format, corridor: n.corridor });
+
+  // 1) Snapshot the ids currently in each touched group (to delete AFTER the new rows land).
+  const oldIds: bigint[] = [];
   for (const g of groups.values()) {
-    await db.leaseComp.deleteMany({ where: { format: g.format, corridor: g.corridor } });
+    const existing = await db.leaseComp.findMany({ where: { format: g.format, corridor: g.corridor }, select: { id: true } });
+    for (const e of existing) oldIds.push(e.id);
   }
+
+  // 2) Insert the fresh rows FIRST — the corridor now holds old + new (never empty).
   let loaded = 0;
   for (const n of norm) {
-    if (!n) continue;
     await db.leaseComp.create({
       data: {
         format: n.format,
@@ -161,6 +172,10 @@ export async function loadLease(rows: RawLease[], opts: LoadOpts = {}): Promise<
     });
     loaded++;
   }
+
+  // 3) Only now remove the old rows, by id. If this throws, the corridor still has its data.
+  if (oldIds.length) await db.leaseComp.deleteMany({ where: { id: { in: oldIds } } });
+
   return { received: rows.length, loaded, skipped, deduped };
 }
 

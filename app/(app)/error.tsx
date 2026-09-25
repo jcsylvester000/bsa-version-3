@@ -10,8 +10,17 @@ import Link from 'next/link';
  */
 export default function AppError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
   useEffect(() => {
-    // Client-side trace only; the server already logged the full error.
+    // Client-side trace + report to the monitoring seam (F-51) so client errors are seen, not just
+    // server ones. Best-effort; the message is capped and carries no internals beyond what the app threw.
     console.error('[bsa] page error', error.digest ?? '');
+    try {
+      void fetch('/api/client-error', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: error.message?.slice(0, 500), digest: error.digest, route: typeof window !== 'undefined' ? window.location.pathname : undefined }),
+        keepalive: true,
+      }).catch(() => {});
+    } catch { /* never let reporting break the boundary */ }
   }, [error]);
 
   return (

@@ -91,6 +91,9 @@ export function LocationPicker({ title, initial, onPick, onClose }: Props) {
     });
 
     return () => { cancelled = true; mapRef.current?.remove(); mapRef.current = null; markerRef.current = null; };
+    // Mount-only map initialisation: it must build the maplibre instance exactly once. The props it
+    // reads (initial centre, callbacks) are captured at mount by design; re-running would recreate the
+    // whole map. Intentional empty dependency list.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

@@ -5,6 +5,42 @@ The cross-thread state record. Read this (with the Master Instruction and the cu
 
 ---
 
+## 2026-09-25 — Final sweep: F-13, F-25, F-43, F-46, F-51, F-52 + owner runbook (⏳ awaiting push; NEW MIGRATION already listed)
+
+Goal: complete everything code-completable; hand the rest to the owner with a runbook.
+
+- **F-13** `loadLease` INSERT-then-DELETE: snapshot old ids → insert new rows → delete old ids by id.
+  A failed/killed lease load can no longer wipe a corridor's comps (leaves harmless dupes at worst).
+- **F-25** Google API cost control: `lib/auth/apiQuota.ts` (`consumeGoogleQuota`, reuses the DB limiter,
+  `LIMITS.googleApiPerUserDaily` = 500/user/day) on `/api/places` + `/api/geocode`; PH bounding-box +
+  length caps on all inputs; `/api/maptiles` validates tile coords against the 2^z grid. Test added.
+- **F-46** lint/consistency: PDF `as any` → typed via `Parameters<typeof renderToBuffer>[0]`; reserved
+  `ModuleKind` values documented; `font-mono` removed (tabular-nums); every `exhaustive-deps` suppression
+  turned into a documented, intentional decision (mount-only / value-keyed effects). Settings date already Manila.
+- **F-51** monitoring seam `lib/monitoring/report.ts` (`captureException`, structured log + optional
+  `ERROR_WEBHOOK_URL`/`SENTRY_DSN`, inert without config; swap for `@sentry/nextjs` without touching call
+  sites). Wired into intake + run-route catches; new public `/api/client-error` receives browser errors
+  from the error boundary. `.env.example` updated.
+- **F-43** tests: verdict-agreement already existed; added `servicesRuns` (mocked-Prisma access-control
+  pattern) + the guard tests from prior batches. **Playwright** scaffolding (`playwright.config.ts`,
+  `e2e/smoke.spec.ts`, `test:e2e`, `@playwright/test` dep) and a **CI `e2e-smoke` job** that runs the
+  mock-mode journey (login → dashboard → site → PDF link + F-30 redirect) with NO database. The
+  DB-backed intake→run E2E is documented for a CI Postgres service.
+- **F-52** docs refreshed: README (deterministic recommendation + "How the recommendation is decided" +
+  regional runbook + deploy env), API_REFERENCE (analysis-report removed → deterministic; new
+  places/geocode quota + client-error routes), DATA_DICTIONARY (ai_generation/pipeline_usage marked
+  deprecated), HANDOFF (sequence diagram + env checklist), `.env.example` demo owner fixed
+  (kantofreshcup → macaoimperial).
+- **Owner runbook** `docs/OWNER_RUNBOOK.md`: exact steps for F-31 (rotate Google key + passwords),
+  F-19 (Cavite/Batangas data loads), F-17 (NCR zonal gaps), F-16 (isochrone catchments, future).
+
+- **477 tests pass**, app + scripts typecheck clean, build compiles (Middleware 32.8 kB).
+- **Workbook: 47 Done, F-44 In progress, 4 Open (F-16/F-17/F-19/F-31 — all owner, in the runbook).**
+- F-44 (full per-tab component split) is the one deferred item: the shared primitives are already in
+  components/ui/; the file split needs the app running for visual QA, so it is left for the dev team.
+
+---
+
 ## 2026-09-25 — Code-health subset: F-47 done; F-43/F-44/F-46 progressed (⏳ awaiting push)
 
 Scope confirmed with the user: safe, build-verifiable work now; infra-bound parts (integration DB, Playwright, full component split) documented as follow-ups.

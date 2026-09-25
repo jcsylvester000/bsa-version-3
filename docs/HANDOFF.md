@@ -39,16 +39,14 @@ sequenceDiagram
   participant UI as Browser (wizard / dashboard)
   participant Run as POST /api/runs/[id]/run
   participant Orc as lib/modules/orchestrator
-  participant AI as POST /api/analysis-report
+  participant Rec as lib/modules/siteVerdict (deterministic)
   UI->>Run: slice 1 (refresh:true on manual re-run)
-  Run->>Orc: sites with analyzed_at = NULL, ≤5.5 s
+  Run->>Orc: claim sites with analyzed_at = NULL, ≤5.5 s (F-05 per-site claim)
   Orc-->>Run: complete:false, remaining
   UI->>Run: repeat until complete:true
   Orc-->>Run: evidence confidence, status ready|failed
-  loop each site, one request each
-    UI->>AI: generate (per-site lock, no double billing)
-    AI-->>UI: 200 ready · 202 generating · 502/503 + reason code
-  end
+  Note over Rec: no model call — the Final Report / PDF are composed<br/>from the persisted module_result rows on demand
+  UI->>Rec: open site → scorecard band → summariseSite → Proceed / Caution / No-Go
 ```
 
 - **Per site:** Site Fit → Territory → Lease → Daypart → (Informal / Healthcare / Mall / Land by vertical)
@@ -59,9 +57,14 @@ sequenceDiagram
   what scored. ≥65 GO, ≥45 CAUTION. Capped at 64 when Site Fit can't score.
 - **Confidence** = decision-weighted evidence (Verified 1 · Assumed 0.7 · Projected 0.35 · missing 0),
   High ≥ 0.75, Medium ≥ 0.5, one band lower when an on-ground check is advised.
-- **AI** is retrieve-then-generate: `lib/modules/analysisContext.ts` builds the labelled site schema →
-  keyword retrieval of methodology chunks → VectorShift (or the stub) → `lib/ai/outputCheck.ts` verifies
-  every number traces to the data and flags price-verdict wording → cached per site in `module_result`.
+- **Recommendation (deterministic, no LLM):** the scorecard band → `lib/modules/siteVerdict.ts`
+  (`summariseSite`) phrases the Proceed / Proceed with caution / No-Go call and the Final Report from the
+  retrieved keywords, findings and numbers — never inventing a value. Dashboard band and Final Report read
+  the same band, so they always agree (F-07). The external VectorShift analysis was removed (Sep 2026);
+  `ai_generation` / `pipeline_usage` are deprecated (see DATA_DICTIONARY).
+- **Monitoring (F-51):** unexpected server errors and uncaught client errors flow through
+  `lib/monitoring/report.ts` (structured log + optional `ERROR_WEBHOOK_URL`/`SENTRY_DSN`); swap that one
+  module for `@sentry/nextjs` without touching call sites.
 
 ## 3. Decisions worth keeping (and why)
 
@@ -97,7 +100,9 @@ sequenceDiagram
 ## 5. Pre-production checklist
 
 - [ ] `npx prisma migrate deploy` on the production database; `npm run db:seed-methodology`.
-- [ ] Netlify env: `DATABASE_URL`, `AUTH_SECRET` (32+), `AUTH_MODE=db`, `AI_PROVIDER`, VectorShift keys.
+- [ ] Netlify env: `DATABASE_URL` (pooled) + `DIRECT_URL` (direct, for `migrate deploy` and bulk loaders),
+      `AUTH_SECRET` (32+), `AUTH_MODE=db`, `GOOGLE_API_KEY`. Optional: `ERROR_WEBHOOK_URL`/`SENTRY_DSN`.
+      No AI keys — the recommendation is deterministic.
 - [ ] Function timeout ≥ 26 s (or `VECTORSHIFT_TIMEOUT_MS` below it).
 - [ ] Browser smoke test: login → intake → dashboard → site tabs → Analysis → Export site PDF → Run report.
 - [ ] CSP: no blocked resources in the console (use `BSA_CSP_REPORT_ONLY=1` while diagnosing).

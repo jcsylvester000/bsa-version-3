@@ -25,6 +25,8 @@ export const LIMITS = {
   registerPerIp: { max: 5, windowMs: 60 * 60_000 },
   /** Wrong current-password attempts on the change-password route, per signed-in account (F-28). */
   passwordChangePerAccount: { max: 5, windowMs: 15 * 60_000 },
+  /** F-25: paid Google Places / Geocoding calls per user per day (the expensive, low-volume ones). */
+  googleApiPerUserDaily: { max: 500, windowMs: 24 * 60 * 60_000 },
 } as const;
 
 export function hashKey(raw: string): string {

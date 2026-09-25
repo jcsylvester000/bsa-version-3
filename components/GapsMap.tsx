@@ -102,6 +102,9 @@ export function GapsMap({ gaps, businesses = [] }: { gaps: GapPoint[]; businesse
       mapRef.current = null;
     };
     // Re-init only when the set of gap OR business coordinates changes.
+    // Keyed on the STRINGIFIED point sets (not the array identities) so the map only re-renders when
+    // the actual coordinates change, not on every parent re-render. Depending on `gaps`/`businesses`
+    // directly would rebuild the map constantly; this value-based key is the intended behaviour.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gaps.map((g) => `${g.lat},${g.lon}`).join('|'), businesses.map((b) => `${b.lat},${b.lon},${b.tier}`).join('|')]);
 

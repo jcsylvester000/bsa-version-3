@@ -64,6 +64,9 @@ export function AnalysisOverlay({ feature, active, onDone, durationMs = ANALYSIS
     timers.push(setTimeout(() => setClosing(true), durationMs));
     timers.push(setTimeout(() => onDoneRef.current(), durationMs + 450));
     return () => { cancelAnimationFrame(raf); timers.forEach(clearTimeout); };
+    // Runs the fixed-length animation when it (re)starts. `onDone` is read via onDoneRef so it is not a
+    // dependency; the setState setters are stable. This dependency list (active/feature/durationMs) is
+    // deliberate — adding more would restart the animation mid-run.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, feature, durationMs]);
 
@@ -79,9 +82,9 @@ export function AnalysisOverlay({ feature, active, onDone, durationMs = ANALYSIS
             <div className="mb-4 flex items-center gap-2">
               <span className="h-2.5 w-2.5 rounded-full bg-accent as-cursor" />
               <span className="text-xs font-semibold uppercase tracking-[0.2em] text-accent">{cfg.title}</span>
-              <span className="ml-auto font-mono text-xs text-ink-muted">{Math.round(pct)}%</span>
+              <span className="ml-auto tabular-nums text-xs text-ink-muted">{Math.round(pct)}%</span>
             </div>
-            <div className="flex-1 space-y-1.5 font-mono text-[13px] leading-relaxed">
+            <div className="flex-1 space-y-1.5 text-[13px] leading-relaxed">
               {cfg.steps.slice(0, visibleSteps).map((s, i) => {
                 const isLast = i === visibleSteps - 1;
                 return (
@@ -177,10 +180,10 @@ export function AnalysisSequence({ feature, children, durationMs = ANALYSIS_DURA
             <div className="mb-4 flex items-center gap-2">
               <span className="h-2.5 w-2.5 rounded-full bg-accent as-cursor" />
               <span className="text-xs font-semibold uppercase tracking-[0.2em] text-accent">{cfg.title}</span>
-              <span className="ml-auto font-mono text-xs text-ink-muted">{Math.round(pct)}%</span>
+              <span className="ml-auto tabular-nums text-xs text-ink-muted">{Math.round(pct)}%</span>
             </div>
 
-            <div className="flex-1 space-y-1.5 font-mono text-[13px] leading-relaxed">
+            <div className="flex-1 space-y-1.5 text-[13px] leading-relaxed">
               {cfg.steps.slice(0, visibleSteps).map((s, i) => {
                 const isLast = i === visibleSteps - 1;
                 return (

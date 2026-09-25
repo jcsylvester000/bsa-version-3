@@ -160,32 +160,32 @@ rows, updates each candidate's composite score + verdict, and sets run status
 (`analyzing`→`ready`/`failed`) and confidence from the Truth Layer mix. Idempotent
 (module_results upsert). Time-boxed: call repeatedly until `complete: true`. Returns
 `{ runId, status, confidence, complete, remaining, modulesRun[], siteCount,
-perSite[{siteId,label,composite,verdict}] }`. It does **not** generate AI text — see below.
+perSite[{siteId,label,composite,verdict}] }`. The recommendation is deterministic — no AI text.
 
-## GET /api/analysis-report?runId=uuid&siteId=uuid
-Read-only status of one site's AI Analysis Report. Never generates, never bills — safe to
-poll. `{ status: 'ready', report }` | `{ status: 'generating', startedAt }` | `{ status: 'missing' }`.
-
-## POST /api/analysis-report
-Body `{ runId, siteId, force? }` (Zod). Generates the site's analysis if missing (`force`
-regenerates). ONE site per request — the client loops sites sequentially. The per-site
-`module_result` row is a lock, so concurrent requests never double-call the live model.
-- `200 { status:'ready', report }`
-- `202 { status:'generating', startedAt }` — another request holds the lock; poll the GET.
-- `429 rate_limited` — regenerate cap (3 per site per 24h on the live provider).
-- `502 ai_unavailable` / `503 ai_not_configured` — generic messages plus a short machine reason in
-  `error.details[{path:'reason'}]` (`timeout`, `http_<status>`, `empty_output`, `network`,
-  `db_migration_pending`, `config_*`, `internal`). Provider response bodies are logged server-side
-  only (and the code to `pipeline_usage.error_code`), never returned.
-`report` = `{ analysis, schemaText, contextJson, model, confidence, generatedAt, cached }`.
+## Recommendation (no HTTP endpoint — deterministic, in-process)
+There is **no** `/api/analysis-report` endpoint any more (the external VectorShift analysis was removed
+in Sep 2026). Each site's Proceed / Proceed with caution / No-Go call is derived on the server from the
+persisted `module_result` rows: the scorecard composite band (`lib/modules/scorecard.ts`) →
+`summariseSite` (`lib/modules/siteVerdict.ts`), which phrases the Final Report from the retrieved
+keywords, findings and numbers. It is shown on the site page's Final Report tab and reproduced in the PDF.
 
 ## GET /api/analysis-report/pdf?runId=uuid&siteId=uuid
-Branded PDF of a READY analysis. Read-only — `409 analysis_missing|analysis_generating` if
-there is no finished report (it never triggers a generation).
+Branded PDF of the site's deterministic Final Report (built on demand from `module_result`; no stored
+file, no model call). Read-only.
 
 ## GET /api/modules?runId=uuid
 Auth + access-scoped. All `module_result` rows for a run, for the modules overview:
 `{ runId, status, confidence, results[{module, site, score, truthLayer, flags, payload}] }`.
+
+## Google proxy routes (paid — quota-limited, F-25)
+`POST /api/places` and `POST /api/geocode` attach the server `GOOGLE_API_KEY` and are metered per user
+per day (`LIMITS.googleApiPerUserDaily`, DB-backed) — `429` when exceeded. Inputs are bounded to the PH
+region and length-capped. `GET /api/maptiles/[z]/[x]/[y]` validates the tile coordinates against the 2^z
+grid and caches privately; a per-tile budget belongs at the edge/CDN, not Postgres.
+
+## POST /api/client-error (public, F-51)
+The browser error boundary reports uncaught client errors here; forwarded to the monitoring seam
+(`lib/monitoring/report.ts`). Length-capped, log-only, always `200`.
 
 ## Reference-data ingestion (CLI, not HTTP)
 `npm run db:ingest [poi|zonal|demographics]` — idempotent ETL into the reference tables

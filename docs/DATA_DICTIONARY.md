@@ -113,16 +113,20 @@ Natural key: `(source_table, source_id, chunk_index)`. Indexes: `HNSW(embedding 
 `GIN(tsv)`. `tsv` maintained by trigger from `content`.
 
 ### ai_generation
-Audit trail of every AI call — the retrieved chunk ids, prompt purpose, model, tokens, output.
-Makes any generated sentence traceable. Key columns: `pipeline_run_id` (fk), `purpose`
-(verdict/summary/section), `retrieved_chunk_ids` (bigint[]), `model`, `input_tokens`,
-`output_tokens`, `output`, `created_at`.
+> **Deprecated (Sep 2026).** `ai_generation` and `pipeline_usage` backed the removed external
+> VectorShift analysis. They are retained in the schema for historical rows and are **not written by
+> any current code path** — the recommendation is deterministic (`siteVerdict.ts`). The dev team may
+> drop them in a future migration once historical data is no longer needed.
 
-### pipeline_usage
-One row per live external-AI (VectorShift) call — cost + reliability monitor. **No response
-text.** Key columns: `user_id`, `franchisor_id`, `pipeline_run_id`, `candidate_site_id`,
-`provider`, `model`, `vs_run_id`, `cost_raw`, `cost_value`, `status` (ok/error),
-`error_code`, `latency_ms`, `trigger` (initial/regenerate), `created_at`.
+Audit trail of every (historical) AI call — the retrieved chunk ids, prompt purpose, model, tokens,
+output. Key columns: `pipeline_run_id` (fk), `purpose` (verdict/summary/section),
+`retrieved_chunk_ids` (bigint[]), `model`, `input_tokens`, `output_tokens`, `output`, `created_at`.
+
+### pipeline_usage  _(deprecated — see note above)_
+One row per historical external-AI call — cost + reliability monitor. **No response text.** Key
+columns: `user_id`, `franchisor_id`, `pipeline_run_id`, `candidate_site_id`, `provider`, `model`,
+`vs_run_id`, `cost_raw`, `cost_value`, `status` (ok/error), `error_code`, `latency_ms`,
+`trigger` (initial/regenerate), `created_at`.
 Indexes: `user_id`, `franchisor_id`, `created_at`, `(candidate_site_id, created_at)`.
 
 ## Group 5 — Ops / Governance

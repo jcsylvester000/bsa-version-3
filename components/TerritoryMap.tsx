@@ -214,6 +214,9 @@ export function TerritoryMap({ outlets, candidate, competitors = [] }: { outlets
       mapRef.current?.remove();
       mapRef.current = null;
     };
+    // Re-initialise the map ONLY when the candidate site changes (candidate.id), not on every prop
+    // identity change — a full teardown/rebuild on each render would flicker and lose viewport state.
+    // The effect reads the latest props at build time; this dependency list is deliberate.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [candidate.id]);
 

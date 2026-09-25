@@ -19,8 +19,13 @@ it never gives price verdicts, and BIR zonal values are shown only as tax-refere
 ## Tech stack (fixed — do not change without explicit instruction)
 
 Next.js 14 (App Router) · React 18 · TypeScript (strict) · Prisma 5 · PostgreSQL on **neon.tech**
-(PostGIS + pgvector) · Tailwind · hosted on **Netlify** (`@netlify/plugin-nextjs`). AI: VectorShift
-pipeline (Anthropic) behind a provider switch, stub by default. Local Postgres via Docker is optional.
+(PostGIS + pgvector) · Tailwind · hosted on **Netlify** (`@netlify/plugin-nextjs`). Local Postgres via
+Docker is optional.
+
+**Recommendation engine:** deterministic, no external LLM. Each site's call (Proceed / Proceed with
+caution / No-Go) comes from the module scores → the scorecard composite band → `lib/modules/siteVerdict.ts`,
+which phrases the verdict from keywords, findings and data. See "How the recommendation is decided" below.
+The old external VectorShift analysis endpoint was removed (Sep 2026).
 
 ## Run it locally
 
@@ -45,7 +50,7 @@ npm run dev                   # http://localhost:3000
 |---|---|
 | `npm run dev` / `build` / `start` | Next.js dev / production build / serve |
 | `npm run typecheck` | `tsc --noEmit` (strict) |
-| `npm test` | Vitest unit suite (331 tests) |
+| `npm test` | Vitest unit suite (470+ tests) |
 | `npm run prisma:deploy` | apply migrations |
 | `npm run db:seed-methodology` | refresh ONLY the AI methodology corpus (safe on Neon) |
 | `npm run db:populate:ncr` | load NCR reference data (zonal, demographics, lease) |
@@ -55,11 +60,36 @@ npm run dev                   # http://localhost:3000
 
 ## Deploy (Netlify)
 
-Push to `main` → Netlify builds (`npx prisma generate && npm run build`). Required env vars in Netlify:
-`DATABASE_URL` (Neon), `AUTH_SECRET` (32+ chars — a deploy without it refuses sign-in), `AUTH_MODE=db`,
-`AI_PROVIDER` (`stub` or `vectorshift`) and, for VectorShift, `VECTORSHIFT_API_KEY` +
-`VECTORSHIFT_PIPELINE_ID`. Run `npx prisma migrate deploy` against Neon after pulling new migrations.
-Keep the function timeout ≥ 26 s (or lower `VECTORSHIFT_TIMEOUT_MS` below it).
+Push to `main` → Netlify builds (`npx prisma migrate deploy && npx prisma generate && npm run build`).
+Required env vars in Netlify: `DATABASE_URL` (Neon, pooled), `DIRECT_URL` (Neon direct — used by
+`prisma migrate deploy` and the bulk loaders), `AUTH_SECRET` (32+ chars — a deploy without it refuses
+sign-in), `AUTH_MODE=db`, `GOOGLE_API_KEY` (Places/Geocoding/tiles proxy). Optional: `ERROR_WEBHOOK_URL`
+or `SENTRY_DSN` (error monitoring, F-51). No AI keys are needed — the recommendation is deterministic.
+Keep the function timeout ≥ 26 s (the pipeline slice budget).
+
+## How the recommendation is decided (deterministic)
+
+No model invents the call. For each candidate site:
+
+1. **Modules score independently** (0–100 each, with a Truth Layer of Verified / Assumed / Projected):
+   Site Fit, Territory Guard, Lease Benchmark, Daypart & Seasonality, White-Space, and the
+   category modules (Mall, Healthcare, Informal, Land) where the vertical activates them.
+2. **The scorecard composites** the scored modules into one 0–100 value and a band
+   (`lib/modules/scorecard.ts` → `scorecardBand`): **go ≥ 65**, **caution ≥ 45**, else **nogo**;
+   `insufficient` when the primary demand read is missing.
+3. **`lib/modules/siteVerdict.ts` (`summariseSite`)** turns that band into the Proceed / Proceed with
+   caution / No-Go call and phrases the Final Report from the retrieved keywords, findings and numbers —
+   never inventing a value. The dashboard band and the Final Report always agree (they read the same band).
+
+Guardrails hold throughout: no price verdicts (lease is positional only), BIR zonal is a tax-reference
+floor, and broker supplementation / RA 9646 framing is preserved. Every number keeps its Truth Layer.
+
+## Regional data-load runbook
+
+`docs/HANDOFF.md` and `prisma/data/*/README.md` have the details; the one-province order is:
+boundaries → OSM ingest (competitors + `--transport`, in a quiet window) → PSA demographics → BIR zonal →
+lease comps → malls → traffic AADT, then re-run an intake for that province. NCR is loaded via
+`npm run db:populate:ncr`; Cavite/Batangas use the `--region=` variants.
 
 ## Layout
 

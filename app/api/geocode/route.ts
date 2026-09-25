@@ -1,10 +1,12 @@
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { getSession } from '@/lib/auth/session';
+import { consumeGoogleQuota } from '@/lib/auth/apiQuota';
 import { ok, fail, failValidation, errors } from '@/lib/api/respond';
 import { geocodeAddress, hasGoogleKey } from '@/lib/geo/geocode';
 
-const schema = z.object({ address: z.string().min(2) });
+// F-25: cap the address length so the paid Geocoding proxy can't be fed oversized input.
+const schema = z.object({ address: z.string().min(2).max(200) });
 
 /**
  * POST /api/geocode — turn a typed address into real lat/lon via Google (server-side

@@ -19,9 +19,12 @@ export async function GET(
   const session = req.nextUrl.searchParams.get('session');
   if (!key || !session || !placesLiveEnabled()) return errors.notFound('Tile');
 
-  const { z, x, y } = params;
-  // Basic bounds sanity to avoid abuse.
-  if (!/^\d{1,2}$/.test(z) || !/^\d{1,7}$/.test(x) || !/^\d{1,7}$/.test(y)) {
+  // F-25: validate the tile coordinates properly — z in [0,22] and x/y within the 2^z grid for that
+  // zoom — so the proxy can only ever request a real Google tile, never an arbitrary crafted path.
+  const z = Number(params.z), x = Number(params.x), y = Number(params.y);
+  const zoomOk = Number.isInteger(z) && z >= 0 && z <= 22;
+  const max = zoomOk ? 2 ** z : 0;
+  if (!zoomOk || !Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0 || x >= max || y >= max) {
     return errors.notFound('Tile');
   }
 

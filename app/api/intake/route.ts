@@ -11,6 +11,7 @@ import { computeCompleteness, REQUIRED_SECTIONS } from '@/lib/modules/completene
 import { ok, fail, failValidation, errors } from '@/lib/api/respond';
 import { manilaShortStamp } from '@/lib/util/manilaTime';
 import { audit } from '@/lib/audit/audit';
+import { captureException, errorRef } from '@/lib/monitoring/report';
 
 /**
  * POST /api/intake — validate + write an intake, its outlet master, and its
@@ -230,9 +231,9 @@ export async function POST(req: NextRequest) {
     return ok({ intakeId: intake.id, runId: run.id, completenessPct: completeness.pct }, { status: 201 });
   } catch (err) {
     // F-24: never echo raw DB/driver messages to the browser (they leak table/column names and
-    // internals). Log the full error server-side with a short reference the user can quote.
-    const ref = Math.random().toString(36).slice(2, 10);
-    console.error(`[POST /api/intake] write failed ref=${ref}`, err);
+    // internals). F-51: report through the monitoring seam with a short reference the user can quote.
+    const ref = errorRef();
+    await captureException(err, { ref, code: 'intake_write_failed', route: 'POST /api/intake' });
 
     // F-06: compensating rollback (no Neon HTTP transaction). Delete what we wrote, in reverse:
     // the run cascades to its candidate sites; then this intake's outlets; then the intake; then

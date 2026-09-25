@@ -155,7 +155,10 @@ export function SteppedIntakeWizard({ franchisors, mockMode = false, mockRunId, 
       if (j.ok) { setFranchisorGroups(j.data.groups); if (selectId) setFranchisorId(selectId); }
     }).catch(() => {});
   }
-  useEffect(() => { loadFranchisors(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+  // Mount-only: load the catalog once. `loadFranchisors` only calls stable setState setters, so it is
+  // deliberately not a dependency (adding it would refetch on every render). Intentional, not an oversight.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { loadFranchisors(); }, []);
 
   // Hand-over from Franchise Screening: once the catalog loads, preselect that brand and its
   // vertical (only among brands this user can see — the catalog API applies visibility). One-shot.
@@ -189,7 +192,9 @@ export function SteppedIntakeWizard({ franchisors, mockMode = false, mockRunId, 
       if (Array.isArray(d.outlets)) setOutlets(d.outlets.map((o: OutletRow) => ({ outletName: o.outletName, format: o.format ?? 'inline', address: '', lat: o.lat, lon: o.lon, monthlySalesPhp: o.monthlySalesPhp ?? '' })));
       if (Array.isArray(d.candidateSites) && d.candidateSites.length) setCandidates(d.candidateSites.map((c: CandidateRow) => ({ label: c.label, address: c.address ?? '', city: c.city ?? '', lat: c.lat, lon: c.lon, siteType: c.siteType ?? 'inline' })));
     }).catch(() => {});
-    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+    // Keyed on editIntakeId only: this one-shot draft preload must run when the edited intake changes,
+    // not when the setState setters (stable) it calls are referenced. Intentional dependency list.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editIntakeId]);
 
   // When a franchise brand is selected, fetch its requirements template (if any).
