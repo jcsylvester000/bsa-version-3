@@ -21,7 +21,7 @@ import { audit } from '@/lib/audit/audit';
  * Served as text/html (not JSON) so the browser renders it directly.
  */
 export async function GET(req: NextRequest) {
-  return renderFull(req.nextUrl.searchParams.get('runId'), {});
+  return renderFull(req.nextUrl.searchParams.get('runId'), {}, req.headers.get('x-nonce'));
 }
 
 export async function POST(req: NextRequest) {
@@ -36,10 +36,12 @@ export async function POST(req: NextRequest) {
     contactNumber: field('contactNumber'),
     preparedFor: field('preparedFor'),
     email: field('email'),
-  });
+  }, req.headers.get('x-nonce'));
 }
 
-async function renderFull(runId: string | null, client: ReportClientDetails): Promise<Response> {
+// `nonce` comes from middleware.ts (x-nonce): the report's print button is wired by a nonce'd script,
+// because the CSP (script-src 'nonce-…' 'strict-dynamic') blocks inline onclick handlers.
+async function renderFull(runId: string | null, client: ReportClientDetails, nonce: string | null): Promise<Response> {
   const session = await getSession();
   if (!session) return new Response('Unauthorized', { status: 401 });
   if (!runId || !isUuid(runId)) return new Response('Run not found', { status: 404 });
@@ -57,6 +59,7 @@ async function renderFull(runId: string | null, client: ReportClientDetails): Pr
     generatedAtISO: new Date().toISOString(),
     runVertical: run.vertical,
     siteCount: run._count.sites,
+    nonce,
   });
 
   await audit({
