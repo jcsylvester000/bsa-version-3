@@ -53,16 +53,16 @@ export function DaypartCurve({ data }: { data: DaypartData }) {
         </text>
 
         {/* baseline + x ticks */}
-        <line x1={padX} y1={padTop + plotH} x2={W - padX} y2={padTop + plotH} stroke="#2A4372" strokeWidth={1} />
+        <line x1={padX} y1={padTop + plotH} x2={W - padX} y2={padTop + plotH} className="stroke-ink-border" strokeWidth={1} />
         {ticks.map((h) => (
-          <text key={h} x={xOf(h)} y={padTop + plotH + 15} textAnchor="middle" fontSize={9} fill="#94A3BE">{label(h)}</text>
+          <text key={h} x={xOf(h)} y={padTop + plotH + 15} textAnchor="middle" fontSize={9} className="fill-ink-muted">{label(h)}</text>
         ))}
       </svg>
 
       {/* peak-hour share bar */}
       <div className="mt-3">
         <div className="flex overflow-hidden rounded-lg">
-          <div className="bg-verified py-1.5 text-center text-xs font-medium text-ink-bg" style={{ width: `${data.windowMatchPct}%` }}>
+          <div className="bg-verified py-1.5 text-center text-xs font-medium text-on-status" style={{ width: `${data.windowMatchPct}%` }}>
             {Math.round(data.windowMatchPct * 10) / 10}% in peak hours
           </div>
           <div className="flex-1 bg-ink-panel-2 py-1.5 text-center text-xs text-ink-muted">{Math.round((100 - data.windowMatchPct) * 10) / 10}%</div>

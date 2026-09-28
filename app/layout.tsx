@@ -1,5 +1,7 @@
 import type { Metadata } from 'next';
+import { cookies } from 'next/headers';
 import './globals.css';
+import { THEME_COOKIE, parseTheme } from '@/lib/ui/theme';
 
 export const metadata: Metadata = {
   title: 'BSA — Business Site Analysis',
@@ -7,10 +9,11 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
+  // Theme from the `bsa-theme` cookie (Settings → Appearance), validated; dark by default. Rendered
+  // server-side so there is no flash and no inline script is needed (CSP).
+  const theme = parseTheme(cookies().get(THEME_COOKIE)?.value);
   return (
-    // Theme: dark by default. The light tokens exist in globals.css ([data-theme='light']); a Settings
-    // toggle (cookie → this attribute, rendered server-side) is deferred — see docs/DESIGN_V2_CHECKLIST.md.
-    <html lang="en" data-theme="dark">
+    <html lang="en" data-theme={theme} suppressHydrationWarning>
       <head>
         {/* GRID brand type: Cantata One (headings), Poppins (body), Judson (serif accent). */}
         <link rel="preconnect" href="https://fonts.googleapis.com" />

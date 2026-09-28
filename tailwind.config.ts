@@ -8,7 +8,8 @@ import type { Config } from 'tailwindcss';
 const v = (name: string) => `rgb(var(--${name}) / <alpha-value>)`;
 
 const config: Config = {
-  darkMode: ['class', '[data-theme="dark"]'],
+  // `dark:` = data-theme="dark", or data-theme="system" on a device that prefers dark (Settings → Appearance).
+  darkMode: ['variant', ['&:is([data-theme="dark"] *)', '@media (prefers-color-scheme: dark) { &:is([data-theme="system"] *) }']],
   content: ['./app/**/*.{ts,tsx}', './components/**/*.{ts,tsx}'],
   // Classes built from a variable (e.g. `pill-${key}`, `verdict-hero-${tone}`, `tl-${layer}`) are
   // invisible to Tailwind's scanner and were being purged — the Caution/No-Go pills rendered with no

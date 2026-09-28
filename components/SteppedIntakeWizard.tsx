@@ -501,11 +501,11 @@ export function SteppedIntakeWizard({ franchisors, mockMode = false, mockRunId, 
           <div className="card p-4">
             <div className="mb-3 flex flex-wrap gap-2">
               <button type="button" onClick={() => setBizType('franchisor')} disabled={!franchisors.length}
-                className={`rounded-lg px-3 py-1.5 text-sm ${bizType === 'franchisor' ? 'bg-accent text-ink-bg' : 'bg-ink-panel-2 text-ink-muted'} disabled:opacity-40`}>
+                className={`rounded-lg px-3 py-1.5 text-sm ${bizType === 'franchisor' ? 'bg-accent text-accent-on' : 'bg-ink-panel-2 text-ink-muted'} disabled:opacity-40`}>
                 Existing franchise on file
               </button>
               <button type="button" onClick={() => setBizType('independent')}
-                className={`rounded-lg px-3 py-1.5 text-sm ${bizType === 'independent' ? 'bg-accent text-ink-bg' : 'bg-ink-panel-2 text-ink-muted'}`}>
+                className={`rounded-lg px-3 py-1.5 text-sm ${bizType === 'independent' ? 'bg-accent text-accent-on' : 'bg-ink-panel-2 text-ink-muted'}`}>
                 Independent business
               </button>
             </div>

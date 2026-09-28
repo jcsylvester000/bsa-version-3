@@ -4,6 +4,9 @@ import { getAccountCreatedAt } from '@/lib/services/account';
 import { isMockUser } from '@/lib/auth/mockUsers';
 import { ChangePasswordForm } from '@/components/ChangePasswordForm';
 import { manilaLongStamp } from '@/lib/util/manilaTime';
+import { cookies } from 'next/headers';
+import { ThemeSwitch } from '@/components/ThemeSwitch';
+import { THEME_COOKIE, parseTheme } from '@/lib/ui/theme';
 
 export const dynamic = 'force-dynamic';
 
@@ -54,6 +57,12 @@ export default async function SettingsPage() {
             <dd className="mt-1 text-body text-ink-text">{demo ? 'Demo (read-only)' : 'Registered'}</dd>
           </div>
         </dl>
+      </section>
+
+      <section className="card mt-6 p-6" aria-labelledby="appearance-title">
+        <h2 id="appearance-title" className="font-body text-title">Appearance</h2>
+        <p className="mt-1 text-body text-ink-muted">Light is easier to read outdoors in the field. Saved on this browser.</p>
+        <ThemeSwitch initial={parseTheme(cookies().get(THEME_COOKIE)?.value)} />
       </section>
 
       <section className="card mt-6 p-6">

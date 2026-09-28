@@ -4,7 +4,8 @@
 
 /* ============================================================================
    BSA v2 tokens. Channels are "R G B" so Tailwind opacity modifiers work (bg-go/15).
-   Dark is the default; add data-theme="light" to <html> for the light theme.
+   Dark is the default. <html data-theme> is set server-side from the `bsa-theme` cookie
+   (Settings → Appearance): "dark" | "light" | "system" (follows the device).
    ============================================================================ */
 :root,
 [data-theme='dark'] {
@@ -46,6 +47,29 @@
   color-scheme: light;
 }
 
+/* "Match device": dark tokens by default (the :root block), light tokens when the OS asks for light. */
+@media (prefers-color-scheme: light) {
+  [data-theme='system'] {
+  --bg: 246 244 241;
+  --panel: 255 255 255;
+  --panel-2: 240 238 234;
+  --hover: 234 237 243;
+  --border: 210 210 210;
+  --border-strong: 122 134 155;
+  --text: 14 25 47;
+  --text-muted: 74 88 115;
+  --heading: 28 51 94;
+  --accent-text: 142 90 59;
+  --focus: 28 51 94;
+  --go: 30 122 82;
+  --caution: 138 90 0;
+  --nogo: 179 38 30;
+  --projected: 107 79 176;
+  --on-status: 255 255 255;
+  color-scheme: light;
+  }
+}
+
 body {
   @apply bg-ink-bg font-body text-body text-ink-text antialiased;
 }
@@ -82,7 +106,8 @@ a:hover { @apply text-ink-text; }
 
   /* Verdict pill — solid fill + circled icon + word */
   .pill { @apply inline-flex h-8 items-center gap-2 whitespace-nowrap rounded-full pl-1.5 pr-3 text-sm font-semibold text-on-status; }
-  .pill-icon { @apply grid h-5 w-5 place-items-center rounded-full bg-midnight text-xs; }
+  /* Icon disc = the on-status colour: Midnight in dark, white in light — the icon stays ≥4.5:1 on it. */
+  .pill-icon { @apply grid h-5 w-5 place-items-center rounded-full bg-on-status text-xs; }
   .pill-go { @apply bg-go; }
   .pill-caution { @apply bg-caution; }
   .pill-nogo { @apply bg-nogo; }
@@ -131,7 +156,7 @@ a:hover { @apply text-ink-text; }
   .nav-item-active { @apply bg-ink-hover font-semibold text-ink-text shadow-[inset_3px_0_0_#BE8562]; }
 
   /* Feedback */
-  .toast { @apply flex items-center gap-3 rounded-xl bg-[#EDF2FB] px-4 py-3.5 text-body text-midnight shadow-e2; }
+  .toast { @apply flex items-center gap-3 rounded-xl bg-ink-text px-4 py-3.5 text-body text-ink-bg shadow-e2; } /* inverse surface, both themes */
   .modal { @apply w-full max-w-md rounded-modal border border-ink-border-strong bg-ink-panel p-6 text-ink-text shadow-e3 backdrop:bg-midnight/70; }
   .empty-state { @apply card-inset flex flex-col gap-2.5 border-dashed border-ink-border-strong p-6; }
   .error-state { @apply flex flex-col gap-2.5 rounded-xl border border-nogo/55 bg-nogo/10 p-6; }

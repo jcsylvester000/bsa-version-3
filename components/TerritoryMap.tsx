@@ -3,6 +3,7 @@
 import { useEffect, useRef } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
+import { defaultBasemapUrl } from '@/lib/ui/theme';
 import { geoCircle, VERDICT_COLOR } from '@/lib/geo/mapGeometry';
 import { markerElement, MapLegend, SrMarkerList, type MarkerKind } from '@/components/MapMarkers';
 
@@ -75,7 +76,7 @@ export function TerritoryMap({ outlets, candidate, competitors = [] }: { outlets
      */
     async function resolveTiles(): Promise<{ tiles: string; attribution: string }> {
       const fallback = {
-        tiles: process.env.NEXT_PUBLIC_MAP_TILE_URL ?? 'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
+        tiles: process.env.NEXT_PUBLIC_MAP_TILE_URL ?? defaultBasemapUrl(),
         attribution: '© OpenStreetMap contributors © CARTO',
       };
       try {

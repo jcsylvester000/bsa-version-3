@@ -14,6 +14,7 @@
 import { useEffect, useRef, useState } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
+import { defaultBasemapUrl } from '@/lib/ui/theme';
 import { markerElement, MapLegend } from '@/components/MapMarkers';
 
 export interface PickedLocation { lat: number; lon: number; address?: string }
@@ -47,7 +48,7 @@ export function LocationPicker({ title, initial, onPick, onClose }: Props) {
       // CDN-backed basemap by default — NOT tile.openstreetmap.org, which throttles (503)
       // under app load and renders a blank map. Override via NEXT_PUBLIC_MAP_TILE_URL.
       const fallback = {
-        tiles: process.env.NEXT_PUBLIC_MAP_TILE_URL ?? 'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
+        tiles: process.env.NEXT_PUBLIC_MAP_TILE_URL ?? defaultBasemapUrl(),
         attribution: '© OpenStreetMap contributors © CARTO',
       };
       try {

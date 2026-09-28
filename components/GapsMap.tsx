@@ -3,6 +3,7 @@
 import { useEffect, useRef } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
+import { defaultBasemapUrl } from '@/lib/ui/theme';
 import { markerElement, MapLegend, SrMarkerList, type LegendKind } from '@/components/MapMarkers';
 
 export interface GapPoint {
@@ -46,7 +47,7 @@ export function GapsMap({ gaps, businesses = [] }: { gaps: GapPoint[]; businesse
     const cLat = plot.reduce((s, g) => s + g.lat, 0) / plot.length;
     const cLon = plot.reduce((s, g) => s + g.lon, 0) / plot.length;
 
-    const tiles = process.env.NEXT_PUBLIC_MAP_TILE_URL ?? 'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png';
+    const tiles = process.env.NEXT_PUBLIC_MAP_TILE_URL ?? defaultBasemapUrl();
     const map = new maplibregl.Map({
       container: ref.current,
       style: {
