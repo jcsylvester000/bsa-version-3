@@ -1,8 +1,12 @@
 'use client';
 
 import { fmtInt, fmtPeso } from '@/lib/util/format';
-import { summariseSite } from '@/lib/modules/siteVerdict';
-import { LEASE_POSITION_LABEL, ZONAL_FLOOR_NOTE } from '@/lib/truth/guardrailCopy';
+import { ZONAL_FLOOR_NOTE } from '@/lib/truth/guardrailCopy';
+import type { TruthLayer } from '@/lib/truth/truthLayer';
+import {
+  buildSiteReportModel, tl, tk, fmtPct, ordinal, T_VERDICT, L_VERDICT,
+  type SiteModulePayloads, type SiteReportMeta, type LeaseZonal, type ModuleSummaryModel,
+} from '@/lib/modules/siteReportModel';
 import { useState } from 'react';
 import { FinalReportHero, FindingsList } from '@/components/FinalReport';
 import { TruthChip, TruthLegend, StatusText } from '@/components/ui/Chips';
@@ -17,88 +21,9 @@ import { MIN_SAMPLE } from '@/lib/modules/leaseMath';
 import { isPrimaryModule } from '@/lib/modules/verticalConfig';
 import type { Vertical, ModuleKind } from '@prisma/client';
 
-/** Persisted payload shapes we read (loosely typed — from module_result.payload JSON). */
-export interface SiteModulePayloads {
-  territory: {
-    maxOverlapPct?: number; meanOverlapPct?: number; totalCannibalizedPhp?: number;
-    ownOutletOverlapPct?: number; competitiveSaturationPct?: number; competitorCount?: number;
-    competitorMix?: { direct: number; adjacent: number; unrelated: number };
-    weightedCompetitorCount?: number; conceptLabel?: string;
-    headlineSource?: 'own' | 'competitive' | 'none';
-    competitorSet?: { anchorBrand: string; competitors: string[]; truthLayer: string; subjectBrand?: string | null } | null;
-    verdict?: 'adds' | 'mixed' | 'redistributes'; candidateCatchmentM?: number;
-    affectedOutlets?: Array<{ outletName: string; overlapPct: number; distanceM: number }>;
-    realCompetitors?: Array<{ name: string; lat: number; lon: number }>;
-    mapCompetitors?: Array<{ name: string; lat: number; lon: number; tier?: 'direct' | 'adjacent' | 'unrelated'; category?: string }>;
-    /** Per-field Truth Layer written by the module (e.g. overlapPct: 'assumed'). */
-    truth?: { overlapPct?: string; competitiveSaturation?: string; cannibalizedPhp?: string };
-  } | null;
-  lease: {
-    corridor?: string; sampleSize?: number; baseRentPercentile?: number | null;
-    negotiatingRoomPhpSqm?: number | null; negotiatingRoomPct?: number | null;
-    medianPhpSqm?: number | null; p25PhpSqm?: number | null; p75PhpSqm?: number | null;
-    verdict?: 'below_market' | 'at_market' | 'above_market' | 'insufficient_data' | 'corridor_benchmark';
-    comps?: Array<{ baseRentPhpSqm: number | null }>;
-    truth?: { comps?: string; fairRange?: string; zonalBand?: string };
-    /** Comp-set recency (F-14): 'data as of' + whether the set is ageing. */
-    freshness?: { dataAsOf?: string | null; monthsSinceNewest?: number | null; isStale?: boolean };
-    flags?: string[];
-    format?: string;
-  } | null;
-  daypart: {
-    daytimeShare?: number; windowMatchPct?: number; hourly?: number[]; peakHour?: number;
-    verdict?: string; corridor?: string | null; noCatchmentData?: boolean;
-    seasonality?: {
-      peakSeason?: { season: string; label: string; low: number; high: number } | null;
-      troughSeason?: { season: string; label: string; low: number; high: number } | null;
-      termTimeNote?: string | null;
-      swings?: Array<{ season: string; low: number; high: number; label: string }>;
-    } | null;
-  } | null;
-  whitespace: {
-    /** New shape: top recommended expansion areas (cannibalization ≤ threshold). */
-    recommendations?: Array<{
-      rank: number;
-      barangay: string | null;
-      city: string | null;
-      population: number;
-      lat: number | null;
-      lon: number | null;
-      cannibalizationPct: number;
-      competitorMix: { direct: number; adjacent: number; unrelated: number };
-      weightedCompetitorCount: number;
-      nearestOwnM: number | null;
-      nearbyBusinesses: string[];
-      recommendationScore: number;
-      verdict: 'open' | 'workable' | 'contested';
-      reason: string;
-    }>;
-    scanned?: number;
-    threshold?: number;
-    catchmentM?: number;
-    concept?: { key: string; label: string } | null;
-    competitorSet?: { anchorBrand: string; competitors: string[]; truthLayer: string; subjectBrand?: string | null } | null;
-    /** Legacy shape (runs made before the recommendations rebuild) — triggers a re-run prompt. */
-    gaps?: Array<{ barangay: string | null; opportunityScore: number; reason?: string; lat?: number | null; lon?: number | null }>;
-  } | null;
-  /** AI Analysis Report — the retrieve-then-generate capstone, persisted per site. */
-  analysis: {
-    /** 'ready' | 'generating' (a generation holds the per-site lock). Legacy rows omit it. */
-    status?: string;
-    startedAt?: string;
-    analysis?: string;
-    schemaText?: string;
-    model?: string;
-    confidence?: 'high' | 'med' | 'low';
-    generatedAt?: string;
-    check?: AiCheck | null;
-    contextJson?: {
-      truthLayerSummary?: { verified: number; assumed: number; projected: number };
-      meta?: { overallConfidence?: string; generatedAt?: string; siteLabel?: string } & Record<string, unknown>;
-      [k: string]: unknown;
-    } | null;
-  } | null;
-}
+// Payload shapes, the Final Report model and shared display helpers live in a pure module so the
+// exported site PDF renders EXACTLY what this screen shows (lib/modules/siteReportModel.ts).
+export type { SiteModulePayloads, SiteReportMeta } from '@/lib/modules/siteReportModel';
 
 const TABS = [
   { key: 'territory', label: 'Territory Guard' },
@@ -110,17 +35,6 @@ const TABS = [
 
 export type TabKey = (typeof TABS)[number]['key'];
 export const TAB_KEYS: readonly TabKey[] = TABS.map((t) => t.key);
-
-/** Extra context for the Final Report hero, loaded by site/page.tsx (README §4). */
-export interface SiteReportMeta {
-  composite?: number | null;
-  rank?: number | null;
-  total?: number | null;
-  confidence?: 'high' | 'med' | 'low' | null;
-  /** Pre-formatted Manila time. */
-  analysedAt?: string | null;
-  truthPct?: { verified: number; assumed: number; projected: number } | null;
-}
 
 /** Status is never colour alone: icon + word (design v2). */
 function Chip({ tone, children }: { tone: 'go' | 'caution' | 'nogo' | 'muted'; children: React.ReactNode }) {
@@ -142,20 +56,7 @@ function Stat({ label, value, sub, truth }: { label: string; value: React.ReactN
   );
 }
 
-/** Post-generation guardrail check stored with each AI analysis (lib/ai/outputCheck.ts). */
-type AiCheck = { ungroundedNumbers: string[]; priceVerdictPhrases: string[]; ok: boolean };
-
-type TL = 'Verified' | 'Assumed' | 'Projected';
-type TruthKey = 'verified' | 'assumed' | 'projected';
-/** Display label → Truth Layer key for the chip components. */
-const tk = (t: TL): TruthKey => t.toLowerCase() as TruthKey;
-/** A payload's per-field truth string → display label (fallback when absent on legacy runs). */
-function tl(v: string | null | undefined, fallback: TL): TL {
-  return v === 'verified' ? 'Verified' : v === 'assumed' ? 'Assumed' : v === 'projected' ? 'Projected' : fallback;
-}
-/** Missing numbers display as "—", never as a fabricated 0. */
-const fmtPct = (v: number | null | undefined): string => (v == null ? '—' : `${v}%`);
-// fmtPeso now comes from lib/util/format (single source; identical behaviour). F-45.
+type TruthKey = TruthLayer;
 
 /** 0–23 → "12 NN", "3 PM", "6 AM" (Manila convention; no locale/ICU dependence). */
 function fmtHour(h: number): string {
@@ -165,10 +66,6 @@ function fmtHour(h: number): string {
   return hr < 12 ? `${hr} AM` : `${hr - 12} PM`;
 }
 
-function ordinal(n: number): string {
-  const s = ['th', 'st', 'nd', 'rd'], v = n % 100;
-  return n + (s[(v - 20) % 10] ?? s[v] ?? s[0]);
-}
 
 /**
  * Contextual-read banner. Shown when a module ran for a format it isn't the primary read
@@ -294,11 +191,6 @@ export function SiteIntelligenceTabs({
 }
 
 /* ---- Territory ---------------------------------------------------------- */
-const T_VERDICT = {
-  adds: { label: 'Adds sales', tone: 'go' as const },
-  mixed: { label: 'Mixed — some redistribution', tone: 'caution' as const },
-  redistributes: { label: 'Redistributes existing sales', tone: 'nogo' as const },
-};
 
 // Defensive render-level dedupe so runs saved before the compute-side fix still show
 // each affected outlet once (keep the worst overlap). Also prevents duplicate React keys.
@@ -420,16 +312,7 @@ function TerritoryTab({ site, outlets, p, primary = true }: { site: { lat: numbe
 }
 
 /* ---- Lease -------------------------------------------------------------- */
-// Positional labels only — no price verdicts (Grid guardrail). Shared wording in lib/truth/guardrailCopy.
-// Every tone is 'muted': lease position is a statement, not a status (design v2, PATCHES §1h).
-// The module's influence on the call still reaches the Final Report through siteVerdict.ts.
-const L_VERDICT = {
-  below_market: { label: LEASE_POSITION_LABEL.below_market, tone: 'muted' as const },
-  at_market: { label: LEASE_POSITION_LABEL.at_market, tone: 'muted' as const },
-  above_market: { label: LEASE_POSITION_LABEL.above_market, tone: 'muted' as const },
-  insufficient_data: { label: LEASE_POSITION_LABEL.insufficient_data, tone: 'muted' as const },
-  corridor_benchmark: { label: LEASE_POSITION_LABEL.corridor_benchmark, tone: 'muted' as const },
-};
+// Positional labels only — no price verdicts. L_VERDICT (all tones muted) lives in siteReportModel.
 function LeaseTab({ p, primary = true, siteId, corridors = [] }: { p: SiteModulePayloads['lease']; primary?: boolean; siteId: string; corridors?: string[] }) {
   const router = useRouter();
   const [askingRent, setAskingRent] = useState('');
@@ -948,13 +831,13 @@ function WhiteSpaceTab({ p }: { p: SiteModulePayloads['whitespace']; primary?: b
  */
 
 /** One compact label → value row inside a report section, with an optional Truth-Layer tag. */
-function ReportRow({ label, value, truth }: { label: string; value: React.ReactNode; truth?: TL }) {
+function ReportRow({ label, value, truth }: { label: string; value: React.ReactNode; truth?: TruthLayer }) {
   return (
     <div className="flex min-h-[48px] items-center justify-between gap-4 border-b border-ink-border/40 py-2 last:border-0">
       <span className="text-body text-ink-muted">{label}</span>
       <span className="text-right text-body font-medium text-ink-text">
         {value}
-        {truth && <span className="ml-2 inline-flex align-middle"><TruthChip layer={tk(truth)} compact /></span>}
+        {truth && <span className="ml-2 inline-flex align-middle"><TruthChip layer={truth} compact /></span>}
       </span>
     </div>
   );
@@ -990,13 +873,6 @@ function ReportSection({
   );
 }
 
-/** Lease payload may also carry a BIR zonal block (not in the base UI type) — read it loosely. */
-type LeaseZonal = {
-  band?: { classification?: string | null; lowPhpSqm?: number | null; highPhpSqm?: number | null; midPhpSqm?: number | null } | null;
-  crossCheck?: { position?: string | null } | null;
-  usedAsFallback?: boolean;
-} | null;
-
 function AnalysisTab({
   payloads, primary, verdict, report, onOpenTab,
 }: {
@@ -1007,251 +883,58 @@ function AnalysisTab({
   onOpenTab: (tab: TabKey) => void;
 }) {
   // Export site PDF + Re-run analysis live in the site page header (design v2, PATCHES §1g).
-
-  const t = payloads.territory;
-  const l = payloads.lease;
-  const d = payloads.daypart;
-  const w = payloads.whitespace;
-
-  const ranCount = [t, l, d, w].filter(Boolean).length;
-
-  // Territory read (carried from the Territory Guard tab).
-  const tVerdict = (t?.verdict && t.verdict in T_VERDICT ? t.verdict : 'mixed') as keyof typeof T_VERDICT;
-  const tMix = t?.competitorMix;
-  const tOwn = t?.ownOutletOverlapPct ?? t?.maxOverlapPct ?? null;
-
-  // Lease read (carried from the Lease Benchmark tab).
-  const lV = (l?.verdict && l.verdict in L_VERDICT ? l.verdict : 'insufficient_data') as keyof typeof L_VERDICT;
-  const lZonal = (l as (SiteModulePayloads['lease'] & { zonal?: LeaseZonal }) | null)?.zonal ?? null;
-
-  // Daypart read (carried from the Daypart Demand tab). Verdict band from the already-computed
-  // window-match figure — a display threshold, not a new calculation.
-  const dNoData = d?.noCatchmentData === true;
-  const dWindow = d?.windowMatchPct ?? null;
-  const dTone: 'go' | 'caution' | 'nogo' | 'muted' = dWindow == null ? 'muted' : dWindow >= 60 ? 'go' : dWindow >= 40 ? 'caution' : 'nogo';
-  const dLabel = dWindow == null ? 'Not derived' : dWindow >= 60 ? 'Strong window match' : dWindow >= 40 ? 'Partial window match' : 'Weak window match';
-  const dShare = d?.daytimeShare ?? 50;
-  const dOfficeLed = dShare >= 50;
-
-  // White-Space read (carried from the White-Space tab).
-  const wRecs = w?.recommendations ?? null;
-  const wTop = wRecs ? wRecs.slice(0, 3) : [];
-  const wProposed = (w as (SiteModulePayloads['whitespace'] & { proposed?: { cannibalizationPct?: number } }) | null)?.proposed;
-
-  // Deterministic PROCEED / CAUTIOUS / NO-GO recommendation. The scorecard band (candidate_site.verdict,
-  // the same value the dashboard shows) DECIDES the call so the two can never disagree (audit F-07);
-  // the module figures below explain why.
-  const summary = summariseSite(
-    {
-      territory: t ? { verdict: t.verdict ?? null, totalCannibalizedPhp: t.totalCannibalizedPhp ?? null, competitiveSaturationPct: t.competitiveSaturationPct ?? null } : null,
-      lease: l ? { verdict: l.verdict ?? null, corridor: l.corridor ?? null } : null,
-      daypart: d ? { windowMatchPct: d.windowMatchPct ?? null, noCatchmentData: d.noCatchmentData ?? null } : null,
-      whitespace: wRecs ? { recommendations: wRecs.map((r) => ({ verdict: r.verdict ?? null })) } : null,
-    },
-    (k) => primary(k as ModuleKind),
-    (verdict as 'go' | 'caution' | 'nogo' | null) ?? 'insufficient',
-  );
-  // Truth mix for the hero: prefer the page's module-level mix; fall back to a legacy AI context.
-  const legacyMix = payloads.analysis?.contextJson?.truthLayerSummary;
-  const truthPct = report?.truthPct ?? (legacyMix ? (() => {
-    const n = legacyMix.verified + legacyMix.assumed + legacyMix.projected || 1;
-    return { verified: Math.round((legacyMix.verified / n) * 100), assumed: Math.round((legacyMix.assumed / n) * 100), projected: Math.round((legacyMix.projected / n) * 100) };
-  })() : null);
-
-  // Headline figure per finding (FindingsList `figures`) — carried straight from the same payloads the
-  // module summaries below read, each with its own Truth Layer. A finding with no figure shows none.
-  const figures: Record<string, { value: string; truth: TruthKey } | undefined> = {
-    Cannibalization: t?.totalCannibalizedPhp != null
-      ? { value: `${fmtPeso(t.totalCannibalizedPhp)} / mo`, truth: tk(tl(t.truth?.cannibalizedPhp, 'Projected')) }
-      : undefined,
-    'Lease position': l?.baseRentPercentile != null
-      ? { value: `${ordinal(l.baseRentPercentile)} percentile`, truth: 'assumed' }
-      : l?.medianPhpSqm != null
-        ? { value: `median ₱${fmtInt(l.medianPhpSqm)}/sqm`, truth: tk(tl(l.truth?.comps, 'Assumed')) }
-        : undefined,
-    'Demand window': d && !dNoData && d.windowMatchPct != null
-      ? { value: `${Math.round(d.windowMatchPct)}% in window`, truth: 'projected' }
-      : undefined,
-    'White-space': wRecs && wRecs.length
-      ? { value: `${wRecs.length} area${wRecs.length === 1 ? '' : 's'}`, truth: 'projected' }
-      : undefined,
-  };
+  // The whole report comes from the shared model — the exported PDF renders the same object.
+  const m = buildSiteReportModel({ payloads, verdict, isPrimary: primary, meta: report });
 
   return (
     <div className="space-y-5">
       {/* Final Report — the deterministic Proceed / Proceed with caution / No-Go call first, then what
           drove it. No AI, no external call; every finding traces to a module tab. */}
       <FinalReportHero
-        summary={summary}
-        coverage={`${ranCount} of 4 modules`}
-        confidence={report?.confidence ?? null}
-        composite={report?.composite ?? null}
-        rank={report?.rank ?? null}
-        total={report?.total ?? null}
-        analysedAt={report?.analysedAt ?? null}
-        truthPct={truthPct}
-        limited={!(verdict === 'go' || verdict === 'caution' || verdict === 'nogo') && summary.coverage < 2}
+        summary={m.summary}
+        coverage={m.coverageText}
+        confidence={m.meta.confidence ?? null}
+        composite={m.meta.composite ?? null}
+        rank={m.meta.rank ?? null}
+        total={m.meta.total ?? null}
+        analysedAt={m.meta.analysedAt ?? null}
+        truthPct={m.truthPct}
+        limited={m.limited}
       />
-      {summary.findings.length > 0 && (
-        <FindingsList findings={summary.findings} keywords={summary.keywords} figures={figures} onOpenTab={onOpenTab} />
+      {m.summary.findings.length > 0 && (
+        <FindingsList findings={m.summary.findings} keywords={m.summary.keywords} figures={m.figures} onOpenTab={onOpenTab} />
       )}
 
       <h2 className="pt-2 text-h2">Module summaries</h2>
       <div className="grid gap-5 lg:grid-cols-2">
-      {/* Territory Guard */}
-      <ReportSection
-        title="Territory Guard"
-        tabKey="territory"
-        onOpenTab={onOpenTab}
-        ran={t != null}
-        verdict={T_VERDICT[tVerdict].label}
-        verdictTone={T_VERDICT[tVerdict].tone}
-        contextual={!primary('territory')}
-      >
-        {t && (
-          <div>
-            {t.headlineSource === 'competitive' && (
-              <p className="mb-2 text-xs text-ink-muted">Driven by competitive saturation, not your own branches.</p>
-            )}
-            <ReportRow label="Own-branch overlap" value={fmtPct(tOwn)} truth={tl(t.truth?.overlapPct, 'Assumed')} />
-            <ReportRow
-              label="Competitive saturation"
-              value={tMix ? `${fmtPct(t.competitiveSaturationPct)} · ${tMix.direct} direct + ${tMix.adjacent} adjacent` : fmtPct(t.competitiveSaturationPct)}
-              truth={tl(t.truth?.competitiveSaturation, 'Projected')}
-            />
-            <ReportRow label="Est. monthly cannibalization" value={fmtPeso(t.totalCannibalizedPhp)} truth={tl(t.truth?.cannibalizedPhp, 'Projected')} />
-            {t.competitorSet?.competitors?.length ? (
-              <ReportRow label="Competes with" value={t.competitorSet.competitors.slice(0, 5).join(', ')} />
-            ) : null}
-            <ReportRow
-              label="Affected own outlets"
-              value={(t.affectedOutlets?.length ?? 0) === 0 ? 'None in this catchment' : `${t.affectedOutlets!.length}`}
-              truth={tl(t.truth?.overlapPct, 'Assumed')}
-            />
-          </div>
-        )}
-      </ReportSection>
-
-      {/* Lease Benchmark */}
-      <ReportSection
-        title="Lease Benchmark"
-        tabKey="lease"
-        onOpenTab={onOpenTab}
-        ran={l != null}
-        verdict={L_VERDICT[lV].label}
-        verdictTone={L_VERDICT[lV].tone}
-        contextual={!primary('lease')}
-      >
-        {l && (
-          <div>
-            <ReportRow label="Corridor" value={l.corridor ?? '—'} />
-            <ReportRow label="Comparable leases" value={`${l.sampleSize ?? l.comps?.length ?? 0}`} truth={tl(l.truth?.comps, 'Assumed')} />
-            {l.freshness?.dataAsOf && (
-              <ReportRow
-                label="Comps data as of"
-                value={l.freshness.isStale ? `${l.freshness.dataAsOf} · ageing` : l.freshness.dataAsOf}
-              />
-            )}
-            <ReportRow
-              label="Base-rent percentile"
-              value={l.baseRentPercentile != null ? ordinal(l.baseRentPercentile) : '—'}
-              truth="Assumed"
-            />
-            {l.negotiatingRoomPhpSqm != null && (
-              <ReportRow
-                label="Distance from corridor median"
-                value={`₱${fmtInt(Math.abs(l.negotiatingRoomPhpSqm))}/sqm${l.negotiatingRoomPct != null ? ` (${Math.abs(l.negotiatingRoomPct)}% ${l.negotiatingRoomPhpSqm > 0 ? 'above' : 'below'})` : ''}`}
-                truth="Assumed"
-              />
-            )}
-            {lZonal?.band && (
-              <ReportRow
-                label="BIR zonal band (tax-reference floor)"
-                value={
-                  `${lZonal.band.classification ?? 'CR'} · ${fmtPeso(lZonal.band.lowPhpSqm)}–${fmtPeso(lZonal.band.highPhpSqm)}/sqm` +
-                  (lZonal.crossCheck?.position ? ` · ${lZonal.crossCheck.position.replace(/_/g, ' ')}` : '') +
-                  (lZonal.usedAsFallback ? ' · used as fallback anchor' : '')
-                }
-                truth="Verified"
-              />
-            )}
-          </div>
-        )}
-      </ReportSection>
-
-      {/* Daypart Demand */}
-      <ReportSection
-        title="Daypart Demand"
-        tabKey="daypart"
-        onOpenTab={onOpenTab}
-        ran={d != null}
-        verdict={dNoData ? 'Catchment mix not derived' : dLabel}
-        verdictTone={dNoData ? 'muted' : dTone}
-        contextual={!primary('daypart')}
-      >
-        {d && (
-          <div>
-            <ReportRow label="Peak-hour demand captured" value={fmtPct(dWindow)} truth="Projected" />
-            <ReportRow
-              label="Catchment mix"
-              value={dNoData ? 'Not derived (demographic layer not loaded)' : `${Math.round(dShare * 10) / 10}% daytime · ${Math.round((100 - dShare) * 10) / 10}% residential`}
-              truth="Projected"
-            />
-            {!dNoData && (
-              <ReportRow label="Peak window" value={dOfficeLed ? '11:00–14:00 (office-led)' : '17:00–20:00 (residential)'} truth="Projected" />
-            )}
-            {d.seasonality?.peakSeason?.label && (
-              <ReportRow label="Seasonal peak" value={d.seasonality.peakSeason.label} truth="Projected" />
-            )}
-            {d.seasonality?.troughSeason?.label && (
-              <ReportRow label="Seasonal trough" value={d.seasonality.troughSeason.label} truth="Projected" />
-            )}
-          </div>
-        )}
-      </ReportSection>
-
-      {/* White-Space */}
-      <ReportSection
-        title="White-Space"
-        tabKey="whitespace"
-        onOpenTab={onOpenTab}
-        ran={w != null && wRecs != null}
-        verdict={wRecs ? (wTop.length ? `${wRecs.length} recommended area${wRecs.length === 1 ? '' : 's'}` : 'No open areas in coverage') : undefined}
-        verdictTone={wRecs && wTop.length ? 'go' : 'muted'}
-        contextual={!primary('whitespace')}
-      >
-        {w && wRecs && (
-          <div>
-            <ReportRow label="Barangays scanned" value={fmtInt(w.scanned ?? 0)} truth="Verified" />
-            <ReportRow label="Cannibalization threshold" value={`≤ ${w.threshold ?? 40}`} truth="Projected" />
-            {wProposed?.cannibalizationPct != null && (
-              <ReportRow label="This site's cannibalization" value={`${Math.round(wProposed.cannibalizationPct)}%`} truth="Projected" />
-            )}
-            {wTop.length > 0 ? (
-              wTop.map((r, i) => (
-                <ReportRow
-                  key={`${r.barangay}-${i}`}
-                  label={`#${r.rank ?? i + 1} ${r.barangay ?? 'Unnamed area'}${r.city ? `, ${r.city}` : ''}`}
-                  value={`${Math.round(r.cannibalizationPct)}% cannibalization`}
-                  truth="Projected"
-                />
-              ))
-            ) : (
-              <p className="mt-2 text-sm text-ink-muted">No area in current coverage scored at or below the threshold — the network is saturated for this concept here.</p>
-            )}
-          </div>
-        )}
-        {w && wRecs == null && (
-          <p className="mt-2 text-sm text-ink-muted">This run predates the recommendations rebuild — re-run the analysis to compute White-Space areas.</p>
-        )}
-      </ReportSection>
+        {m.modules.map((mod) => <ModuleSummaryCard key={mod.key} mod={mod} onOpenTab={onOpenTab} />)}
       </div>
 
-      <p className="px-1 text-label font-normal text-ink-muted">
-        The module summaries are a straight consolidation of the four tabs; the recommendation above is rolled up from only these figures.
-        {' '}{ZONAL_FLOOR_NOTE}
-      </p>
+      <p className="px-1 text-label font-normal text-ink-muted">{m.footnote}</p>
     </div>
+  );
+}
+
+/** One module summary card rendered from the shared model. */
+function ModuleSummaryCard({ mod, onOpenTab }: { mod: ModuleSummaryModel; onOpenTab: (tab: TabKey) => void }) {
+  return (
+    <ReportSection
+      title={mod.title}
+      tabKey={mod.key}
+      onOpenTab={onOpenTab}
+      ran={mod.ran}
+      verdict={mod.status?.label}
+      verdictTone={mod.status?.tone}
+      contextual={mod.contextual}
+    >
+      <div>
+        {mod.lead && <p className="mb-2 text-label font-normal text-ink-muted">{mod.lead}</p>}
+        {mod.rows.map((r, i) => (
+          <ReportRow key={`${r.label}-${i}`} label={r.label} value={r.value} truth={r.truth} />
+        ))}
+        {mod.ran && mod.emptyText && <p className="mt-2 text-body text-ink-muted">{mod.emptyText}</p>}
+      </div>
+    </ReportSection>
   );
 }
 

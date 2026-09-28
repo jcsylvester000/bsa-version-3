@@ -6,8 +6,7 @@ import { SiteIntelligenceTabs, type SiteModulePayloads } from '@/components/Site
 // this Server Component — they arrive as client-reference proxies and throw on use (the #329 crash).
 import { isSiteTabKey, type SiteTabKey } from '@/lib/ui/siteTabs';
 import { RunPipelineButton } from '@/components/RunPipelineButton';
-import { manilaShortStampYear } from '@/lib/util/manilaTime';
-import type { TruthLayer } from '@/lib/truth/truthLayer';
+import { siteReportMeta, payloadsFromRows } from '@/lib/modules/siteReportModel';
 
 export const dynamic = 'force-dynamic';
 
@@ -38,43 +37,12 @@ export default async function SiteReportPage({ searchParams }: { searchParams: {
   }
   const { run, site, outlets, rows, runSites, leaseCorridors } = result.data;
 
-  const byModule: Record<string, unknown> = {};
-  for (const r of rows) byModule[r.module] = r.payload;
-
-  // Final Report hero context (design v2, README §4). Rank uses the dashboard's ordering
-  // (composite desc, unscored last). Truth mix = this site's module-level Truth Layers, the same
-  // method the dashboard uses for the run (the 'analysis' row is not a module finding).
-  const num = (v: { toString(): string } | null): number | null => (v == null ? null : Number(v.toString()));
-  const composite = num(site.compositeScore);
-  const ranked = runSites
-    .map((s) => ({ id: s.id, composite: num(s.compositeScore) }))
-    .sort((a, b) => (b.composite ?? -1) - (a.composite ?? -1));
-  const rankIdx = ranked.findIndex((s) => s.id === site.id);
-  const layers = rows.filter((r) => r.module !== 'analysis').map((r) => r.truthLayer as TruthLayer);
-  const truthPct = layers.length
-    ? {
-        verified: Math.round((layers.filter((l) => l === 'verified').length / layers.length) * 100),
-        assumed: Math.round((layers.filter((l) => l === 'assumed').length / layers.length) * 100),
-        projected: Math.round((layers.filter((l) => l === 'projected').length / layers.length) * 100),
-      }
-    : null;
-  const report = {
-    composite,
-    rank: composite != null && rankIdx >= 0 ? rankIdx + 1 : null,
-    total: composite != null ? ranked.length : null,
-    confidence: run.confidence ?? null,
-    analysedAt: site.analyzedAt ? manilaShortStampYear(site.analyzedAt) : null,
-    truthPct,
-  };
+  // Hero context + payloads from the shared Final Report model (lib/modules/siteReportModel.ts) — the
+  // exported site PDF builds the same objects, so screen and PDF always carry the same data.
+  const report = siteReportMeta({ site, run, rows, runSites });
+  const payloads: SiteModulePayloads = payloadsFromRows(rows);
   const pdfHref = `/api/analysis-report/pdf?runId=${encodeURIComponent(run.id)}&siteId=${encodeURIComponent(site.id)}`;
 
-  const payloads: SiteModulePayloads = {
-    territory: (byModule.territory as SiteModulePayloads['territory']) ?? null,
-    lease: (byModule.lease as SiteModulePayloads['lease']) ?? null,
-    daypart: (byModule.daypart as SiteModulePayloads['daypart']) ?? null,
-    whitespace: (byModule.whitespace as SiteModulePayloads['whitespace']) ?? null,
-    analysis: (byModule.analysis as SiteModulePayloads['analysis']) ?? null,
-  };
 
   return (
     <div className="space-y-6">

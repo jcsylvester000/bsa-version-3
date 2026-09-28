@@ -126,6 +126,59 @@ components, no links). **Reports is the only survivor** — reached from the das
 - [x] `package-lock.json` re-synced with `package.json` (`@playwright/test` 1.63 was missing) — CI's
       `npm ci` was failing on it
 
+## Batch 10 — Downloadable full report (print-to-PDF) in v2
+- [x] `lib/modules/reportHtml.ts` restyled on the app's **light** tokens + Grid type (Cantata One / Poppins /
+      Judson); white, printer-friendly cover with the Grid logo (embedded data URI) and the RA 9646 notice
+- [x] Summary strip (confidence icon + word, sections assessed, Truth mix); numbered section cards
+- [x] Statuses are icon + word; Truth chips outlined glyph + word; not-assessed = honest gap
+- [x] **Rent never coloured good/bad:** `neutral` rent metrics + scorecard "Lease value" line use one neutral
+      colour; range track neutral; lease verdicts via `LEASE_POSITION_LABEL`; scorecard band = Proceed /
+      Proceed with caution / No-Go / Not enough data (same words as the app)
+- [x] **Bug fixed:** the "Download / Print PDF" button used inline `onclick`, which the nonce CSP blocks — it
+      silently did nothing. Now wired by a nonce'd script (`x-nonce` from middleware); no nonce → hint only
+- [x] `tests/unit/reportHtml.test.ts` (no onclick, nonce wiring, neutral rent, escaping)
+
+## Batch 11 — Lease finding is a statement (broker decision, Skill 07)
+- [x] Decision: rent position is a fact the broker explains, not a Proceed/Caution vote (no-price-verdict,
+      RA 9646). Lease finding tone = `muted` ("Context"), positional wording ("… the corridor median")
+- [x] Lease still counts toward **coverage**, but no longer moves the module-derived call; the composite band
+      (which includes the saved-rent lease value score) still decides the call — F-07 unchanged
+- [x] Keywords positional: `rent-below-median` / `rent-above-median` / `rent-within-range`
+- [x] Dashboard alert for rent above the median → new `info` severity (ⓘ), no "room to negotiate" wording
+- [x] FindingsList: muted findings read "Context" (was "No data" — wrong for lease and white-space)
+- [x] `siteVerdict.test.ts` +4 cases (muted, coverage, never moves the call, positional keywords)
+
+## Batch 12 — Light theme switch (mockup G1/G2)
+- [x] Settings → **Appearance**: Dark / Light / Match device (radio cards, 44px, keyboard)
+- [x] `bsa-theme` cookie (validated by `parseTheme`) → `<html data-theme>` rendered server-side: no flash,
+      no inline script (CSP-safe). Default stays **dark**
+- [x] "Match device": light tokens under `prefers-color-scheme: light`; Tailwind `dark:` variant covers
+      `system` on dark devices (logo pair swaps correctly)
+- [x] Light-mode fixes: accent buttons `text-accent-on` (was `text-ink-bg`, 2.7:1 in light), verdict icon
+      discs `bg-on-status`, toast inverse surface, chart axes/labels on theme tokens
+- [x] Maps pick CARTO `light_all` / `dark_all` to match the theme (env override still wins)
+- [x] `tests/unit/theme.test.ts`
+- [ ] Owner: switch to Light in Settings and walk Dashboard → site → Final Report → Screening → Intake
+
+## Batch 13 — Export site PDF = the Final Report screen, as data
+Owner request (2026-09-28): the PDF must contain, organised, everything the Final Report tab shows — as
+data, not a screenshot.
+- [x] New pure `lib/modules/siteReportModel.ts`: `buildSiteReportModel` (recommendation, figures, finding →
+      module, four module summaries with every row + Truth Layer, footnote), `siteReportMeta` (composite,
+      rank, confidence, analysed time, truth mix), `payloadsFromRows`. **Both the tab and the PDF render it.**
+- [x] `SiteIntelligenceTabs` Final Report tab now renders from the model (no duplicated logic)
+- [x] `/api/analysis-report/pdf` uses the same access-scoped `getSiteReport` service as the page (F-47)
+- [x] `lib/pdf/AnalysisPdf.tsx` rebuilt: header (logo, brand · city, site, generated time) → recommendation
+      hero (call + icon, composite, rank, rationale, confidence, coverage, analysed, Truth mix bar) → What drove
+      this call (status icon + word, finding, figure + Truth chip, module) + keywords → page 2: Module summaries
+      (2 × 2 cards, status, contextual note, every row with its Truth chip) → footnote; RA 9646 footer + page
+      numbers on every page. Light print palette; rent statuses muted
+- [x] Real fonts in the PDF: Poppins / Cantata One / Judson + Noto subsets for ₱ ✓ ▲ ✕ ≈ ⇗ ≤ (embedded,
+      OFL — `lib/pdf/pdfFonts.ts`, `lib/pdf/FONTS_LICENSE.md`). Previously Helvetica could not draw "₱"
+- [~] Projected glyph in the PDF is ⇗ (react-pdf drops ↗ as an emoji); the app keeps ↗
+- [x] `tests/unit/siteReportModel.test.ts` (+6, incl. a real PDF render) with a BGC fixture
+- [ ] Owner: open a site → **Export site PDF** and compare with the Final Report tab
+
 ## Verification (every batch)
 - [x] `tsc --noEmit` 0 errors (2026-09-25, cloud sandbox — batches 1–4, and again after 5–8)
 - [x] `vitest run` 36 files · 426/426 passing (Prisma-engine "unhandled" notices are sandbox-only)
@@ -134,7 +187,6 @@ components, no links). **Reports is the only survivor** — reached from the das
       44px targets; every verdict = icon + word; compare with `design-reference/*.dc.html`)
 
 ## Deferred / not in scope
-- [-] Light-theme Settings toggle + cookie (owner chose dark only; tokens are ready)
 
 ---
 
@@ -154,7 +206,11 @@ Commands are PowerShell 5-safe (one per line). Run them from `4 - Final Applicat
 | 6 | Franchise Screening | `design v2 batch 6: franchise screening cards, filter chips, start intake with brand` | ✅ pushed | `89deb3c` |
 | 7 | Site tab content | `design v2 batch 7: lease position + zonal floor card, daypart tiles, findings figures` | ✅ pushed | `12ab500` |
 | 8 | Settings + states + logs | `design v2 batch 8: settings restyle, error boundary, loading skeleton` | ✅ pushed | `df39955` |
-| 9 | Run Report + lock sync | `design v2 batch 9: run report layout, neutral rent metrics, lockfile sync` | ready to push | — |
+| 9 | Run Report + lock sync | `design v2 batch 9: run report layout, neutral rent metrics, lockfile sync` | ✅ pushed | `f60b7ea` |
+| 10 | Full report (print) | `design v2 batch 10: printable full report in v2 styling, neutral rent, CSP-safe print button` | ✅ pushed | `300bb29` |
+| 11 | Lease finding | `design v2 batch 11: lease finding as neutral statement (broker decision), info alerts` | ✅ pushed | `e4f7da9` |
+| 12 | Light theme | `design v2 batch 12: appearance switch (dark/light/match device), light-mode fixes, themed maps` | ready to push | — |
+| 13 | Site PDF = Final Report | `design v2 batch 13: site PDF mirrors the Final Report (shared model, brand fonts)` | ready to push | — |
 
 ### Batch 0
 Already committed (`0ecddcd`). If `git status` says "Your branch is ahead of 'origin/main'", push it with the Batch 1 push.
@@ -219,6 +275,34 @@ git push origin main
 ```powershell
 git add "app/(app)/reports/page.tsx" components/ReportView.tsx components/ReportDownloadModal.tsx lib/modules/reportComposer.ts package-lock.json WORKLOG.md PROJECT_MEMORY.md docs/DESIGN_V2_CHECKLIST.md
 git commit -m "design v2 batch 9: run report layout, neutral rent metrics, lockfile sync"
+git push origin main
+```
+
+### Batch 10
+```powershell
+git add lib/modules/reportHtml.ts app/api/reports/full/route.ts tests/unit/reportHtml.test.ts
+git commit -m "design v2 batch 10: printable full report in v2 styling, neutral rent, CSP-safe print button"
+git push origin main
+```
+
+### Batch 11
+```powershell
+git add lib/modules/siteVerdict.ts tests/unit/siteVerdict.test.ts lib/modules/dashboard.ts components/RunDashboard.tsx components/FinalReport.tsx
+git commit -m "design v2 batch 11: lease finding as neutral statement (broker decision), info alerts"
+git push origin main
+```
+
+### Batch 12
+```powershell
+git add lib/ui/theme.ts components/ThemeSwitch.tsx app/layout.tsx app/globals.css tailwind.config.ts "app/(app)/settings/page.tsx" components/SteppedIntakeWizard.tsx components/VersionHistory.tsx components/DaypartCurve.tsx components/LeaseDistributionChart.tsx components/GapsMap.tsx components/LocationPicker.tsx components/TerritoryMap.tsx tests/unit/theme.test.ts
+git commit -m "design v2 batch 12: appearance switch (dark/light/match device), light-mode fixes, themed maps"
+git push origin main
+```
+
+### Batch 13
+```powershell
+git add lib/modules/siteReportModel.ts lib/pdf/AnalysisPdf.tsx lib/pdf/pdfFonts.ts lib/pdf/FONTS_LICENSE.md app/api/analysis-report/pdf/route.ts components/SiteIntelligenceTabs.tsx "app/(app)/site/page.tsx" tests/unit/siteReportModel.test.ts tests/fixtures/siteReportSample.ts WORKLOG.md PROJECT_MEMORY.md docs/DESIGN_V2_CHECKLIST.md
+git commit -m "design v2 batch 13: site PDF mirrors the Final Report (shared model, brand fonts)"
 git push origin main
 ```
 

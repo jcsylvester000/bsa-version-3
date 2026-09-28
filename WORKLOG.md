@@ -5,7 +5,63 @@ The cross-thread state record. Read this (with the Master Instruction and the cu
 
 ---
 
-## 2026-09-28 — DESIGN v2 batch 9: Run Report layout + legacy-page check (⏳ awaiting push)
+## 2026-09-28 — DESIGN v2 batch 13: Export site PDF mirrors the Final Report (⏳ awaiting push)
+
+Owner request with screenshots: "Export site PDF" must contain, organised, all the data on the Final Report
+tab — as data, not a screenshot. **Skills:** 12, 01, 02/03 (single service data path), 07 (rent wording), 11.
+
+- **Shared model** `lib/modules/siteReportModel.ts` (pure, client-safe): payload types moved here (re-exported
+  from `SiteIntelligenceTabs`), `buildSiteReportModel`, `siteReportMeta`, `payloadsFromRows`, shared helpers
+  (`tl`, `tk`, `fmtPct`, `ordinal`, `T_VERDICT`, `L_VERDICT`). The Final Report tab now renders the model;
+  `site/page.tsx` uses `siteReportMeta` + `payloadsFromRows`.
+- **PDF route** `/api/analysis-report/pdf` now reads via `getSiteReport` (same access-scoped service as the page)
+  and renders `AnalysisPdf` from the same model. File name `BSA_Final_Report_<site>.pdf`.
+- **`lib/pdf/AnalysisPdf.tsx` rebuilt:** p1 header + recommendation hero + What drove this call (+ keywords);
+  p2 Module summaries (2 × 2, every row + Truth chip) + footnote; RA 9646 footer and page x/y on every page.
+- **Fonts:** Helvetica couldn't draw ₱ — now Poppins/Cantata One/Judson + Noto subsets (₱ ✓ ▲ ✕ ≈ ⇗ ≤) embedded as
+  base64 (`lib/pdf/pdfFonts.ts`, 76 KB, OFL; provenance in `lib/pdf/FONTS_LICENSE.md`). react-pdf drops ↗ as an
+  emoji, so the PDF uses ⇗ for Projected.
+
+**Verification:** tsc 0 · vitest 48 files **495/495** (+6: model rows/figures/meta + a real PDF render) · `next
+build` compiles. Rendered a sample PDF from a BGC fixture and inspected both pages visually (2 pages, no
+overlaps). Not tested against live Neon data.
+
+**⚠️ ACTION REQUIRED:** batch 12 + 13 commands in the checklist. After deploy: open a site → Export site PDF.
+
+---
+
+## 2026-09-28 — DESIGN v2 batches 10–12: printable report, lease-as-statement, light theme (10 ✅ 300bb29 · 11 ✅ e4f7da9 · 12 ⏳)
+
+**Skills:** 12, 01, 07 (lease decision + wording), 04 (CSP print button, cookie validation), 11.
+
+- **Batch 10 — full report (`lib/modules/reportHtml.ts`):** rebuilt on the light-theme tokens + Grid type; white
+  printer-friendly cover with the embedded Grid logo and RA 9646 notice; summary strip; icon+word statuses;
+  outlined glyph Truth chips; rent metrics/scorecard lease line neutral; ICU-free numbers (`fmtInt`).
+  **Bug:** the print button's inline `onclick` was blocked by the nonce CSP (F-30) — dead button in production.
+  Now a nonce'd script (`/api/reports/full` passes `x-nonce`); invalid/missing nonce → no script, hint only.
+- **Batch 11 — lease finding (broker decision, Skill 07):** `siteVerdict.ts` lease finding tone always `muted`,
+  positional wording; lease counts for coverage but casts no vote; keywords positional. `dashboard.ts` rent-above
+  alert → new `info` severity with neutral wording. `FinalReport` muted findings read "Context" (was "No data").
+  The composite band still decides the call (F-07) and still includes the saved-rent lease value score.
+- **Batch 12 — light theme:** `lib/ui/theme.ts` (`parseTheme`, `bsa-theme` cookie, basemap picker),
+  `components/ThemeSwitch.tsx`, Settings → Appearance; root layout renders `data-theme` from the cookie (all
+  pages now dynamic — /login was static); `system` via `prefers-color-scheme` + Tailwind `variant` dark mode;
+  light fixes (accent text, icon discs, toast, chart strokes/fills via `stroke-*`/`fill-*` token classes);
+  maps choose CARTO light/dark tiles.
+
+**Verification:** tsc 0 · vitest 47 files **489/489** (+10) · `next build` compiles; compiled CSS checked for the
+system-theme rules and safelisted classes. Not visually checked in a browser (light mode especially).
+
+**⚠️ ACTION REQUIRED:** Batch 10–12 commands in `docs/DESIGN_V2_CHECKLIST.md`. After deploy: Settings →
+Appearance → Light, walk the main screens; open Run report → Download full report → the print button works.
+No re-run needed: the Final Report, dashboard alerts and reports are all computed live from stored module results.
+
+**Noticed, not changed:** the login photo panel was designed for dark (it still reads in light, but softer);
+the site PDF (`lib/pdf/AnalysisPdf.tsx`) already had no lease status colour.
+
+---
+
+## 2026-09-28 — DESIGN v2 batch 9: Run Report layout + legacy-page check (✅ pushed f60b7ea)
 
 **Check:** `/scorecard`, `/modules`, `/explore` (+ `ModulesView`, `PlacesExplorer`) are already gone — no routes,
 components or links remain. `/reports` is the only legacy page (linked from the dashboard). **Skills:** 12, 01,
