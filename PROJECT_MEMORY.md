@@ -5,7 +5,7 @@ always-current snapshot. `WORKLOG.md` is the full history (newest first). This f
 rewritten at the end of every work batch — if it disagrees with older notes (e.g.
 `2 - Data Intake/Migration Guide/PROJECT_MEMORY_EXPORT.md`, 2026-08-10), **this file wins**.
 
-_Last updated: 2026-09-28 — Design v2 batches 0–11 pushed (`e4f7da9`); 12–13 pending push._
+_Last updated: 2026-09-28 — Design v2 batches 0–13 all pushed (HEAD `498db86`)._
 
 ---
 
@@ -44,10 +44,10 @@ Tracker: **`docs/DESIGN_V2_CHECKLIST.md`** (item checklist + push log — update
   loading states) pushed: `1fc780c`, `89deb3c`, `12ab500`, `df39955` (HEAD = origin/main, tree clean).
 - Batch 9 (2026-09-28): Scorecard / All Modules / Explore Places confirmed already removed; `/reports` (Run
   report, all sites) rebuilt in the v2 layout; rent metrics neutral; lockfile re-synced — pushed `f60b7ea`.
-- Batch 13 (2026-09-28, pending push): **Export site PDF = the Final Report screen as data.** One pure model
+- Batch 13 (2026-09-28, pushed `498db86`): **Export site PDF = the Final Report screen as data.** One pure model
   `lib/modules/siteReportModel.ts` feeds both the tab and `lib/pdf/AnalysisPdf.tsx` — change the report in the
   model, never in only one renderer. PDF fonts embedded (`lib/pdf/pdfFonts.ts`).
-- Batches 10–11 pushed (`300bb29`, `e4f7da9`); batch 12 pending push: printable full report in v2 + CSP-safe print button; lease finding
+- Batches 10–12 pushed (`300bb29`, `e4f7da9`, `9fc30b8`): printable full report in v2 + CSP-safe print button; lease finding
   = neutral statement (broker decision); Appearance switch Dark / Light / Match device (`bsa-theme` cookie).
 - **Key decisions (don't undo without the owner):** lease/rent is never a Proceed/Caution vote or a green/red
   colour anywhere in the UI or reports — it counts only through the composite's lease value score. Theme

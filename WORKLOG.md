@@ -5,7 +5,20 @@ The cross-thread state record. Read this (with the Master Instruction and the cu
 
 ---
 
-## 2026-09-28 — DESIGN v2 batch 13: Export site PDF mirrors the Final Report (⏳ awaiting push)
+## 2026-09-28 — HOTFIX: Cavite OSM ingest aborted with Postgres 57P01 (⏳ awaiting push)
+
+Owner ran `npm run db:ingest:osm:cavite`; it died in the competitor sweep with `57P01 terminating connection
+due to administrator command`. **Cause:** the sweep waits minutes on Overpass between writes; Neon suspends
+the idle compute / its pooler drops the idle session, killing the script's TCP connection, and the next write
+failed. **Fix (`prisma/scriptDb.ts`, used by every bulk loader):** a 60 s `SELECT 1` keep-alive (unref'd) and a
+`$extends` query wrapper that, on a connection-level error only (57P01, P1001/P1017/P2024, ECONNRESET…),
+disconnects, waits 2 s → 5 s → 10 s and retries — safe because loader writes are idempotent upserts. Data and
+constraint errors still fail fast. `tests/unit/scriptDb.test.ts` pins the classifier. tsc 0; not run against
+live Neon from the sandbox. **Owner:** just re-run the same command — the sweep resumes from its checkpoint.
+
+---
+
+## 2026-09-28 — DESIGN v2 batch 13: Export site PDF mirrors the Final Report (✅ pushed 498db86)
 
 Owner request with screenshots: "Export site PDF" must contain, organised, all the data on the Final Report
 tab — as data, not a screenshot. **Skills:** 12, 01, 02/03 (single service data path), 07 (rent wording), 11.
@@ -30,7 +43,7 @@ overlaps). Not tested against live Neon data.
 
 ---
 
-## 2026-09-28 — DESIGN v2 batches 10–12: printable report, lease-as-statement, light theme (10 ✅ 300bb29 · 11 ✅ e4f7da9 · 12 ⏳)
+## 2026-09-28 — DESIGN v2 batches 10–12: printable report, lease-as-statement, light theme (10 ✅ 300bb29 · 11 ✅ e4f7da9 · 12 ✅ 9fc30b8)
 
 **Skills:** 12, 01, 07 (lease decision + wording), 04 (CSP print button, cookie validation), 11.
 

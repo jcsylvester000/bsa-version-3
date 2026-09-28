@@ -209,8 +209,8 @@ Commands are PowerShell 5-safe (one per line). Run them from `4 - Final Applicat
 | 9 | Run Report + lock sync | `design v2 batch 9: run report layout, neutral rent metrics, lockfile sync` | ✅ pushed | `f60b7ea` |
 | 10 | Full report (print) | `design v2 batch 10: printable full report in v2 styling, neutral rent, CSP-safe print button` | ✅ pushed | `300bb29` |
 | 11 | Lease finding | `design v2 batch 11: lease finding as neutral statement (broker decision), info alerts` | ✅ pushed | `e4f7da9` |
-| 12 | Light theme | `design v2 batch 12: appearance switch (dark/light/match device), light-mode fixes, themed maps` | ready to push | — |
-| 13 | Site PDF = Final Report | `design v2 batch 13: site PDF mirrors the Final Report (shared model, brand fonts)` | ready to push | — |
+| 12 | Light theme | `design v2 batch 12: appearance switch (dark/light/match device), light-mode fixes, themed maps` | ✅ pushed | `9fc30b8` |
+| 13 | Site PDF = Final Report | `design v2 batch 13: site PDF mirrors the Final Report (shared model, brand fonts)` | ✅ pushed | `498db86` |
 
 ### Batch 0
 Already committed (`0ecddcd`). If `git status` says "Your branch is ahead of 'origin/main'", push it with the Batch 1 push.
