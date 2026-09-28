@@ -5,6 +5,35 @@ The cross-thread state record. Read this (with the Master Instruction and the cu
 
 ---
 
+## 2026-09-28 — DESIGN v2 batch 9: Run Report layout + legacy-page check (⏳ awaiting push)
+
+**Check:** `/scorecard`, `/modules`, `/explore` (+ `ModulesView`, `PlacesExplorer`) are already gone — no routes,
+components or links remain. `/reports` is the only legacy page (linked from the dashboard). **Skills:** 12, 01,
+07 (rent wording), 11.
+
+- `components/ReportView.tsx` rewritten: `ReportView` (client, compose on demand) + presentational `ReportBody`
+  — summary strip (confidence icon+word, sections assessed, `TruthMixBar`), sticky "On this page" index, numbered
+  section cards, per-site metric rows with compact Truth chips and `StatusText`, honest not-assessed state,
+  skeleton while composing, alert on error. One primary button per view.
+- `app/(app)/reports/page.tsx`: v2 header; demo report now renders through `ReportBody`; empty states.
+- `ReportDownloadModal`: v2 buttons/labels, Esc closes.
+- Guardrail: `ReportMetric.neutral` added in `lib/modules/reportComposer.ts`; both lease metrics set it, so the
+  UI draws no good/bad colour on rent; the "Room to median" note is now positional ("₱X/sqm above/below the
+  corridor median", ICU-free `fmtInt`). Lease verdicts render via `LEASE_POSITION_LABEL`.
+- **Found + fixed:** `package-lock.json` was out of sync with `package.json` (`@playwright/test` 1.63 missing,
+  `playwright` 1.62 vs 1.63) — `npm ci` in GitHub CI fails on that. Regenerated with `npm install --package-lock-only`.
+
+**Verification:** `npm ci` OK on the new lock · tsc 0 · vitest 45 files **479/479** · `next build` compiles.
+Not visually checked in a browser.
+
+**⚠️ ACTION REQUIRED:** Batch 9 commands in `docs/DESIGN_V2_CHECKLIST.md`; after deploy open a run → Run report
+(all sites) → View report here; try the Download full report dialog.
+
+**Noticed, not changed:** the full downloadable report (`lib/modules/reportHtml.ts`) has its own styling and may
+still colour rent by band — worth a follow-up review.
+
+---
+
 ## 2026-09-25 — HOTFIX: every analysis run returned 500 ("The last analysis did not finish") (⏳ awaiting push)
 
 - **Cause:** the F-05 per-site claim (`c64bee2`) used `prisma.candidateSite.updateMany(...)` on the request

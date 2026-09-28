@@ -111,6 +111,21 @@ Batch 0 needs no further commit.
 - [x] `app/(app)/loading.tsx` — skeleton page while server pages stream
 - [-] H4 "Site PDF is ready" toast — the PDF opens in a new tab, so there is nothing to confirm
 
+## Batch 9 — Legacy pages check + Run Report (all sites) layout
+Check (2026-09-28): **Scorecard, All Modules and Explore Places were already removed** (no routes, no
+components, no links). **Reports is the only survivor** — reached from the dashboard's "Run report (all sites)".
+- [x] `/reports` header: ← Site Dashboard, brand overline, `text-h1`, one-line purpose; empty/no-access → `empty-state`
+- [x] Summary strip: confidence (icon + word + what it means), sections assessed n of 9, Truth Layer mix bar
+- [x] "On this page" section index (sticky at xl) + numbered section cards with anchors
+- [x] Per-site metric rows: label + compact Truth chip, score bar / range / value, status as icon + word
+- [x] Not-assessed sections: honest-gap state ("left blank rather than estimated")
+- [x] Demo (mock) report uses the same `ReportBody` renderer (bulleted text sections)
+- [x] Download modal: `btn-primary btn-lg`, labelled fields, Esc closes, modal tokens
+- [~] Rent metrics are `neutral` (no green/red bar or gradient; lease positions shown as statements);
+      composer note "Room to median ₱…" → "₱… above/below the corridor median" (`reportComposer.ts`)
+- [x] `package-lock.json` re-synced with `package.json` (`@playwright/test` 1.63 was missing) — CI's
+      `npm ci` was failing on it
+
 ## Verification (every batch)
 - [x] `tsc --noEmit` 0 errors (2026-09-25, cloud sandbox — batches 1–4, and again after 5–8)
 - [x] `vitest run` 36 files · 426/426 passing (Prisma-engine "unhandled" notices are sandbox-only)
@@ -139,6 +154,7 @@ Commands are PowerShell 5-safe (one per line). Run them from `4 - Final Applicat
 | 6 | Franchise Screening | `design v2 batch 6: franchise screening cards, filter chips, start intake with brand` | ✅ pushed | `89deb3c` |
 | 7 | Site tab content | `design v2 batch 7: lease position + zonal floor card, daypart tiles, findings figures` | ✅ pushed | `12ab500` |
 | 8 | Settings + states + logs | `design v2 batch 8: settings restyle, error boundary, loading skeleton` | ✅ pushed | `df39955` |
+| 9 | Run Report + lock sync | `design v2 batch 9: run report layout, neutral rent metrics, lockfile sync` | ready to push | — |
 
 ### Batch 0
 Already committed (`0ecddcd`). If `git status` says "Your branch is ahead of 'origin/main'", push it with the Batch 1 push.
@@ -196,6 +212,13 @@ git push origin main
 ```powershell
 git add "app/(app)/settings/page.tsx" components/ChangePasswordForm.tsx "app/(app)/error.tsx" "app/(app)/loading.tsx" WORKLOG.md PROJECT_MEMORY.md docs/DESIGN_V2_CHECKLIST.md
 git commit -m "design v2 batch 8: settings restyle, error boundary, loading skeleton"
+git push origin main
+```
+
+### Batch 9
+```powershell
+git add "app/(app)/reports/page.tsx" components/ReportView.tsx components/ReportDownloadModal.tsx lib/modules/reportComposer.ts package-lock.json WORKLOG.md PROJECT_MEMORY.md docs/DESIGN_V2_CHECKLIST.md
+git commit -m "design v2 batch 9: run report layout, neutral rent metrics, lockfile sync"
 git push origin main
 ```
 

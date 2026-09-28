@@ -10,6 +10,7 @@
  *    invented.
  */
 import 'server-only';
+import { fmtInt } from '@/lib/util/format';
 import { prisma } from '@/lib/db/prisma';
 import { rollUpConfidence, type TruthLayer, type Confidence } from '@/lib/truth/truthLayer';
 import { REPORT_SECTIONS, type SectionDef } from './reportSections';
@@ -33,6 +34,8 @@ export interface ReportMetric {
   range?: { min: number; median: number; max: number; n: number };
   /** Direction hint for coloring a bar: higher-is-better (default) or worse. */
   higherIsBetter?: boolean;
+  /** A position statement (e.g. rent vs corridor) — render WITHOUT good/bad colour (no price verdicts). */
+  neutral?: boolean;
   note?: string;
 }
 
@@ -168,11 +171,16 @@ function metricsForModule(row: ModuleRow): ReportMetric[] {
           ...base, label: 'Corridor rent (₱/sqm)', verdict: 'corridor benchmark',
           range: { min: Math.round(st.min ?? 0), median: Math.round(st.median), max: Math.round(st.max ?? 0), n: st.n ?? 0 },
           note: 'Enter your asking rent to benchmark against this spread',
+          neutral: true,
         }];
       }
       return [{
         ...base, label: 'Base rent vs corridor', score: num(p.baseRentPercentile) ?? null, verdict: String(p.verdict ?? ''),
-        higherIsBetter: false, note: num(p.negotiatingRoomPhpSqm) != null ? `Room to median ₱${Number(p.negotiatingRoomPhpSqm).toLocaleString()}/sqm` : undefined,
+        higherIsBetter: false, neutral: true,
+        // Positional wording only (no "room to negotiate" framing) — guardrail: no price verdicts.
+        note: num(p.negotiatingRoomPhpSqm) != null
+          ? `₱${fmtInt(Math.abs(Number(p.negotiatingRoomPhpSqm)))}/sqm ${Number(p.negotiatingRoomPhpSqm) >= 0 ? 'above' : 'below'} the corridor median`
+          : undefined,
       }];
     }
     case 'daypart':

@@ -42,8 +42,10 @@ Tracker: **`docs/DESIGN_V2_CHECKLIST.md`** (item checklist + push log — update
 - Batches 0–4 pushed (`0ecddcd` … `f82716d`). Batches 5–8 (all-runs table + run states, Franchise Screening
   cards + "Start intake with this brand", site-tab content + zonal card + findings figures, Settings + error/
   loading states) pushed: `1fc780c`, `89deb3c`, `12ab500`, `df39955` (HEAD = origin/main, tree clean).
-- Open design items: PRC licence field (schema decision), light-theme switch (deferred), legacy pages
-  /reports /scorecard /modules /explore still pre-v2, broker review of the lease finding tone.
+- Batch 9 (2026-09-28): Scorecard / All Modules / Explore Places confirmed already removed; `/reports` (Run
+  report, all sites) rebuilt in the v2 layout; rent metrics neutral; lockfile re-synced — **pending push**.
+- Open design items: PRC licence field (schema decision), light-theme switch (deferred), broker review of the
+  lease finding tone; the downloadable full report HTML (`reportHtml.ts`) not yet reviewed for v2 styling.
 
 ## Code-review fix programme (started 2026-09-23)
 
