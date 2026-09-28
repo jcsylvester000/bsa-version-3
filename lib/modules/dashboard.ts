@@ -18,7 +18,8 @@ export interface DashSite {
 export interface DashAlert {
   module: string;      // e.g. "territory"
   moduleLabel: string; // e.g. "Territory Guard"
-  severity: 'go' | 'caution' | 'nogo';
+  /** 'info' = a statement, not a status (e.g. rent position — no price verdicts). */
+  severity: 'go' | 'caution' | 'nogo' | 'info';
   title: string;
   detail: string;
   truthLayer: TruthLayer;
@@ -116,15 +117,17 @@ export function buildDashboard(
       const pct = (lease.payload as { baseRentPercentile?: number }).baseRentPercentile;
       if (v === 'above_market') {
         leaseOutliers++;
-        highlights.push('rent above benchmark');
+        highlights.push('rent above corridor median');
+        // Broker decision (Skill 07, 2026-09-28): rent position is a statement for the broker to
+        // explain, not a caution flag — 'info', positional wording, no "room to negotiate".
         alerts.push({
-          module: 'lease', moduleLabel: 'Lease Benchmark', severity: 'caution',
-          title: `Lease above benchmark — ${s.label}`,
-          detail: `Asking rent at the ${pct ?? '?'}th percentile of the corridor — room to negotiate toward the median.`,
+          module: 'lease', moduleLabel: 'Lease Benchmark', severity: 'info',
+          title: `Rent above the corridor median — ${s.label}`,
+          detail: `Asking rent sits at the ${pct ?? '?'}th percentile of comparable leases in the corridor.`,
           truthLayer: 'assumed',
         });
       } else if (v === 'below_market') {
-        highlights.push('rent within benchmark');
+        highlights.push('rent below corridor median');
       }
     }
 
@@ -187,7 +190,7 @@ export function buildDashboard(
   }
 
   // Order alerts most-severe first.
-  const sev = { nogo: 0, caution: 1, go: 2 };
+  const sev = { nogo: 0, caution: 1, go: 2, info: 3 };
   alerts.sort((a, b) => sev[a.severity] - sev[b.severity]);
 
   return {

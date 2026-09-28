@@ -18,7 +18,7 @@ describe('summariseSite', () => {
     expect(s.label).toBe('Proceed');
     expect(s.tone).toBe('go');
     expect(s.headline.toLowerCase()).toContain('proceed');
-    expect(s.keywords).toContain('below-market');
+    expect(s.keywords).toContain('rent-below-median');
   });
 
   it('NO-GO when a PRIMARY module reads no-go (territory redistributes)', () => {
@@ -65,6 +65,33 @@ describe('summariseSite', () => {
     const withWs = summariseSite({ ...base, whitespace: { recommendations: [{ verdict: 'open' }, { verdict: 'contested' }] } }, allPrimary);
     expect(withWs.classification).toBe('proceed');
     expect(withWs.findings.find((f) => f.keyword === 'White-space')?.tone).toBe('muted');
+  });
+});
+
+describe('summariseSite — lease is a statement, not a vote (broker decision, 2026-09-28)', () => {
+  it('every lease position reads as a muted statement with positional wording', () => {
+    for (const verdict of ['below_market', 'above_market', 'at_market', 'corridor_benchmark', 'insufficient_data']) {
+      const s = summariseSite({ lease: { verdict, corridor: 'BGC' } }, allPrimary);
+      const f = s.findings.find((x) => x.keyword === 'Lease position')!;
+      expect(f.tone).toBe('muted');
+      expect(f.detail).not.toMatch(/negotiat|overpriced|cheap|expensive|good deal/i);
+    }
+  });
+  it('lease still counts toward coverage when it has a usable read', () => {
+    expect(summariseSite({ lease: { verdict: 'above_market' } }, allPrimary).coverage).toBe(1);
+    expect(summariseSite({ lease: { verdict: 'insufficient_data' } }, allPrimary).coverage).toBe(0);
+  });
+  it('rent position alone never moves the module-derived call', () => {
+    const base = { territory: { verdict: 'adds' as const }, daypart: { windowMatchPct: 72 } };
+    const below = summariseSite({ ...base, lease: { verdict: 'below_market' } }, allPrimary);
+    const above = summariseSite({ ...base, lease: { verdict: 'above_market' } }, allPrimary);
+    expect(below.classification).toBe(above.classification);
+    expect(above.headline.toLowerCase()).not.toContain('rent');
+  });
+  it('keywords are positional (no "market" judgement words)', () => {
+    const s = summariseSite({ lease: { verdict: 'above_market' } }, allPrimary);
+    expect(s.keywords).toContain('rent-above-median');
+    expect(s.keywords.join(' ')).not.toMatch(/market/);
   });
 });
 

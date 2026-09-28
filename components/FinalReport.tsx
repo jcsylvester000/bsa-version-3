@@ -50,7 +50,7 @@ export function FinalReportHero({
           {limited ? (
             <span className="grid h-16 w-16 place-items-center rounded-full border-2 border-dashed border-ink-muted text-2xl text-ink-muted" aria-hidden>—</span>
           ) : (
-            <span className={`grid h-16 w-16 place-items-center rounded-full bg-midnight text-[28px] font-bold ${iconColor}`} aria-hidden>{VERDICT_ICON[summary.tone]}</span>
+            <span className={`grid h-16 w-16 place-items-center rounded-full bg-on-status text-[28px] font-bold ${iconColor}`} aria-hidden>{VERDICT_ICON[summary.tone]}</span>
           )}
           <span className="text-overline uppercase tracking-[0.12em]">Recommendation</span>
           <h2 id="verdict-label" className="font-heading text-display !text-current">
@@ -126,7 +126,8 @@ export function FindingsList({
   figures?: Record<string, { value: string; truth: TruthLayer } | undefined>;
   onOpenTab?: (tab: 'territory' | 'lease' | 'daypart' | 'whitespace') => void;
 }) {
-  const word = (t: Tone) => (t === 'go' ? 'Proceed' : t === 'nogo' ? 'No-Go' : t === 'caution' ? 'Caution' : 'No data');
+  // 'muted' findings are statements (lease position, white-space note, missing data) — labelled Context, not a status.
+  const word = (t: Tone) => (t === 'go' ? 'Proceed' : t === 'nogo' ? 'No-Go' : t === 'caution' ? 'Caution' : 'Context');
   const fill = (t: Tone) => (t === 'go' ? 'bg-go text-go' : t === 'nogo' ? 'bg-nogo text-nogo' : t === 'caution' ? 'bg-caution text-caution' : 'bg-ink-border-strong text-ink-muted');
   return (
     <section className="card flex flex-col gap-4 px-6 py-6 md:px-8">
@@ -143,7 +144,7 @@ export function FindingsList({
             <li key={i} className="grid items-center gap-x-5 gap-y-2 border-t border-ink-border py-3 md:min-h-[64px] md:grid-cols-[150px_minmax(0,1fr)_auto_auto]">
               <span className={`inline-flex items-center gap-2 text-[15px] font-semibold ${fg}`}>
                 <span className={`grid h-[26px] w-[26px] place-items-center rounded-full text-xs font-bold text-on-status ${bg}`} aria-hidden>
-                  {f.tone === 'muted' ? '—' : VERDICT_ICON[f.tone]}
+                  {f.tone === 'muted' ? 'i' : VERDICT_ICON[f.tone]}
                 </span>
                 {word(f.tone)}
               </span>

@@ -8,8 +8,15 @@
  *
  * Truth Layer discipline: every finding is carried straight from a module figure — nothing is
  * invented, and no price verdict is issued (lease is positioned against the corridor, never judged).
- * The three site-viability modules (Territory, Lease, Daypart) drive the call; White-Space is shown
- * as an opportunity note but does not move the verdict for THIS site.
+ *
+ * Broker decision (2026-09-28, Skill 07 — PH Real Estate Agent/Broker): the Lease finding is a
+ * STATEMENT, not a vote. "Asking rent sits above the corridor median" is a fact a broker explains and
+ * negotiates around; labelling it Proceed/Caution reads as a price opinion (RA 9646 / no-price-verdict
+ * guardrail). So the lease finding's tone is always 'muted': it still counts toward COVERAGE (it is real
+ * data about the site) but does not push the module-derived call up or down. Rent still reaches the
+ * site's composite through the scorecard's lease value score once an asking rent is saved — that band
+ * decides the call (audit F-07) and is unchanged here.
+ * Territory and Daypart drive the module-derived call; White-Space is an opportunity note only.
  */
 import { fmtPeso as peso } from '@/lib/util/format';
 
@@ -65,16 +72,19 @@ function territoryFinding(t: SummaryInput['territory']): SiteFinding | null {
   return { keyword: 'Cannibalization', detail: `Mixed — some redistribution of own sales${risk}`, tone: 'caution' };
 }
 
-/** Lease tone + finding from its position vs the corridor (never a price verdict). */
-function leaseFinding(l: SummaryInput['lease']): SiteFinding | null {
+/**
+ * Lease finding — a positional STATEMENT (tone always 'muted'; see the broker decision above).
+ * `rated` = the lease module produced a usable read (counts toward coverage).
+ */
+function leaseFinding(l: SummaryInput['lease']): (SiteFinding & { rated: boolean }) | null {
   if (!l || !l.verdict) return null;
   const corr = l.corridor ? ` in ${l.corridor}` : '';
   switch (l.verdict) {
-    case 'below_market': return { keyword: 'Lease position', detail: `Asking rent sits below the corridor${corr}`, tone: 'go' };
-    case 'above_market': return { keyword: 'Lease position', detail: `Asking rent sits above the corridor${corr}`, tone: 'caution' };
-    case 'at_market': return { keyword: 'Lease position', detail: `Asking rent is in line with the corridor${corr}`, tone: 'caution' };
-    case 'corridor_benchmark': return { keyword: 'Lease position', detail: `Corridor rent benchmark available${corr} — enter an asking rent to position it`, tone: 'caution' };
-    default: return { keyword: 'Lease position', detail: 'Not enough comparable leases to position the rent', tone: 'muted' };
+    case 'below_market': return { keyword: 'Lease position', detail: `Asking rent sits below the corridor median${corr}`, tone: 'muted', rated: true };
+    case 'above_market': return { keyword: 'Lease position', detail: `Asking rent sits above the corridor median${corr}`, tone: 'muted', rated: true };
+    case 'at_market': return { keyword: 'Lease position', detail: `Asking rent is within the corridor range${corr}`, tone: 'muted', rated: true };
+    case 'corridor_benchmark': return { keyword: 'Lease position', detail: `Corridor rent benchmark available${corr} — enter an asking rent to position it`, tone: 'muted', rated: true };
+    default: return { keyword: 'Lease position', detail: 'Not enough comparable leases to position the rent', tone: 'muted', rated: false };
   }
 }
 
@@ -105,9 +115,10 @@ const KEYWORD: Record<string, string> = {
   'Adds sales': 'adds-sales',
   redistributes: 'redistributes',
   mixed: 'mixed-cannibalization',
-  below_market: 'below-market',
-  above_market: 'above-market',
-  at_market: 'at-market',
+  // Positional tags (user-visible chips) — no "market" judgement words.
+  below_market: 'rent-below-median',
+  above_market: 'rent-above-median',
+  at_market: 'rent-within-range',
 };
 
 /** The scorecard composite band — the SAME value the dashboard shows on candidate_site.verdict. */
@@ -131,13 +142,15 @@ export function summariseSite(
   isPrimary?: (m: DriverKey) => boolean,
   compositeBand?: CompositeBand | null,
 ): SiteSummary {
-  const drivers: Array<{ key: DriverKey; finding: SiteFinding }> = [];
-  const tf = territoryFinding(input.territory); if (tf) drivers.push({ key: 'territory', finding: tf });
-  const lf = leaseFinding(input.lease); if (lf) drivers.push({ key: 'lease', finding: lf });
-  const df = daypartFinding(input.daypart); if (df) drivers.push({ key: 'daypart', finding: df });
+  const drivers: Array<{ key: DriverKey; finding: SiteFinding; rated: boolean }> = [];
+  const tf = territoryFinding(input.territory); if (tf) drivers.push({ key: 'territory', finding: tf, rated: tf.tone !== 'muted' });
+  const lf = leaseFinding(input.lease);
+  if (lf) { const { rated: lr, ...finding } = lf; drivers.push({ key: 'lease', finding, rated: lr }); }
+  const df = daypartFinding(input.daypart); if (df) drivers.push({ key: 'daypart', finding: df, rated: df.tone !== 'muted' });
 
+  // Coverage = modules with a usable read (lease included). Votes = findings with a tone (lease excluded).
+  const coverage = drivers.filter((d) => d.rated).length;
   const rated = drivers.filter((d) => d.finding.tone !== 'muted');
-  const coverage = rated.length;
   const prim = (k: DriverKey) => (isPrimary ? isPrimary(k) : true);
 
   const nogos = rated.filter((d) => d.finding.tone === 'nogo');

@@ -9,8 +9,8 @@ import { InfoHint } from '@/components/InfoHint';
 import { humanizeVertical } from '@/lib/modules/verticalConfig';
 import type { DashboardData } from '@/lib/modules/dashboard';
 
-const SEV_FILL: Record<string, string> = { go: 'bg-go text-go', caution: 'bg-caution text-caution', nogo: 'bg-nogo text-nogo' };
-const SEV_ICON: Record<string, string> = { go: '✓', caution: '▲', nogo: '✕' };
+const SEV_FILL: Record<string, string> = { go: 'bg-go text-go', caution: 'bg-caution text-caution', nogo: 'bg-nogo text-nogo', info: 'bg-ink-border-strong text-ink-muted' };
+const SEV_ICON: Record<string, string> = { go: '✓', caution: '▲', nogo: '✕', info: 'i' };
 
 /**
  * Site Dashboard — run view. v2 leads with the verdict strip (top site + Proceed / Caution / No-Go
