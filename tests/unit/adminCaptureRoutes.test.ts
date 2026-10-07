@@ -15,17 +15,20 @@ const svc = {
   previewArea: vi.fn(async () => ({ batchId: 'b', staged: 3, skipped: {}, notes: [] })),
   commitBatch: vi.fn(async () => ({ committed: 3, psgcTagged: 3, skippedExisting: 0 })),
   importNavigator: vi.fn(async () => ({ batchId: 'b', staged: 1, stats: {} })),
+  siteReadiness: vi.fn(async () => ({ summary: {} })),
 };
 vi.mock('@/lib/services/capture', () => ({
   CaptureError: class CaptureError extends Error { constructor(public code: string, m: string, public status = 400) { super(m); } },
   previewArea: (...a: unknown[]) => svc.previewArea(...(a as [])),
   commitBatch: (...a: unknown[]) => svc.commitBatch(...(a as [])),
   importNavigator: (...a: unknown[]) => svc.importNavigator(...(a as [])),
+  siteReadiness: (...a: unknown[]) => svc.siteReadiness(...(a as [])),
 }));
 
 import { POST as preview } from '@/app/api/admin/capture/preview/route';
 import { POST as commit } from '@/app/api/admin/capture/batches/[id]/commit/route';
 import { POST as importRoute } from '@/app/api/admin/capture/import/route';
+import { GET as readiness } from '@/app/api/admin/capture/readiness/route';
 
 const admin = { id: '11111111-1111-4111-8111-111111111111', email: 'a@grid', role: 'admin', franchisorId: null };
 const analyst = { ...admin, role: 'analyst' };
@@ -87,5 +90,24 @@ describe('admin capture routes', () => {
     expect((await importRoute(big)).status).toBe(413);
     expect((await importRoute(req('/api/admin/capture/import', 'not json'))).status).toBe(422);
     expect(svc.importNavigator).not.toHaveBeenCalled();
+  });
+
+  it('readiness is admin-only and validates the site + business type', async () => {
+    const get = (qs: string) => new NextRequest(`http://localhost/api/admin/capture/readiness?${qs}`);
+    session.mockResolvedValue(broker);
+    expect((await readiness(get('lat=14.28&lon=121.09'))).status).toBe(403);
+    session.mockResolvedValue(admin);
+    expect((await readiness(get('lat=35.6&lon=139.7'))).status).toBe(422);
+    expect((await readiness(get('lat=14.28&lon=121.09&vertical=bogus'))).status).toBe(422);
+    expect(svc.siteReadiness).not.toHaveBeenCalled();
+    expect((await readiness(get('lat=14.28&lon=121.09&vertical=fnb_qsr&format=mall&radiusM=1500&brand='))).status).toBe(200);
+    expect(svc.siteReadiness).toHaveBeenCalledWith(expect.objectContaining({ lat: 14.28, lon: 121.09, vertical: 'fnb_qsr', format: 'mall', radiusM: 1500 }));
+  });
+
+  it('preview accepts a Territory Guard site context and rejects an unknown business type', async () => {
+    session.mockResolvedValue(admin);
+    const ctx = { site: { lat: 14.2846, lon: 121.0966 }, vertical: 'fnb_qsr', brand: 'Jollibee', format: 'inline' };
+    expect((await preview(req('/api/admin/capture/preview', { area, layers: ['v:fnb_qsr'], context: ctx }))).status).toBe(200);
+    expect((await preview(req('/api/admin/capture/preview', { area, layers: ['v:fnb_qsr'], context: { ...ctx, vertical: 'nope' } }))).status).toBe(422);
   });
 });

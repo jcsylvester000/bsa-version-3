@@ -12,6 +12,7 @@ import { errors, fail } from '@/lib/api/respond';
 import { CaptureError } from '@/lib/services/capture';
 import { CaptureAreaSchema } from '@/lib/capture/area';
 import { isLayerKey, type LayerKey } from '@/lib/capture/layers';
+import { isCaptureVertical } from '@/lib/capture/territoryAlign';
 import { BSA_POI_CATEGORIES, type BsaPoiCategory } from '@/lib/places/osmCategory';
 
 export async function requireAdmin(): Promise<{ user: SessionUser } | { res: Response }> {
@@ -38,10 +39,32 @@ const label = z.string().trim().max(120).optional();
 const lat = z.number().finite().min(4).max(21);
 const lon = z.number().finite().min(116).max(127);
 
+const vertical = z.string().refine(isCaptureVertical, 'Unknown business type');
+const format = z.enum(['inline', 'mall', 'kiosk']);
+const brand = z.string().trim().max(80);
+
+export const SiteContextSchema = z.object({
+  site: z.object({ lat, lon }).optional(),
+  vertical: vertical.optional(),
+  brand: brand.optional(),
+  format: format.optional(),
+});
+
 export const PreviewBody = z.object({
   area: CaptureAreaSchema,
   layers: z.array(layer).min(1).max(12),
   label,
+  context: SiteContextSchema.optional(),
+});
+
+/** GET /readiness query. */
+export const ReadinessQuery = z.object({
+  lat: z.coerce.number().finite().min(4).max(21),
+  lon: z.coerce.number().finite().min(116).max(127),
+  radiusM: z.coerce.number().int().min(200).max(3_000).optional(),
+  format: format.optional(),
+  vertical: vertical.optional(),
+  brand: brand.optional(),
 });
 
 export const ManualBody = z.object({

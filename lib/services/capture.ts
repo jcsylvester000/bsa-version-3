@@ -28,6 +28,10 @@ import { BASE_LAYER_SELECTORS, isBaseLayer, keepsUnnamed, type LayerKey } from '
 import { mapElement, parseSelector, type SkipReason, type TagMatcher } from '@/lib/capture/mapElement';
 import { cleanText, dedupeCandidates, MAX_NAME_LEN, MAX_NOTES_LEN, type CaptureCandidate } from '@/lib/capture/candidate';
 import { parseNavigatorFile } from '@/lib/capture/navigatorFile';
+import { catchmentFor, conceptForSite, summariseForTerritory, tierOfPlace, DEFAULT_SCAN_M, type TerritorySummary } from '@/lib/capture/territoryAlign';
+import { haversineMeters } from '@/lib/geo/geo';
+import { cellsForArea, coverageCellKey } from '@/lib/places/poiCache';
+import { containsPoint } from '@/lib/capture/area';
 
 /** Max elements one area pull returns (Overpass `out center N`). Hitting it = area too dense. */
 const MAX_ELEMENTS = 5_000;
@@ -68,12 +72,12 @@ export function selectorsForLayers(layers: LayerKey[]): { selectors: string[]; m
 
 /* ------------------------------------------------------------------ staging */
 
-async function createBatch(user: SessionUser, data: { label: string; source: 'osm' | 'navigator_import' | 'manual'; area?: CaptureArea; layers?: string[]; notes?: string | null }) {
+async function createBatch(user: SessionUser, data: { label: string; source: 'osm' | 'navigator_import' | 'manual'; area?: CaptureArea; layers?: string[]; notes?: string | null; context?: SiteContext }) {
   const batch = await prisma.poiCaptureBatch.create({
     data: {
       label: cleanText(data.label, 120) || 'Capture',
       source: data.source,
-      areaSpec: data.area ? (data.area as unknown as Prisma.InputJsonValue) : undefined,
+      areaSpec: data.area ? ({ ...data.area, context: data.context ?? null } as unknown as Prisma.InputJsonValue) : undefined,
       layers: data.layers ?? [],
       notes: data.notes ?? null,
       createdById: actorId(user),
@@ -159,7 +163,9 @@ async function boundaryNote(lat: number, lon: number): Promise<string | null> {
 
 /* ------------------------------------------------------------------ actions */
 
-export interface PreviewInput { area: CaptureArea; layers: LayerKey[]; label?: string }
+/** Territory Guard context for a capture: the site pin, the franchise vertical/brand and the format. */
+export interface SiteContext { site?: { lat: number; lon: number }; vertical?: string; brand?: string; format?: string }
+export interface PreviewInput { area: CaptureArea; layers: LayerKey[]; label?: string; context?: SiteContext }
 
 export async function previewArea(user: SessionUser, input: PreviewInput) {
   const km2 = areaKm2(input.area);
@@ -197,6 +203,7 @@ export async function previewArea(user: SessionUser, input: PreviewInput) {
     area: input.area,
     layers: input.layers,
     notes: notes.join('\n') || null,
+    context: input.context,
   });
   await stageItems(batchId, kept, 'live');
   await audit({ actorId: actorId(user), action: 'poi.capture.preview', entity: 'poi_capture_batch', entityId: batchId, meta: { km2: Number(km2.toFixed(2)), layers: input.layers, staged: kept.length, skipped } });
@@ -395,14 +402,16 @@ export async function commitBatch(user: SessionUser, batchId: string) {
     ) sub
     WHERE p.id = sub.pid`;
 
+  const coverageStamped = await stampCoverage(batchId);
+
   const committed = await prisma.poiCaptureItem.count({ where: { batchId, committedPoiId: { not: null } } });
   const skippedExisting = isImport ? items.filter((i) => i.existingPoiId != null).length : 0;
   await prisma.poiCaptureBatch.update({
     where: { id: batchId },
     data: { status: 'committed', committedCount: committed, committedAt: new Date(), committedById: actorId(user) },
   });
-  await audit({ actorId: actorId(user), action: 'poi.capture.commit', entity: 'poi_capture_batch', entityId: batchId, meta: { committed, keyed: keyed.length, manual: manual.length, psgcTagged: tagged, skippedExisting } });
-  return { committed, psgcTagged: tagged, skippedExisting };
+  await audit({ actorId: actorId(user), action: 'poi.capture.commit', entity: 'poi_capture_batch', entityId: batchId, meta: { committed, keyed: keyed.length, manual: manual.length, psgcTagged: tagged, skippedExisting, coverageStamped } });
+  return { committed, psgcTagged: tagged, skippedExisting, coverageStamped };
 }
 
 /** Committed capture areas + POI totals per region, for the coverage overlay. */
@@ -445,3 +454,82 @@ export async function poisInBbox(bbox: [number, number, number, number], limit =
     LIMIT ${Math.min(5_000, Math.max(1, limit))}`;
   return rows.map((r) => ({ ...r, id: r.id.toString() }));
 }
+
+/**
+ * Tell Territory Guard's on-demand cache that a captured area is covered for the captured
+ * competitor verticals: every ~1.1 km coverage cell whose centre lies inside the capture area gets
+ * a fresh `poi_coverage` stamp (source 'admin_capture'). Without it, the first report there would
+ * re-pull the same places from OpenStreetMap. Only live OSM batches with an area stamp coverage.
+ */
+async function stampCoverage(batchId: string): Promise<number> {
+  const b = await prisma.poiCaptureBatch.findUnique({ where: { id: batchId }, select: { source: true, areaSpec: true, layers: true } });
+  if (!b || b.source !== 'osm' || !b.areaSpec) return 0;
+  const area = b.areaSpec as unknown as CaptureArea;
+  const verticals = b.layers.filter((l) => l.startsWith('v:')).map((l) => l.slice(2)).filter((v) => OSM_SELECTORS[v]);
+  if (!verticals.length) return 0;
+  const [s, w, n, e] = bboxOfArea(area);
+  const cLat = (s + n) / 2, cLon = (w + e) / 2;
+  const radius = haversineMeters({ lat: cLat, lon: cLon }, { lat: n, lon: e });
+  const cells = cellsForArea(cLat, cLon, radius).filter((c) => containsPoint(area, c.lat, c.lon));
+  let stamped = 0;
+  for (const v of verticals) {
+    for (const c of cells) {
+      const key = coverageCellKey(c.lat, c.lon);
+      await prisma.poiCoverage.upsert({
+        where: { coverage_cell_vertical: { cellKey: key, vertical: v } },
+        create: { cellKey: key, vertical: v, lat: c.lat, lon: c.lon, poiCount: 0, source: 'admin_capture' },
+        update: { fetchedAt: new Date(), source: 'admin_capture' },
+      });
+      stamped++;
+    }
+  }
+  return stamped;
+}
+
+export interface ReadinessInput { lat: number; lon: number; radiusM?: number; format?: string; vertical?: string; brand?: string }
+
+/**
+ * "What Territory Guard sees here right now" for a site pin — the same query, tiers, catchment
+ * radii and saturation curve the module uses, plus where the pin falls (PSGC barangay / city /
+ * province) so the admin can confirm the coordinate before capturing.
+ */
+export async function siteReadiness(input: ReadinessInput) {
+  const radiusM = Math.min(3_000, Math.max(200, input.radiusM ?? DEFAULT_SCAN_M));
+  const catchmentM = catchmentFor(input.format);
+  const concept = conceptForSite(input.vertical, input.brand);
+  const boundary = await resolveAdminBoundary(input.lat, input.lon);
+  const rows = await prisma.$queryRaw<Array<{ id: bigint; name: string; category: string; lat: number; lon: number; source: string; truth_layer: string }>>`
+    SELECT id, name, category::text AS category, lat, lon, source::text AS source, truth_layer::text AS truth_layer
+    FROM poi
+    WHERE geom IS NOT NULL
+      AND ST_DWithin(geom, ST_SetSRID(ST_MakePoint(${input.lon}, ${input.lat}), 4326)::geography, ${radiusM})
+    ORDER BY ST_Distance(geom, ST_SetSRID(ST_MakePoint(${input.lon}, ${input.lat}), 4326)::geography) ASC
+    LIMIT 1500`;
+  const places = rows.map((r) => {
+    const distM = Math.round(haversineMeters({ lat: input.lat, lon: input.lon }, { lat: r.lat, lon: r.lon }));
+    return { id: r.id.toString(), name: r.name, category: r.category, lat: r.lat, lon: r.lon, source: r.source, truthLayer: r.truth_layer, distM, tier: tierOfPlace(r, concept) };
+  });
+  const summary: TerritorySummary = summariseForTerritory(places, catchmentM);
+  let coverage: { cells: number; fresh: number } | null = null;
+  if (input.vertical && OSM_SELECTORS[input.vertical]) {
+    const cells = cellsForArea(input.lat, input.lon, radiusM);
+    const keys = cells.map((c) => coverageCellKey(c.lat, c.lon));
+    const fresh = await prisma.poiCoverage.count({
+      where: { vertical: input.vertical, cellKey: { in: keys }, fetchedAt: { gte: new Date(Date.now() - 90 * 24 * 3600 * 1000) } },
+    });
+    coverage = { cells: keys.length, fresh };
+  }
+  return {
+    site: { lat: input.lat, lon: input.lon },
+    boundary,
+    region: boundary?.region ?? regionForPoint(input.lat, input.lon),
+    catchmentM,
+    radiusM,
+    concept: concept ? { key: concept.key, label: concept.label } : null,
+    summary,
+    coverage,
+    places: places.slice(0, 600),
+    capped: rows.length >= 1500,
+  };
+}
+

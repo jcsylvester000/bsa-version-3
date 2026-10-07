@@ -5,6 +5,35 @@ The cross-thread state record. Read this (with the Master Instruction and the cu
 
 ---
 
+## 2026-10-07 — Place Capture aligned to Territory Guard + guided flow (⏳ awaiting push)
+
+Owner: "align this to the BSA Territory Guard; make setup + coordinates line up with what is saved; make it
+user friendly". **Skills:** 12, 01, 02, 03, 07, 11.
+
+- **Same rules as Territory Guard** — new pure `lib/capture/territoryAlign.ts`: site formats use
+  `FORMAT_CATCHMENT_M` (inline 900 / mall 1,200 / kiosk 600 m), default capture ring = the module's 1,500 m
+  scan radius, business types = the intake `Vertical` keys, tiers via the module's `conceptFor` + `tierFor`,
+  counts inside the catchment with `weightedCompetitorCount` + `competitiveSaturationPct`. Unit-tested
+  against the module's own functions (`captureTerritoryAlign.test.ts`).
+- **Coordinates ↔ DB** — `GET /api/admin/capture/readiness` (admin-only, zod): for a site pin returns the PSGC
+  barangay/city/province it falls in (or a "no boundary loaded" warning), what Territory Guard sees now
+  (direct / adjacent / saturation inside the catchment), coverage cells for the vertical, and the stored
+  places in the ring. Preview stores the site context (pin, vertical, brand, format) on the batch
+  (`area_spec.context`, no migration). **Commit now stamps `poi_coverage`** (source `admin_capture`) for every
+  coverage cell inside the area for each captured vertical — the same cell keys Territory Guard's cache reads
+  (`coverageCellKey`/`cellsForArea` exported from `poiCache`), so the first report there doesn't re-pull OSM.
+- **Guided screen** (`CaptureWorkbench` rewritten): tabs Capture / Import / History; steps 1 Drop the site pin
+  (click, drag, paste "lat, lon" or a Google-Maps URL, region jump) → 2 Business & catchment (type, brand,
+  format, ring, live "Territory Guard sees here now") → 3 Find places (context layers as simple checkboxes,
+  rectangle under Advanced) → 4 Review & save (grouped Direct / Adjacent / Other / Context / Needs decision /
+  Already in BSA, distance from site + "in catchment", **before → after Territory Guard counts**, add a missing
+  place). Map uses Territory Guard's marker vocabulary (diamond / square / dot) as GPU icons, catchment ring
+  filled + capture ring dashed, sticky map, compact legend. Basemap tint softened.
+- Verified: tsc 0 · vitest 53 files 538/538 (+7 align, +2 routes) · `next build` passes · rendered headless with
+  mocked API data through the whole flow. Not run against live Neon/Overpass.
+
+---
+
 ## 2026-10-07 — Basemap: CARTO → OpenStreetMap tiles (⏳ awaiting push)
 
 Owner screenshot: every map showed "API KEY REQUIRED" — CARTO's free basemaps now need a key. MapLibre stays

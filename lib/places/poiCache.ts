@@ -52,12 +52,12 @@ export function osmLiveEnabled(): boolean {
 /** Grid-cell key: lat/lon rounded to 3 decimals (~110m latitude / ~1.1km bucket). A report's
  *  ~800m radius touches at most a handful of cells; we key coverage at this granularity so a
  *  cell is a meaningful, reusable unit rather than a per-point cache. */
-function cellKey(lat: number, lon: number): string {
+export function coverageCellKey(lat: number, lon: number): string {
   return `${lat.toFixed(2)}:${lon.toFixed(2)}`; // ~1.1km cells
 }
 
 /** The set of cell keys (with centroids) a circular query area overlaps. */
-function cellsForArea(lat: number, lon: number, radiusM: number): Array<{ key: string; lat: number; lon: number }> {
+export function cellsForArea(lat: number, lon: number, radiusM: number): Array<{ key: string; lat: number; lon: number }> {
   // Step across the bounding box in ~1.1km steps (0.01deg) so every touched cell is covered.
   const step = 0.01;
   const dLat = radiusM / 111_320;

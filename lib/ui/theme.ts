@@ -41,15 +41,15 @@ export function defaultBasemapUrl(): string {
 /**
  * Raster paint for the basemap layer. OSM tiles exist only in a light style, so in the dark theme the
  * default tiles are inverted in the GPU (brightness flip + 180° hue rotation keeps water blue and parks
- * green) and slightly desaturated to sit behind the UI. Any other tile source is left untouched.
+ * green) and desaturated / softened so BSA's own markers stay readable on top. Any other tile source is left untouched.
  */
 export function basemapPaint(tileUrl: string): Record<string, number> {
   if (tileUrl !== OSM_TILE_URL || isLightThemeActive()) return {};
   return {
-    'raster-brightness-min': 0.95,
-    'raster-brightness-max': 0.08,
+    'raster-brightness-min': 0.9,
+    'raster-brightness-max': 0.1,
     'raster-hue-rotate': 180,
-    'raster-saturation': -0.35,
-    'raster-contrast': 0.05,
+    'raster-saturation': -0.55,
+    'raster-contrast': -0.15,
   };
 }
