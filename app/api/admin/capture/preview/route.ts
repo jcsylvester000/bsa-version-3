@@ -11,9 +11,10 @@ export const maxDuration = 26;
 const PREVIEW_LIMIT = { max: 40, windowMs: 60 * 60_000 };
 
 /**
- * POST /api/admin/capture/preview — pull places for a drawn area from OpenStreetMap (server-side)
- * and stage them as a DRAFT batch for review. Writes nothing to `poi`. Admin only.
- * Body: { area: {kind:'rect',south,west,north,east} | {kind:'circle',lat,lon,radiusM}, layers: string[], label? }
+ * POST /api/admin/capture/preview — pull places for an area from OpenStreetMap (server-side) and
+ * return them for the map. READ-ONLY: nothing is written to the database; the admin reviews on the
+ * map and then calls /save. Admin only.
+ * Body: { area: {kind:'rect',south,west,north,east} | {kind:'circle',lat,lon,radiusM}, layers: string[] }
  */
 export async function POST(req: NextRequest) {
   const g = await requireAdmin();

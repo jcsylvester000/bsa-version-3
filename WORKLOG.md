@@ -5,6 +5,38 @@ The cross-thread state record. Read this (with the Master Instruction and the cu
 
 ---
 
+## 2026-10-07 — Place Capture v2: show on the map first, then save (⏳ awaiting push)
+
+Owner report: "The capture request failed" (HTTP 500 on /preview) + React #418/#423 in the console; asked that places
+load onto the map first and only then be saved to the database. **Skills:** 12, 02, 03, 04, 01, 11.
+
+- **Workflow inverted.** `/preview` and `/import` are now READ-ONLY: fetch/parse, mark what BSA already holds
+  (best-effort read — if the DB can't be read the places still display with a note), return candidates. All review
+  happens in the browser on the map (decisions, renames, categories, hand-placed pins, "Not saved yet" badge,
+  leave-page warning). **`POST /save` is the only write**: committed batch + `poi` + PSGC tags + Territory Guard
+  coverage stamps + audit, idempotent on the OSM key. Removed: `/manual`, `PATCH|DELETE /batches/:id`,
+  `/batches/:id/commit`, draft batches.
+- **Integrity without server state:** each previewed OSM place carries an HMAC receipt (`lib/capture/signing.ts`,
+  AUTH_SECRET) over ref+name+tag+coords. On save the server re-derives trust: intact receipt → Verified (may refresh a
+  stored row); renamed/moved/file/manual → Assumed and `ON CONFLICT DO NOTHING` (never overwrites).
+- **Bug found and fixed:** the duplicate check used a nested `Prisma.join` inside the tagged `$queryRaw\`\`` form, which
+  fails with `42601 syntax error at or near "$1"`; switched to the function form `$queryRaw(Prisma.sql\`\`)` (same
+  pattern as the loaders).
+- **Diagnosable errors:** unexpected failures now return `[reason: …]` (`db_migration_pending`, `db_pg_trgm_missing`,
+  `db_postgis`, `timeout`, `db_unreachable`); the client reports non-JSON platform errors (502/504) by status.
+  The most likely cause of the owner's 500 is the `20261007000000_admin_poi_capture` migration not applied to the
+  database the app was using — the screen will now say `db_migration_pending` if so.
+- **Verified against a real Postgres 16 + PostGIS 3 + pgvector** (all 26 migrations applied from scratch, service run
+  through Prisma's wasm engine + pg adapter, OSM mocked): preview writes nothing; legacy typeless row recognised and
+  claimed; node 501 and way 501 stored separately; similar-name duplicate flagged; save tags barangay/city/province,
+  stamps coverage, renamed place saved Assumed, hand pin saved manual/Assumed; second save adds no rows; file import
+  never overwrites; readiness/history read back. tsc 0 · vitest 54 files 545/545 · `next build` passes · UI flow
+  run headless (pin → business → show on map → resolve duplicate → save) with no page errors.
+- React #418/#423 did not reproduce in the production build here (no page errors) — likely a browser extension
+  rewriting the page or a stale tab from before the deploy; re-check after this push.
+
+---
+
 ## 2026-10-07 — Place Capture aligned to Territory Guard + guided flow (⏳ awaiting push)
 
 Owner: "align this to the BSA Territory Guard; make setup + coordinates line up with what is saved; make it

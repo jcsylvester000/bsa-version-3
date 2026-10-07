@@ -22,9 +22,9 @@ export default async function AdminCapturePage() {
         <p className="overline">Admin</p>
         <h1 className="text-h1">Place Capture</h1>
         <p className="max-w-3xl text-body text-ink-muted">
-          Add places for new areas so brokers&apos; site analyses have real surroundings to work with. Pull them from
-          OpenStreetMap, import a Grid Navigator field session, or pin what is missing — then review and save.
-          Nothing is shared until you save a batch.
+          Add places for new areas so brokers&apos; site analyses have real surroundings to work with. Load them from
+          OpenStreetMap or a Grid Navigator field session onto the map first, check them there, then press
+          <strong> Save to BSA</strong>. Nothing is written to the database until you save.
         </p>
         <TruthLegend className="mt-1" />
       </div>

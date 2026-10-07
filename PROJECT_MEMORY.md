@@ -7,12 +7,13 @@ rewritten at the end of every work batch — if it disagrees with older notes (e
 
 _Last updated: 2026-10-07 — Admin Place Capture built (awaiting push); Design v2 batches 0–13 pushed (HEAD `498db86`, hotfix `db36c53`)._
 
-**Latest batch (2026-10-07, ⏳ awaiting push):** Admin → Place Capture (`/admin/capture`, admins only) —
-grid-navigator's capture loop inside BSA: live OSM area pull (≤25 km²), `.gridnav.json` import, manual pins
-→ draft batch → review → commit to `poi` (PSGC-tagged, audited). New regions **laguna** + **pampanga**.
-OSM natural key is now `(osm_type, osm_id)` (node/way collision fixed). Migration
-`20261007000000_admin_poi_capture` must be deployed. Full notes: `docs/ADMIN_POI_CAPTURE_PLAN.md` §11 + WORKLOG.
-**Key decisions:** only admins commit; grid-navigator stays a separate offline tool (BSA imports its files);
+**Latest batch (2026-10-07, ⏳ awaiting push):** Admin → Place Capture (`/admin/capture`, admins only), v2 workflow:
+pin a site (Territory Guard catchment rings + live "what Territory Guard sees") → **load places onto the map
+(read-only `/preview`, `/import`)** → review in the browser → **`/save` is the only write** (poi + PSGC + coverage
+stamps + audit; OSM receipts decide Verified vs Assumed). New regions **laguna** + **pampanga**. OSM key
+`(osm_type, osm_id)`. Migration `20261007000000_admin_poi_capture` must be deployed (errors now say
+`[reason: db_migration_pending]`). Notes: `docs/ADMIN_POI_CAPTURE_PLAN.md` §11 + WORKLOG.
+**Key decisions:** only admins save; nothing is written before Save; grid-navigator stays a separate offline tool (BSA imports its files);
 imported/manual places are Assumed and imports never overwrite stored places; ONE category rule
 (`lib/places/osmCategory.ts`) for every POI write path — business tags stay `competitor`.
 **Next:** owner deploys + smoke-tests; load Laguna/Pampanga boundaries + OSM sweeps; lease corridors for

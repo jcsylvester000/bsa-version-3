@@ -5,8 +5,8 @@ import { importNavigator } from '@/lib/services/capture';
 import { MAX_IMPORT_BYTES, NavigatorFileError } from '@/lib/capture/navigatorFile';
 
 /**
- * POST /api/admin/capture/import — stage a Grid Navigator session file (.gridnav.json) as a DRAFT
- * batch. The body is the file's JSON; `x-file-name` carries its name (display only). Capped at
+ * POST /api/admin/capture/import — read a Grid Navigator session file (.gridnav.json) and return its
+ * places for the map. READ-ONLY (save with /save). The body is the file's JSON; `x-file-name` carries its name (display only). Capped at
  * 10 MB — save the session WITHOUT map tiles. Tiles, routes and shapes are ignored. Admin only.
  */
 export async function POST(req: NextRequest) {

@@ -27,10 +27,24 @@ export function isJson(req: NextRequest): boolean {
   return (req.headers.get('content-type') ?? '').toLowerCase().includes('application/json');
 }
 
+/**
+ * Map a failure to a safe response. Known database failures get a short reason code (no internals)
+ * so the owner can diagnose from the screen, the same pattern as the analysis "[reason: …]" codes.
+ */
 export function captureErrorResponse(e: unknown): Response {
   if (e instanceof CaptureError) return fail({ code: e.code, message: e.message }, e.status);
   console.error('[admin/capture] failed', e);
-  return errors.server('The capture request failed. Nothing was saved to the places table.');
+  return fail({ code: 'server_error', message: `The capture request failed. Nothing was saved. [reason: ${reasonOf(e)}]` }, 500);
+}
+
+export function reasonOf(e: unknown): string {
+  const msg = e instanceof Error ? `${(e as { code?: string }).code ?? ''} ${e.message}` : String(e);
+  if (/poi_capture_(batch|item)|osm_type|capture_batch_id|column .* does not exist|relation .* does not exist|P2021|P2022/i.test(msg)) return 'db_migration_pending';
+  if (/function similarity|pg_trgm/i.test(msg)) return 'db_pg_trgm_missing';
+  if (/st_|postgis|geography/i.test(msg)) return 'db_postgis';
+  if (/timeout|timed out|ETIMEDOUT|57014/i.test(msg)) return 'timeout';
+  if (/ECONNRESET|ECONNREFUSED|P1001|P1017|fetch failed/i.test(msg)) return 'db_unreachable';
+  return 'unexpected';
 }
 
 const category = z.enum(BSA_POI_CATEGORIES as [BsaPoiCategory, ...BsaPoiCategory[]]);
@@ -38,7 +52,6 @@ const layer = z.string().refine(isLayerKey, 'Unknown layer') as unknown as z.Zod
 const label = z.string().trim().max(120).optional();
 const lat = z.number().finite().min(4).max(21);
 const lon = z.number().finite().min(116).max(127);
-
 const vertical = z.string().refine(isCaptureVertical, 'Unknown business type');
 const format = z.enum(['inline', 'mall', 'kiosk']);
 const brand = z.string().trim().max(80);
@@ -50,11 +63,29 @@ export const SiteContextSchema = z.object({
   format: format.optional(),
 });
 
+/** POST /preview — fetch only; nothing is written. */
 export const PreviewBody = z.object({
   area: CaptureAreaSchema,
   layers: z.array(layer).min(1).max(12),
+});
+
+/** POST /save — the reviewed places the admin chose to keep. */
+export const SaveBody = z.object({
+  source: z.enum(['osm', 'navigator_import', 'manual']),
   label,
+  area: CaptureAreaSchema.optional(),
+  layers: z.array(layer).max(12).optional(),
   context: SiteContextSchema.optional(),
+  items: z.array(z.object({
+    osmRef: z.string().regex(/^(node|way|relation)\/\d{1,15}$/).nullish(),
+    receipt: z.string().max(64).nullish(),
+    name: z.string().trim().min(1).max(200),
+    kind: z.string().max(120).nullish(),
+    category,
+    lat, lon,
+    origin: z.enum(['osm', 'file', 'manual']),
+    notes: z.string().max(500).nullish(),
+  })).min(1).max(5_000),
 });
 
 /** GET /readiness query. */
@@ -65,23 +96,6 @@ export const ReadinessQuery = z.object({
   format: format.optional(),
   vertical: vertical.optional(),
   brand: brand.optional(),
-});
-
-export const ManualBody = z.object({
-  batchId: z.string().uuid().optional(),
-  lat, lon,
-  name: z.string().trim().min(1).max(200),
-  category,
-  notes: z.string().max(500).optional(),
-});
-
-export const ItemsPatchBody = z.object({
-  updates: z.array(z.object({
-    id: z.string().regex(/^\d{1,18}$/),
-    decision: z.enum(['accept', 'reject', 'pending']).optional(),
-    name: z.string().max(200).optional(),
-    category: category.optional(),
-  })).min(1).max(1_000),
 });
 
 /** "south,west,north,east" with a size cap (map context reads). */

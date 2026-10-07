@@ -13,20 +13,20 @@ vi.mock('@/lib/auth/rateLimit', () => ({
 }));
 const svc = {
   previewArea: vi.fn(async () => ({ batchId: 'b', staged: 3, skipped: {}, notes: [] })),
-  commitBatch: vi.fn(async () => ({ committed: 3, psgcTagged: 3, skippedExisting: 0 })),
+  saveCapture: vi.fn(async () => ({ batchId: 'b', saved: 3, inBsa: 3, psgcTagged: 3, skippedExisting: 0, coverageStamped: 0 })),
   importNavigator: vi.fn(async () => ({ batchId: 'b', staged: 1, stats: {} })),
   siteReadiness: vi.fn(async () => ({ summary: {} })),
 };
 vi.mock('@/lib/services/capture', () => ({
   CaptureError: class CaptureError extends Error { constructor(public code: string, m: string, public status = 400) { super(m); } },
   previewArea: (...a: unknown[]) => svc.previewArea(...(a as [])),
-  commitBatch: (...a: unknown[]) => svc.commitBatch(...(a as [])),
+  saveCapture: (...a: unknown[]) => svc.saveCapture(...(a as [])),
   importNavigator: (...a: unknown[]) => svc.importNavigator(...(a as [])),
   siteReadiness: (...a: unknown[]) => svc.siteReadiness(...(a as [])),
 }));
 
 import { POST as preview } from '@/app/api/admin/capture/preview/route';
-import { POST as commit } from '@/app/api/admin/capture/batches/[id]/commit/route';
+import { POST as save } from '@/app/api/admin/capture/save/route';
 import { POST as importRoute } from '@/app/api/admin/capture/import/route';
 import { GET as readiness } from '@/app/api/admin/capture/readiness/route';
 
@@ -34,7 +34,8 @@ const admin = { id: '11111111-1111-4111-8111-111111111111', email: 'a@grid', rol
 const analyst = { ...admin, role: 'analyst' };
 const broker = { ...admin, role: 'broker' };
 const area = { kind: 'circle', lat: 14.2846, lon: 121.0966, radiusM: 800 };
-const BATCH = '22222222-2222-4222-8222-222222222222';
+const item = { osmRef: 'node/1', receipt: 'x'.repeat(32), name: 'Jollibee Nuvali', kind: 'amenity=fast_food', category: 'competitor', lat: 14.2846, lon: 121.0966, origin: 'osm' };
+const saveBody = { source: 'osm', items: [item] };
 
 function req(url: string, body?: unknown, contentType = 'application/json') {
   return new NextRequest(`http://localhost${url}`, {
@@ -53,11 +54,11 @@ describe('admin capture routes', () => {
     for (const u of [analyst, broker]) {
       session.mockResolvedValue(u);
       expect((await preview(req('/api/admin/capture/preview', { area, layers: ['anchors'] }))).status).toBe(403);
-      expect((await commit(req(`/api/admin/capture/batches/${BATCH}/commit`), { params: { id: BATCH } })).status).toBe(403);
+      expect((await save(req('/api/admin/capture/save', saveBody))).status).toBe(403);
       expect((await importRoute(req('/api/admin/capture/import', { checkpoints: [], routes: [] }))).status).toBe(403);
     }
     expect(svc.previewArea).not.toHaveBeenCalled();
-    expect(svc.commitBatch).not.toHaveBeenCalled();
+    expect(svc.saveCapture).not.toHaveBeenCalled();
     expect(svc.importNavigator).not.toHaveBeenCalled();
   });
 
@@ -74,14 +75,18 @@ describe('admin capture routes', () => {
     const r = await preview(req('/api/admin/capture/preview', { area, layers: ['anchors', 'v:fnb_qsr'] }));
     expect(r.status).toBe(200);
     expect(svc.previewArea).toHaveBeenCalledOnce();
-    const c = await commit(req(`/api/admin/capture/batches/${BATCH}/commit`), { params: { id: BATCH } });
-    expect(c.status).toBe(200);
+    expect((await save(req('/api/admin/capture/save', saveBody))).status).toBe(200);
+    expect(svc.saveCapture).toHaveBeenCalledOnce();
   });
 
-  it('commit 404s a non-UUID batch id without touching the DB', async () => {
+  it('save validates every place before anything is written', async () => {
     session.mockResolvedValue(admin);
-    expect((await commit(req('/api/admin/capture/batches/x/commit'), { params: { id: "1' OR '1'='1" } })).status).toBe(404);
-    expect(svc.commitBatch).not.toHaveBeenCalled();
+    expect((await save(req('/api/admin/capture/save', { source: 'osm', items: [] }))).status).toBe(422);
+    expect((await save(req('/api/admin/capture/save', { source: 'osm', items: [{ ...item, lat: 35.6 }] }))).status).toBe(422);
+    expect((await save(req('/api/admin/capture/save', { source: 'osm', items: [{ ...item, osmRef: "node/1'; drop" }] }))).status).toBe(422);
+    expect((await save(req('/api/admin/capture/save', { source: 'osm', items: [{ ...item, category: 'bogus' }] }))).status).toBe(422);
+    expect((await save(req('/api/admin/capture/save', 'a=b', 'application/x-www-form-urlencoded'))).status).toBe(415);
+    expect(svc.saveCapture).not.toHaveBeenCalled();
   });
 
   it('import refuses oversized and non-JSON files', async () => {
@@ -104,10 +109,10 @@ describe('admin capture routes', () => {
     expect(svc.siteReadiness).toHaveBeenCalledWith(expect.objectContaining({ lat: 14.28, lon: 121.09, vertical: 'fnb_qsr', format: 'mall', radiusM: 1500 }));
   });
 
-  it('preview accepts a Territory Guard site context and rejects an unknown business type', async () => {
+  it('save accepts the Territory Guard site context and rejects an unknown business type', async () => {
     session.mockResolvedValue(admin);
     const ctx = { site: { lat: 14.2846, lon: 121.0966 }, vertical: 'fnb_qsr', brand: 'Jollibee', format: 'inline' };
-    expect((await preview(req('/api/admin/capture/preview', { area, layers: ['v:fnb_qsr'], context: ctx }))).status).toBe(200);
-    expect((await preview(req('/api/admin/capture/preview', { area, layers: ['v:fnb_qsr'], context: { ...ctx, vertical: 'nope' } }))).status).toBe(422);
+    expect((await save(req('/api/admin/capture/save', { ...saveBody, area, layers: ['v:fnb_qsr'], context: ctx }))).status).toBe(200);
+    expect((await save(req('/api/admin/capture/save', { ...saveBody, context: { ...ctx, vertical: 'nope' } }))).status).toBe(422);
   });
 });

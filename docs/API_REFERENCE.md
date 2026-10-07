@@ -34,26 +34,27 @@ capped at 5 accounts per IP per hour; new passwords need 10+ characters.
 `POST /api/admin/reconcile-composites` and `POST /api/admin/warm` require **role admin**;
 `GET /api/admin/data-stats` requires staff (admin/analyst). Others → `403 forbidden`.
 
-### Admin Place Capture (`/api/admin/capture/*`, 2026-10-07) — **admin only**, JSON bodies only
+### Admin Place Capture (`/api/admin/capture/*`) — **admin only**, JSON bodies only
+Workflow (v2, 2026-10-07): **preview/import are read-only → the admin reviews on the map → `/save` is the only write.**
+
 | Method & path | Body / query | Returns |
 |---|---|---|
-| `POST /preview` | `{ area: {kind:'rect',south,west,north,east} \| {kind:'circle',lat,lon,radiusM 50–3000}, layers: string[1–12], label?, context?: { site, vertical, brand, format } }` | `{ batchId, staged, skipped, notes }` — live OSM pull (server-side, 18 s budget), staged as a draft. ≤ 25 km² per call; 40 pulls / admin / hour. |
-| `POST /import` | the `.gridnav.json` file as the JSON body; header `x-file-name` | `{ batchId, staged, stats }`. ≤ 10 MB; tiles/routes ignored. `413` too large, `422` not a Grid Navigator file. |
-| `POST /manual` | `{ batchId?, lat, lon, name, category, notes? }` | `{ batchId }` — one hand-placed pin (Assumed). |
-| `GET /batches` | — | 30 most recent batches. |
-| `GET /batches/:id` | — | `{ batch, counts, items[] }` for review. |
-| `PATCH /batches/:id` | `{ updates: [{ id, decision?, name?, category? }] }` (≤ 1000) | `{ changed }` — draft only. |
-| `DELETE /batches/:id` | — | discard a draft (kept for audit). |
-| `POST /batches/:id/commit` | — | `{ committed, psgcTagged, skippedExisting, coverageStamped }` — also stamps `poi_coverage` for the captured verticals so Territory Guard treats the area as covered; — the only capture write into `poi`; `409 pending_items` while any item is undecided. Re-runnable. |
-| `GET /coverage` | — | committed areas (GeoJSON) + POI totals per region. |
-| `GET /readiness?lat&lon[&radiusM&format&vertical&brand]` | format inline/mall/kiosk; vertical = intake key | PSGC boundary of the pin + what Territory Guard sees there now (same tiers, catchment, saturation) + coverage cells + stored places in the ring. |
+| `GET /readiness?lat&lon[&radiusM&format&vertical&brand]` | format inline/mall/kiosk; vertical = intake key | PSGC boundary of the pin + what Territory Guard sees there now (same tiers, catchment, saturation) + coverage cells + stored places in the ring. Read-only. |
+| `POST /preview` | `{ area: {kind:'rect',south,west,north,east} \| {kind:'circle',lat,lon,radiusM 50–3000}, layers: string[1–12] }` | `{ candidates[], skipped, notes }` — live OSM pull (server-side, 18 s budget), **writes nothing**. Each OSM candidate carries an HMAC `receipt`; `existingPoiId` / `duplicateOf` mark what BSA already holds (best-effort read). ≤ 25 km²; 40 pulls / admin / hour. |
+| `POST /import` | the `.gridnav.json` file as the JSON body; header `x-file-name` | `{ candidates[], stats, notes }` — **writes nothing**. ≤ 10 MB; tiles/routes ignored. `413` too large, `422` not a Grid Navigator file. |
+| `POST /save` | `{ source: osm\|navigator_import\|manual, label?, area?, layers?, context?: { site, vertical, brand, format }, items: [{ osmRef?, receipt?, name, kind?, category, lat, lon, origin: osm\|file\|manual, notes? }] (1–5000) }` | `{ batchId, saved, inBsa, psgcTagged, skippedExisting, coverageStamped }` — the only write: committed batch record, `poi` upsert (intact receipt → Verified and may refresh a stored row; otherwise Assumed and never overwrites), PSGC tags, Territory Guard `poi_coverage` stamps, audit. Idempotent. |
+| `GET /batches` | — | the 30 most recent saved captures. |
+| `GET /batches/:id` | — | a saved capture and the places it saved (view on the map). |
+| `GET /coverage` | — | saved areas (GeoJSON) + POI totals per region. |
 | `GET /pois?bbox=s,w,n,e` | bbox ≤ ~55 km a side | places already in BSA (map context). |
 | `POST /pois/:id/verify` | — | field-confirm a manual pin → Verified. |
 
+Errors carry a reason code instead of a bare 500, e.g. `[reason: db_migration_pending]` (run `npx prisma migrate deploy`),
+`db_pg_trgm_missing`, `db_postgis`, `timeout`, `db_unreachable`.
+
 Layers: `anchors` (grid-navigator's navigation set), `transport`, `health`, `education`, `malls`, `offices`,
 and `v:<vertical>` competitor sets (keys of `osmService.OSM_SELECTORS`). Overpass queries are built only from
-these constant selector tables — client text never reaches Overpass QL. Every preview/import/review/commit/
-discard/verify is written to `audit_log` (`poi.capture.*`, `poi.verify`).
+these constant selector tables — client text never reaches Overpass QL. Every preview/import/save/verify is written to `audit_log` (`poi.capture.*`, `poi.verify`).
 
 ## POST /api/auth/logout
 Clears the session cookie. Returns `{ loggedOut: true }`.
