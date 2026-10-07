@@ -71,6 +71,13 @@ export function OnboardingTour({ show }: { show: boolean }) {
   const [open, setOpen] = useState(show || replay);
   const [i, setI] = useState(0);
   const [rect, setRect] = useState<DOMRect | null>(null);
+  const [viewport, setViewport] = useState({ w: 1280, h: 800 });
+  useEffect(() => {
+    const read = () => setViewport({ w: window.innerWidth, h: window.innerHeight });
+    read();
+    window.addEventListener('resize', read);
+    return () => window.removeEventListener('resize', read);
+  }, []);
 
   const step = STEPS[i];
 
@@ -135,8 +142,9 @@ export function OnboardingTour({ show }: { show: boolean }) {
   // now (~560px), so when it's anchored we clamp its left edge to keep it fully on-screen
   // even if the anchor sits close to the right side of the viewport.
   const CARD_W = 560;
-  const vw = typeof window !== 'undefined' ? window.innerWidth : 1280;
-  const vh = typeof window !== 'undefined' ? window.innerHeight : 800;
+  // Viewport from state (set after mount) so the server render and the first client render match.
+  const vw = viewport.w;
+  const vh = viewport.h;
   const cardStyle: React.CSSProperties = rect
     ? {
         position: 'fixed',

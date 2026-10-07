@@ -383,23 +383,68 @@ export async function establishmentsNear(
 export const NCR_BBOX: [number, number, number, number] = [14.35, 120.90, 14.78, 121.15];
 
 /**
- * Admin capture (2026-10-07): raw Overpass elements for an arbitrary selector set inside a bbox,
- * with a hard time budget so a web request returns before the platform's function timeout. One
- * query (node + way per selector), `out center` so buildings resolve to a point. The caller maps
- * and filters (lib/capture/mapElement). `selectors` must be Overpass tag filters built from our own
- * constant tables — never raw user text.
+ * Admin capture: raw Overpass elements for a selector set inside a bbox (2026-10-07, v3).
+ *
+ * Tuned for an interactive admin screen behind a ~26 s serverless function limit:
+ *  - the screen asks for ONE layer per request (small, fast queries) instead of everything at once;
+ *  - each request tries up to two public Overpass endpoints, splitting the time budget between them,
+ *    so one overloaded instance doesn't fail the whole request;
+ *  - answers are cached in memory for 30 minutes (per server instance), so re-showing or retrying
+ *    the same ring does not call OpenStreetMap again.
+ * `selectors` must come from our own constant tables — never raw user text.
  */
+const CAPTURE_CACHE_TTL_MS = 30 * 60_000;
+const CAPTURE_CACHE_MAX = 60;
+const captureCache = new Map<string, { at: number; elements: OverpassElement[] }>();
+
+export function clearCaptureCache(): void {
+  captureCache.clear();
+}
+
 export async function captureElementsInBbox(
   selectors: string[],
   bbox: [number, number, number, number],
-  opts: { max?: number; budgetMs?: number } = {},
+  opts: { max?: number; budgetMs?: number; useCache?: boolean } = {},
 ): Promise<OverpassElement[]> {
-  const [s, w, n, e] = bbox;
-  const budgetMs = Math.max(5_000, Math.min(opts.budgetMs ?? 18_000, 50_000));
+  const [s, w, n, e] = bbox.map((v) => Math.round(v * 1e5) / 1e5) as [number, number, number, number];
+  const key = `${[...selectors].sort().join('|')}@${s},${w},${n},${e}#${opts.max ?? 5000}`;
+  const hit = captureCache.get(key);
+  if (opts.useCache !== false && hit && Date.now() - hit.at < CAPTURE_CACHE_TTL_MS) return hit.elements;
+
+  const budgetMs = Math.max(6_000, Math.min(opts.budgetMs ?? 20_000, 50_000));
+  const deadline = Date.now() + budgetMs;
   const parts = selectors
     .map((sel) => `  node[${sel}](${s},${w},${n},${e});\n  way[${sel}](${s},${w},${n},${e});`)
     .join('\n');
-  const serverTimeout = Math.max(5, Math.floor(budgetMs / 1000) - 2);
-  const ql = `[out:json][timeout:${serverTimeout}];\n(\n${parts}\n);\nout center ${opts.max ?? 5000};`;
-  return runOverpass(ql, false, { fetchTimeoutMs: budgetMs, maxRetries: 1 });
+  let lastErr: unknown = null;
+  // Attempt 1 gets ~60% of the budget on the main instance; attempt 2 the rest on the next one.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const left = deadline - Date.now();
+    if (left < 3_000) break;
+    const slice = attempt === 0 ? Math.floor(left * 0.6) : left - 250;
+    const ql = `[out:json][timeout:${Math.max(3, Math.floor(slice / 1000) - 1)}];\n(\n${parts}\n);\nout center ${opts.max ?? 5000};`;
+    const endpoint = OVERPASS_ENDPOINTS[attempt % OVERPASS_ENDPOINTS.length];
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), slice);
+    try {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'GridBSA/1.0 (site-analysis; admin capture)' },
+        body: 'data=' + encodeURIComponent(ql),
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+      if (!res.ok) { lastErr = new Error(`Overpass ${res.status} on ${endpoint}`); continue; }
+      const data = (await res.json()) as { elements?: OverpassElement[]; remark?: string };
+      if (data.remark && /timed out|out of memory/i.test(data.remark)) { lastErr = new Error(data.remark); continue; }
+      const elements = data.elements ?? [];
+      if (captureCache.size >= CAPTURE_CACHE_MAX) captureCache.delete(captureCache.keys().next().value as string);
+      captureCache.set(key, { at: Date.now(), elements });
+      return elements;
+    } catch (err) {
+      clearTimeout(timer);
+      lastErr = err;
+    }
+  }
+  throw lastErr ?? new Error('Overpass unavailable');
 }

@@ -51,11 +51,17 @@ export function isCaptureVertical(v: unknown): v is string {
   return typeof v === 'string' && CAPTURE_VERTICALS.some((x) => x.key === v);
 }
 
-/** Layers to pull for a site: the vertical's competitor set + the context Territory Guard's neighbours use. */
-export function layersForSite(vertical: string | null | undefined, extras: LayerKey[]): LayerKey[] {
-  const v = vertical ? (`v:${vertical}` as LayerKey) : null;
+/** Most business types one capture can include. */
+export const MAX_CAPTURE_VERTICALS = 6;
+
+/** Layers to pull for a site: each chosen vertical's competitor set + the context layers. */
+export function layersForSite(verticals: string | string[] | null | undefined, extras: LayerKey[]): LayerKey[] {
+  const list = (Array.isArray(verticals) ? verticals : verticals ? [verticals] : []).slice(0, MAX_CAPTURE_VERTICALS);
   const out: LayerKey[] = [];
-  if (v && VERTICAL_LAYERS.some((l) => l.key === v)) out.push(v);
+  for (const v of list) {
+    const k = `v:${v}` as LayerKey;
+    if (VERTICAL_LAYERS.some((l) => l.key === k) && !out.includes(k)) out.push(k);
+  }
   for (const e of extras) if (!out.includes(e)) out.push(e);
   return out.slice(0, 12);
 }
@@ -71,6 +77,19 @@ export function tierOfPlace(p: { name: string; category: string }, concept: Conc
   if (p.category !== 'competitor') return 'context';
   if (!concept) return 'unrelated';
   return tierFor({ name: p.name, primaryType: null }, concept);
+}
+
+const TIER_RANK: Record<PlaceTier, number> = { direct: 3, adjacent: 2, unrelated: 1, context: 0 };
+
+/** Strongest tier a place has across several business types (multi-select capture). */
+export function tierAcross(p: { name: string; category: string }, concepts: Array<ConceptDef | null>): PlaceTier {
+  if (p.category !== 'competitor') return 'context';
+  let best: PlaceTier = 'unrelated';
+  for (const c of concepts) {
+    const t = tierOfPlace(p, c);
+    if (TIER_RANK[t] > TIER_RANK[best]) best = t;
+  }
+  return best;
 }
 
 export interface TerritorySummary {

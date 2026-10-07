@@ -106,3 +106,25 @@ describe('dashboard', () => {
     expect(d.truthMix.projected).toBe(1);
   });
 });
+
+describe('territory deal-breaker (2026-10-07)', () => {
+  it('the owner scenario: 75 % overlap can never score Proceed, whatever the other modules say', async () => {
+    const { siteCompositeFromModules, territoryGate, gateComposite } = await import('@/lib/modules/scorecard');
+    const mods = [
+      { module: 'site_fit', score: 90, truthLayer: 'assumed' as const, note: '' },
+      { module: 'territory', score: 75.3, truthLayer: 'projected' as const, note: '' },
+      { module: 'lease', score: 90, truthLayer: 'assumed' as const, note: '' },
+      { module: 'daypart', score: 85, truthLayer: 'projected' as const, note: '' },
+      { module: 'informal', score: 90, truthLayer: 'projected' as const, note: '' },
+      { module: 'land', score: 90, truthLayer: 'projected' as const, note: '' },
+    ];
+    const r = siteCompositeFromModules(mods);
+    expect(r.uncapped!).toBeGreaterThanOrEqual(65); // the weighted average alone would say Go
+    expect(r.composite).toBe(44);
+    expect(r.band).toBe('nogo');
+    expect(territoryGate(20).maxBand).toBe('caution');
+    expect(gateComposite(80, 20)).toBe(64);
+    expect(gateComposite(80, 10)).toBe(80);
+    expect(territoryGate(null).cap).toBeNull();
+  });
+});

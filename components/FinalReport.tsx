@@ -18,6 +18,7 @@ export function FinalReportHero({
   analysedAt,
   truthPct,
   limited: limitedProp,
+  capNote,
 }: {
   summary: SiteSummary;
   composite?: number | null;
@@ -35,6 +36,8 @@ export function FinalReportHero({
    * decides the call (audit F-07), so the hero must show the same verdict as the dashboard.
    */
   limited?: boolean;
+  /** Why the composite was capped (territory deal-breaker), shown under the rationale. */
+  capNote?: string | null;
 }) {
   const limited = limitedProp ?? summary.coverage < 2;
   const thinData = !limited && summary.coverage < 2;
@@ -72,6 +75,7 @@ export function FinalReportHero({
 
       <div className="flex flex-col justify-center gap-6 p-6 md:px-10 md:py-9">
         <p className="rationale text-pretty">{summary.headline}</p>
+        {capNote && <p className="text-label font-normal text-nogo">✕ {capNote}</p>}
         {thinData && (
           <p className="text-label font-normal text-ink-muted">
             Limited module data — {summary.coverage} of 3 core modules rated. The call follows the site&apos;s composite score; confirm on the ground.

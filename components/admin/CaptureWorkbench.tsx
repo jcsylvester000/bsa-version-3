@@ -1,29 +1,32 @@
 'use client';
 
 /**
- * Admin Place Capture — grid-navigator's capture loop, aligned to Territory Guard (2026-10-07).
+ * Admin Place Capture — v3 (2026-10-07). Show on the map first, then save only what is new.
  *
- *   1 · Drop the site pin      → coordinate + PSGC barangay/city/province it falls in
- *   2 · Business & catchment   → same catchment rings, tiers and saturation Territory Guard uses,
- *                                with a live "what Territory Guard sees here now" read-out
- *   3 · Show on the map        → pull the ring from OpenStreetMap (server-side, READ-ONLY) and draw it
- *   4 · Review & save          → everything stays in the browser while the admin reviews; only
- *                                "Save to BSA" writes — `poi`, PSGC tags, Territory Guard coverage, audit
+ *   1 · Drop the site pin (any of the 18 regions)    → PSGC barangay/city/province of the pin
+ *   2 · Business types (tick several) & catchment     → Territory Guard's rings + live read per type
+ *   3 · Show places on the map                         → places BSA already holds come from the database;
+ *                                                        OpenStreetMap is asked ONE LAYER AT A TIME, only for
+ *                                                        layers this area has not been captured for (90 days);
+ *                                                        only NEW places are listed
+ *   4 · Review all captured areas, then Save           → status screen per area (saved / already in BSA /
+ *                                                        barangay-tagged / coverage marked)
  *
  * The browser never calls OpenStreetMap or the database: everything goes through the admin-only
- * /api/admin/capture/* routes. If the admin leaves before saving, nothing was written.
+ * /api/admin/capture/* routes, and nothing is written until Save.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { defaultBasemapUrl, basemapPaint, OSM_ATTRIBUTION, OSM_MAX_ZOOM } from '@/lib/ui/theme';
 import { listRegions } from '@/lib/geo/regions';
+import { PH_REGIONS } from '@/lib/geo/phRegions';
 import { geoCircle } from '@/lib/geo/mapGeometry';
-import { BASE_LAYERS, type BaseLayerKey, type LayerKey } from '@/lib/capture/layers';
+import { ALL_LAYERS, BASE_LAYERS, type BaseLayerKey, type LayerKey } from '@/lib/capture/layers';
 import { areaGeoJson, areaKm2, distanceM, MAX_CAPTURE_KM2, type CaptureArea } from '@/lib/capture/area';
 import {
-  CAPTURE_VERTICALS, SITE_FORMATS, DEFAULT_SCAN_M, catchmentFor, conceptForSite, layersForSite,
-  parseLatLon, summariseForTerritory, tierOfPlace, type PlaceTier, type SiteFormat, type TerritorySummary,
+  CAPTURE_VERTICALS, SITE_FORMATS, DEFAULT_SCAN_M, MAX_CAPTURE_VERTICALS, catchmentFor, conceptForSite, layersForSite,
+  parseLatLon, tierAcross, type PlaceTier, type SiteFormat, type TerritorySummary,
 } from '@/lib/capture/territoryAlign';
 import { BSA_POI_CATEGORIES, CATEGORY_LABEL, type BsaPoiCategory } from '@/lib/places/osmCategory';
 import { markerElement } from '@/components/MapMarkers';
@@ -33,46 +36,47 @@ type Decision = 'accept' | 'reject' | 'pending';
 type MapMode = 'site' | 'rect' | 'add' | 'none';
 type Tab = 'capture' | 'import' | 'history';
 
-interface BatchSummary {
-  id: string; label: string; source: string; itemCount: number; committedCount: number; createdAt: string; createdBy: string | null;
-}
-interface SiteContext { site?: { lat: number; lon: number }; vertical?: string; brand?: string; format?: SiteFormat }
-/** A place returned by /preview or /import (nothing stored yet). */
+interface BatchSummary { id: string; label: string; source: string; itemCount: number; committedCount: number; createdAt: string; createdBy: string | null }
+interface SiteContext { site?: { lat: number; lon: number }; verticals?: string[]; vertical?: string; brand?: string; format?: SiteFormat }
 interface Candidate {
   key: string; osmRef: string | null; name: string; kind: string | null; category: BsaPoiCategory;
   lat: number; lon: number; origin: 'osm' | 'file' | 'manual'; truthLayer: 'verified' | 'assumed';
   receipt?: string; existingPoiId: string | null; duplicateOf: { id: string; name: string } | null;
   needsReview?: boolean; notes?: string | null;
 }
-/** A place under review in the browser. */
-interface ReviewItem extends Candidate { decision: Decision; originalName: string }
-/** The working set shown on the map — lives only in the browser until saved. */
-interface Review {
-  source: 'osm' | 'navigator_import' | 'manual';
+interface ReviewItem extends Candidate { decision: Decision; originalName: string; areaId: string }
+interface StoredPlace { id: string; name: string; category: string; lat: number; lon: number; source: string; truthLayer: string; osmRef: string | null }
+interface LayerRun { layer: LayerKey; status: 'waiting' | 'loading' | 'loaded' | 'covered' | 'failed'; found: number; newCount: number; inBsa: number; message?: string }
+interface SaveResult { batchId: string; saved: number; alreadyInBsa: number; psgcTagged: number; coverageStamped: number }
+interface VerticalRead { vertical: string; concept: { key: string; label: string } | null; summary: TerritorySummary }
+/** One captured area (a ring around a pin, a rectangle, a file, or hand-placed pins). */
+interface AreaRun {
+  id: string;
   label: string;
+  source: 'osm' | 'navigator_import' | 'manual';
   area?: CaptureArea;
-  layers?: LayerKey[];
   context?: SiteContext;
+  layers: LayerRun[];
+  stored: StoredPlace[];
   notes: string[];
-  items: ReviewItem[];
-  saved?: { batchId: string; saved: number; inBsa: number; psgcTagged: number; skippedExisting: number; coverageStamped: number };
-  /** A saved batch opened from History (read-only). */
+  before?: VerticalRead[];
+  after?: VerticalRead[];
+  saved?: SaveResult;
+  saveError?: string;
   readOnly?: boolean;
-}
-interface SavedBatch {
-  batch: BatchSummary & { notes: string | null; areaSpec: (CaptureArea & { context?: SiteContext | null }) | null; layers: string[] };
-  items: Array<{ key: string; osmRef: string | null; name: string; kind: string | null; category: BsaPoiCategory; lat: number; lon: number; truthLayer: 'verified' | 'assumed' | 'projected'; committedPoiId: string | null; notes: string | null }>;
 }
 interface Readiness {
   boundary: { psgcCode: string; barangay: string | null; city: string | null; province: string | null; region: string | null } | null;
   region: string | null;
   catchmentM: number;
   radiusM: number;
-  concept: { key: string; label: string } | null;
-  summary: TerritorySummary;
-  coverage: { cells: number; fresh: number } | null;
+  byVertical: VerticalRead[];
+  coverage: Array<{ vertical: string; cells: number; fresh: number }>;
   places: Array<{ id: string; name: string; category: string; lat: number; lon: number; distM: number; tier: PlaceTier }>;
-  capped: boolean;
+}
+interface SavedBatch {
+  batch: BatchSummary & { notes: string | null; areaSpec: (CaptureArea & { context?: SiteContext | null }) | null; layers: string[] };
+  items: Array<{ key: string; osmRef: string | null; name: string; kind: string | null; category: BsaPoiCategory; lat: number; lon: number; truthLayer: 'verified' | 'assumed' | 'projected'; committedPoiId: string | null; notes: string | null }>;
 }
 type ApiResult<T> = { ok: true; data: T } | { ok: false; error: { code: string; message: string } };
 
@@ -86,20 +90,21 @@ async function api<T>(url: string, init?: RequestInit): Promise<ApiResult<T>> {
   try {
     return (await res.json()) as ApiResult<T>;
   } catch {
-    // Non-JSON (e.g. a platform timeout page) — say what happened instead of a generic error.
-    return { ok: false, error: { code: `http_${res.status}`, message: `The server answered ${res.status}${res.status === 504 || res.status === 502 ? ' (it took too long — try a smaller ring)' : ''}. Nothing was saved.` } };
+    return { ok: false, error: { code: `http_${res.status}`, message: `The server answered ${res.status}${res.status === 504 || res.status === 502 ? ' (it took too long)' : ''}. Nothing was saved.` } };
   }
-}
-
-/** Initial review decision for a place from the server. */
-function initialDecision(c: Candidate): Decision {
-  if (c.origin === 'file' && c.existingPoiId) return 'reject'; // imports never overwrite stored places
-  if (c.duplicateOf || c.needsReview) return 'pending';
-  return 'accept';
 }
 const jsonInit = (method: string, body?: unknown): RequestInit => ({
   method, headers: { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body),
 });
+
+function initialDecision(c: Candidate): Decision {
+  if (c.duplicateOf || c.needsReview) return 'pending';
+  return 'accept';
+}
+
+const LAYER_LABEL: Record<string, string> = Object.fromEntries(ALL_LAYERS.map((l) => [l.key, l.label]));
+let areaSeq = 0;
+const newAreaId = () => `a${Date.now().toString(36)}${(areaSeq++).toString(36)}`;
 
 /** Theme colour from the CSS tokens ("R G B" triplets) so the map follows dark/light. */
 function token(name: string, fallback: string): string {
@@ -162,25 +167,26 @@ export function CaptureWorkbench() {
   const [site, setSite] = useState<{ lat: number; lon: number } | null>(null);
   const [coordText, setCoordText] = useState('');
   const [coordErr, setCoordErr] = useState<string | null>(null);
-  // Step 2 — business & catchment
-  const [vertical, setVertical] = useState('');
+  // Step 2 — business types & catchment
+  const [verticals, setVerticals] = useState<string[]>([]);
   const [brand, setBrand] = useState('');
   const [format, setFormat] = useState<SiteFormat>('inline');
   const [radiusM, setRadiusM] = useState(DEFAULT_SCAN_M);
   const [extras, setExtras] = useState<BaseLayerKey[]>(['anchors', 'transport', 'health', 'education']);
+  const [refresh, setRefresh] = useState(false);
   const [readiness, setReadiness] = useState<Readiness | null>(null);
   const [readyLoading, setReadyLoading] = useState(false);
-  // Advanced: rectangle instead of the ring
   const [rect, setRect] = useState<CaptureArea | null>(null);
   const rectStart = useRef<{ lat: number; lon: number } | null>(null);
-  // Review (browser-only until saved)
+  // Session: every area captured since the last save, and the places found in them
+  const [areas, setAreas] = useState<AreaRun[]>([]);
+  const [items, setItems] = useState<ReviewItem[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ tone: 'ok' | 'err'; text: string } | null>(null);
-  const [review, setReview] = useState<Review | null>(null);
-  const [before, setBefore] = useState<TerritorySummary | null>(null);
-  const [after, setAfter] = useState<TerritorySummary | null>(null);
+  const [status, setStatus] = useState<null | { at: string; areas: AreaRun[] }>(null);
   const [batches, setBatches] = useState<BatchSummary[]>([]);
-  const [group, setGroup] = useState<'all' | PlaceTier | 'pending' | 'existing'>('all');
+  const [group, setGroup] = useState<'all' | PlaceTier | 'pending'>('all');
+  const [areaFilter, setAreaFilter] = useState<string>('all');
   const [search, setSearch] = useState('');
   const [shown, setShown] = useState(PAGE);
   const [selected, setSelected] = useState<string | null>(null);
@@ -191,8 +197,10 @@ export function CaptureWorkbench() {
 
   useEffect(() => { modeRef.current = mode; if (mode !== 'rect') rectStart.current = null; }, [mode]);
 
-  const unsaved = !!review && !review.saved && !review.readOnly && review.items.some((i) => i.decision === 'accept');
-  // Warn before leaving with places that were shown but not saved.
+  const editableAreas = areas.filter((a) => !a.saved && !a.readOnly);
+  const pendingItems = items.filter((i) => i.decision === 'pending' && editableAreas.some((a) => a.id === i.areaId));
+  const acceptedItems = items.filter((i) => i.decision === 'accept' && editableAreas.some((a) => a.id === i.areaId));
+  const unsaved = acceptedItems.length > 0;
   useEffect(() => {
     if (!unsaved) return;
     const h = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ''; };
@@ -201,12 +209,18 @@ export function CaptureWorkbench() {
   }, [unsaved]);
 
   const catchmentM = catchmentFor(format);
-  const ctx = review?.context;
-  const concept = useMemo(() => conceptForSite(ctx?.vertical ?? vertical, ctx?.brand ?? brand), [ctx, vertical, brand]);
+  const conceptsByArea = useMemo(() => {
+    const m = new Map<string, ReturnType<typeof conceptForSite>[]>();
+    for (const a of areas) {
+      const vs = a.context?.verticals ?? (a.context?.vertical ? [a.context.vertical] : []);
+      m.set(a.id, vs.map((v) => conceptForSite(v, a.context?.brand)));
+    }
+    return m;
+  }, [areas]);
   const area: CaptureArea | null = rect ?? (site ? { kind: 'circle', lat: site.lat, lon: site.lon, radiusM } : null);
   const km2 = area ? areaKm2(area) : 0;
   const tooBig = km2 > MAX_CAPTURE_KM2;
-  const layers = layersForSite(vertical, extras);
+  const layers = layersForSite(verticals, extras);
 
   /* ---------------------------------------------------------------- data */
 
@@ -223,21 +237,34 @@ export function CaptureWorkbench() {
     src?.setData({ type: 'FeatureCollection', features: (r.data.areas ?? []).filter((a) => a.geometry).map((a) => ({ type: 'Feature', properties: { label: a.label }, geometry: a.geometry! })) });
   }, []);
 
-  const fetchReadiness = useCallback(async (s: { lat: number; lon: number }) => {
-    setReadyLoading(true);
-    const q = new URLSearchParams({ lat: String(s.lat), lon: String(s.lon), radiusM: String(radiusM), format, vertical, brand: brand.trim() });
-    const r = await api<Readiness>(`/api/admin/capture/readiness?${q.toString()}`);
-    setReadyLoading(false);
-    if (r.ok) { setReadiness(r.data); return r.data; }
-    setMsg({ tone: 'err', text: r.error.message });
-    return null;
-  }, [radiusM, format, vertical, brand]);
+  const readinessFor = useCallback(async (s: { lat: number; lon: number }, vs: string[], fmt: string, radius: number, br: string) => {
+    const q = new URLSearchParams({ lat: String(s.lat), lon: String(s.lon), radiusM: String(radius), format: fmt, verticals: vs.join(','), brand: br.trim() });
+    return api<Readiness>(`/api/admin/capture/readiness?${q.toString()}`);
+  }, []);
 
   useEffect(() => {
     if (!site) { setReadiness(null); return; }
-    const t = setTimeout(() => { void fetchReadiness(site); }, 350);
+    const t = setTimeout(async () => {
+      setReadyLoading(true);
+      const r = await readinessFor(site, verticals, format, radiusM, brand);
+      setReadyLoading(false);
+      if (r.ok) setReadiness(r.data);
+    }, 350);
     return () => clearTimeout(t);
-  }, [site, fetchReadiness]);
+  }, [site, verticals, format, radiusM, brand, readinessFor]);
+
+  /** Places already saved in BSA inside the current view (zoom ≥ 14) — shown before any capture. */
+  const loadViewport = useCallback(async () => {
+    const map = mapRef.current;
+    const src = map?.getSource('viewport') as maplibregl.GeoJSONSource | undefined;
+    if (!map || !src) return;
+    if (map.getZoom() < 14) { src.setData(EMPTY_FC); return; }
+    const b = map.getBounds();
+    const bbox = [b.getSouth(), b.getWest(), b.getNorth(), b.getEast()].map((n) => n.toFixed(5)).join(',');
+    const r = await api<Array<{ id: string; name: string; category: string; lat: number; lon: number }>>(`/api/admin/capture/pois?bbox=${bbox}`);
+    if (!r.ok) return;
+    src.setData({ type: 'FeatureCollection', features: r.data.map((p) => ({ type: 'Feature', properties: { name: p.name, icon: p.category === 'competitor' ? 'ic-unrelated' : 'ic-context' }, geometry: { type: 'Point', coordinates: [p.lon, p.lat] } })) });
+  }, []);
 
   /* ---------------------------------------------------------------- map */
 
@@ -245,7 +272,6 @@ export function CaptureWorkbench() {
     const p = { lat: round6(lat), lon: round6(lon) };
     setSite(p);
     setRect(null);
-    setAfter(null);
     const map = mapRef.current;
     if (!map) return;
     if (!siteMarker.current) {
@@ -254,7 +280,6 @@ export function CaptureWorkbench() {
       siteMarker.current.on('dragend', () => {
         const ll = siteMarker.current!.getLngLat();
         setSite({ lat: round6(ll.lat), lon: round6(ll.lng) });
-        setAfter(null);
       });
     } else {
       siteMarker.current.setLngLat([p.lon, p.lat]);
@@ -287,14 +312,16 @@ export function CaptureWorkbench() {
       map.on('load', () => {
         addTierIcons(map);
         const accent = token('--accent-text', '#E2B985');
-        for (const id of ['coverage', 'catchment', 'scan', 'rect', 'existing', 'items']) map.addSource(id, { type: 'geojson', data: EMPTY_FC });
+        for (const id of ['coverage', 'areas', 'catchment', 'scan', 'rect', 'viewport', 'existing', 'items']) map.addSource(id, { type: 'geojson', data: EMPTY_FC });
         map.addLayer({ id: 'coverage-fill', type: 'fill', source: 'coverage', paint: { 'fill-color': token('--projected', '#B39AE8'), 'fill-opacity': 0.07 } });
         map.addLayer({ id: 'coverage-line', type: 'line', source: 'coverage', paint: { 'line-color': token('--projected', '#B39AE8'), 'line-width': 1, 'line-dasharray': [2, 2] } });
+        map.addLayer({ id: 'areas-line', type: 'line', source: 'areas', paint: { 'line-color': token('--go', '#5CCB98'), 'line-width': 1.5 } });
         map.addLayer({ id: 'scan-line', type: 'line', source: 'scan', paint: { 'line-color': accent, 'line-width': 2, 'line-dasharray': [3, 2] } });
         map.addLayer({ id: 'rect-fill', type: 'fill', source: 'rect', paint: { 'fill-color': accent, 'fill-opacity': 0.08 } });
         map.addLayer({ id: 'rect-line', type: 'line', source: 'rect', paint: { 'line-color': accent, 'line-width': 2 } });
         map.addLayer({ id: 'catchment-fill', type: 'fill', source: 'catchment', paint: { 'fill-color': accent, 'fill-opacity': 0.12 } });
         map.addLayer({ id: 'catchment-line', type: 'line', source: 'catchment', paint: { 'line-color': accent, 'line-width': 2 } });
+        map.addLayer({ id: 'viewport-icons', type: 'symbol', source: 'viewport', layout: { 'icon-image': ['get', 'icon'], 'icon-allow-overlap': true, 'icon-size': 0.7 }, paint: { 'icon-opacity': 0.45 } });
         map.addLayer({
           id: 'existing-icons', type: 'symbol', source: 'existing',
           layout: { 'icon-image': ['get', 'icon'], 'icon-allow-overlap': true, 'icon-size': 0.8, 'symbol-sort-key': ['get', 'rank'] },
@@ -309,15 +336,18 @@ export function CaptureWorkbench() {
         });
         setMapReady(true);
       });
+      map.on('moveend', () => { void loadViewport(); });
       map.on('click', 'items-icons', (e) => {
         const key = e.features?.[0]?.properties?.key;
         if (key && modeRef.current === 'none') setSelected(String(key));
       });
-      map.on('click', 'existing-icons', (e) => {
-        if (modeRef.current !== 'none') return;
-        const f = e.features?.[0];
-        if (f) new maplibregl.Popup({ offset: 8 }).setLngLat(e.lngLat).setText(`${f.properties?.name} — already in BSA (${f.properties?.tierLabel})`).addTo(map);
-      });
+      for (const layerId of ['existing-icons', 'viewport-icons']) {
+        map.on('click', layerId, (e) => {
+          if (modeRef.current !== 'none') return;
+          const f = e.features?.[0];
+          if (f) new maplibregl.Popup({ offset: 8 }).setLngLat(e.lngLat).setText(`${f.properties?.name} — already saved in BSA`).addTo(map);
+        });
+      }
       map.on('click', (e) => {
         const lat = e.lngLat.lat, lon = e.lngLat.lng;
         const m = modeRef.current;
@@ -349,31 +379,39 @@ export function CaptureWorkbench() {
   useEffect(() => {
     if (!mapReady) return;
     const map = mapRef.current!;
-    const set = (id: string, data: GeoJSON.Feature | typeof EMPTY_FC) => (map.getSource(id) as maplibregl.GeoJSONSource | undefined)?.setData(data);
+    const set = (id: string, data: GeoJSON.Feature | GeoJSON.FeatureCollection) => (map.getSource(id) as maplibregl.GeoJSONSource | undefined)?.setData(data);
     set('catchment', site ? geoCircle(site.lon, site.lat, catchmentM) as GeoJSON.Feature : EMPTY_FC);
     set('scan', site && !rect ? geoCircle(site.lon, site.lat, radiusM) as GeoJSON.Feature : EMPTY_FC);
     set('rect', rect ? { type: 'Feature', properties: {}, geometry: areaGeoJson(rect) } : EMPTY_FC);
-  }, [site, catchmentM, radiusM, rect, mapReady]);
+    set('areas', { type: 'FeatureCollection', features: areas.filter((a) => a.area).map((a) => ({ type: 'Feature', properties: { label: a.label }, geometry: areaGeoJson(a.area!) })) });
+  }, [site, catchmentM, radiusM, rect, areas, mapReady]);
 
+  // Places already in BSA: inside captured areas (tiered as Territory Guard sees them) + the current ring.
   useEffect(() => {
     if (!mapReady) return;
-    const src = mapRef.current?.getSource('existing') as maplibregl.GeoJSONSource | undefined;
-    src?.setData({
-      type: 'FeatureCollection',
-      features: (readiness?.places ?? []).map((p) => ({
-        type: 'Feature',
-        properties: { name: p.name, icon: `ic-${p.tier}`, rank: TIER_META[p.tier].rank, tierLabel: TIER_META[p.tier].label },
-        geometry: { type: 'Point', coordinates: [p.lon, p.lat] },
-      })),
-    });
-  }, [readiness, mapReady]);
+    const features: GeoJSON.Feature[] = [];
+    const seen = new Set<string>();
+    for (const a of areas) {
+      const concepts = conceptsByArea.get(a.id) ?? [];
+      for (const p of a.stored) {
+        if (seen.has(p.id)) continue;
+        seen.add(p.id);
+        const tier = tierAcross(p, concepts);
+        features.push({ type: 'Feature', properties: { name: p.name, icon: `ic-${tier}`, rank: TIER_META[tier].rank }, geometry: { type: 'Point', coordinates: [p.lon, p.lat] } });
+      }
+    }
+    for (const p of readiness?.places ?? []) {
+      if (seen.has(p.id)) continue;
+      seen.add(p.id);
+      features.push({ type: 'Feature', properties: { name: p.name, icon: `ic-${p.tier}`, rank: TIER_META[p.tier].rank }, geometry: { type: 'Point', coordinates: [p.lon, p.lat] } });
+    }
+    (mapRef.current?.getSource('existing') as maplibregl.GeoJSONSource | undefined)?.setData({ type: 'FeatureCollection', features });
+  }, [areas, readiness, conceptsByArea, mapReady]);
 
-  const tiered = useMemo(() => (review?.items ?? []).map((it) => ({ ...it, tier: tierOfPlace(it, concept) })), [review, concept]);
-  const reviewSite = ctx?.site ?? site;
+  const tiered = useMemo(() => items.map((it) => ({ ...it, tier: tierAcross(it, conceptsByArea.get(it.areaId) ?? []) })), [items, conceptsByArea]);
   useEffect(() => {
     if (!mapReady) return;
-    const src = mapRef.current?.getSource('items') as maplibregl.GeoJSONSource | undefined;
-    src?.setData({
+    (mapRef.current?.getSource('items') as maplibregl.GeoJSONSource | undefined)?.setData({
       type: 'FeatureCollection',
       features: tiered.map((it) => ({
         type: 'Feature',
@@ -388,17 +426,10 @@ export function CaptureWorkbench() {
     for (const id of ['coverage-fill', 'coverage-line']) mapRef.current?.setLayoutProperty(id, 'visibility', showCoverage ? 'visible' : 'none');
   }, [showCoverage, mapReady]);
 
-  useEffect(() => { if (mapReady) { void loadBatches(); void loadCoverage(); } }, [mapReady, loadBatches, loadCoverage]);
+  useEffect(() => { if (mapReady) { void loadBatches(); void loadCoverage(); void loadViewport(); } }, [mapReady, loadBatches, loadCoverage, loadViewport]);
+  useEffect(() => { if (selected) document.getElementById(`cap-row-${cssId(selected)}`)?.scrollIntoView({ block: 'nearest' }); }, [selected]);
 
-  useEffect(() => {
-    if (selected) document.getElementById(`cap-row-${cssId(selected)}`)?.scrollIntoView({ block: 'nearest' });
-  }, [selected]);
-
-  /* ---------------------------------------------------------------- actions */
-
-  function confirmDropUnsaved(): boolean {
-    return !unsaved || window.confirm('The places on the map have not been saved. Discard them?');
-  }
+  /* ---------------------------------------------------------------- capture */
 
   function goToCoords() {
     const p = parseLatLon(coordText);
@@ -408,174 +439,206 @@ export function CaptureWorkbench() {
     setMode('none');
   }
 
-  function fitToItems(items: Array<{ lat: number; lon: number }>) {
-    if (!items.length || !mapRef.current) return;
+  function fitToPoints(pts: Array<{ lat: number; lon: number }>) {
+    if (!pts.length || !mapRef.current) return;
     let s = 90, w = 180, n = -90, e = -180;
-    for (const p of items) { s = Math.min(s, p.lat); n = Math.max(n, p.lat); w = Math.min(w, p.lon); e = Math.max(e, p.lon); }
+    for (const p of pts) { s = Math.min(s, p.lat); n = Math.max(n, p.lat); w = Math.min(w, p.lon); e = Math.max(e, p.lon); }
     mapRef.current.fitBounds([[w, s], [e, n]], { padding: 48, maxZoom: 16, duration: 600 });
   }
 
-  /** Step 3: fetch from OSM and DRAW ON THE MAP. Nothing is written. */
+  const patchArea = (id: string, fn: (a: AreaRun) => AreaRun) => setAreas((as) => as.map((a) => (a.id === id ? fn(a) : a)));
+
+  /** Merge new candidates into the session, skipping places another area already listed. */
+  const addItems = (areaId: string, cands: Candidate[]) => setItems((cur) => {
+    const have = new Set(cur.map((i) => i.key));
+    const add = cands.filter((c) => !have.has(c.key)).map((c) => ({ ...c, decision: initialDecision(c), originalName: c.name, areaId }));
+    return [...cur, ...add];
+  });
+
+  /** Load one layer for an area (DB places on the first call). Never writes. */
+  async function runLayer(areaId: string, a: CaptureArea, layer: LayerKey, withStored: boolean, force: boolean) {
+    patchArea(areaId, (x) => ({ ...x, layers: x.layers.map((l) => (l.layer === layer ? { ...l, status: 'loading', message: undefined } : l)) }));
+    const r = await api<{ layers: Array<Omit<LayerRun, 'layer'> & { layer: string }>; candidates: Candidate[]; stored?: StoredPlace[]; notes: string[] }>(
+      '/api/admin/capture/preview', jsonInit('POST', { area: a, layers: [layer], withStored, refresh: force }),
+    );
+    if (!r.ok) {
+      patchArea(areaId, (x) => ({ ...x, layers: x.layers.map((l) => (l.layer === layer ? { ...l, status: 'failed', message: r.error.message } : l)) }));
+      return;
+    }
+    const lr = r.data.layers[0];
+    patchArea(areaId, (x) => ({
+      ...x,
+      stored: r.data.stored ?? x.stored,
+      notes: [...new Set([...x.notes, ...r.data.notes])],
+      layers: x.layers.map((l) => (l.layer === layer ? { ...l, ...lr, layer } : l)),
+    }));
+    addItems(areaId, r.data.candidates);
+  }
+
   async function showOnMap() {
-    if (!area || tooBig || !layers.length || !confirmDropUnsaved()) return;
-    setBusy('Loading places from OpenStreetMap…'); setMsg(null); setAfter(null); setConfirmSave(false);
-    setBefore(readiness?.summary ?? null);
-    const r = await api<{ candidates: Candidate[]; notes: string[]; skipped: Record<string, number> }>('/api/admin/capture/preview', jsonInit('POST', { area, layers }));
+    if (!area || tooBig || !layers.length) return;
+    const id = newAreaId();
+    const label = [verticals.map((v) => CAPTURE_VERTICALS.find((x) => x.key === v)?.label).filter(Boolean).join(' + '), brand.trim(), readiness?.boundary?.barangay ? `Brgy ${readiness.boundary.barangay}` : null, readiness?.boundary?.city]
+      .filter(Boolean).join(' · ') || 'Capture area';
+    const run: AreaRun = {
+      id, label, source: 'osm', area, layers: layers.map((l) => ({ layer: l, status: 'waiting', found: 0, newCount: 0, inBsa: 0 })),
+      context: { site: site ?? undefined, verticals, brand: brand.trim() || undefined, format },
+      stored: [], notes: [], before: readiness?.byVertical,
+    };
+    setStatus(null); setMsg(null); setConfirmSave(false);
+    setAreas((as) => [...as, run]);
+    setBusy('Loading places…');
+    for (let i = 0; i < layers.length; i++) {
+      setBusy(`Loading ${LAYER_LABEL[layers[i]] ?? layers[i]} (${i + 1} of ${layers.length})…`);
+      await runLayer(id, area, layers[i], i === 0, refresh);
+    }
     setBusy(null);
-    if (!r.ok) { setMsg({ tone: 'err', text: r.error.message }); return; }
-    const label = [CAPTURE_VERTICALS.find((v) => v.key === vertical)?.label, brand.trim(), readiness?.boundary?.city ?? readiness?.boundary?.barangay].filter(Boolean).join(' · ') || 'OSM capture';
-    setReview({
-      source: 'osm', label, area, layers,
-      context: { site: site ?? undefined, vertical: vertical || undefined, brand: brand.trim() || undefined, format },
-      notes: r.data.notes,
-      items: r.data.candidates.map((c) => ({ ...c, decision: initialDecision(c), originalName: c.name })),
-    });
-    setGroup('all'); setShown(PAGE); setSelected(null);
-    setMsg({ tone: 'ok', text: r.data.candidates.length
-      ? `${r.data.candidates.length} places are now on the map. Nothing is saved yet — review them, then press “Save to BSA”.`
-      : 'OpenStreetMap has no matching places in this ring. Try a bigger ring or more layers, or add places by hand.' });
-    setTimeout(() => document.getElementById('cap-review')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+    setMsg({ tone: 'ok', text: 'Places are on the map. Places BSA already has are shown faded and will not be saved again. Review the new ones, then press Save.' });
+    setTimeout(() => document.getElementById('cap-results')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+  }
+
+  async function retryLayer(a: AreaRun, layer: LayerKey) {
+    if (!a.area) return;
+    setBusy(`Retrying ${LAYER_LABEL[layer] ?? layer}…`);
+    await runLayer(a.id, a.area, layer, a.stored.length === 0, true);
+    setBusy(null);
   }
 
   async function importFile(file: File) {
-    if (!confirmDropUnsaved()) return;
     if (file.size > 10 * 1024 * 1024) { setMsg({ tone: 'err', text: 'File is larger than 10 MB. In Grid Navigator, save the session without cached map tiles.' }); return; }
-    setBusy('Reading the Grid Navigator session…'); setMsg(null); setAfter(null); setBefore(null);
+    setBusy('Reading the Grid Navigator session…'); setMsg(null); setStatus(null);
     const text = await file.text();
-    const r = await api<{ candidates: Candidate[]; notes: string[]; label: string }>('/api/admin/capture/import', {
+    const r = await api<{ candidates: Candidate[]; notes: string[]; label: string; alreadyInBsa: number }>('/api/admin/capture/import', {
       method: 'POST', headers: { 'Content-Type': 'application/json', 'x-file-name': file.name.replace(/[^\x20-\x7e]/g, '_').slice(0, 80) }, body: text,
     });
     setBusy(null);
     if (!r.ok) { setMsg({ tone: 'err', text: r.error.message }); return; }
-    setReview({ source: 'navigator_import', label: r.data.label, notes: r.data.notes, items: r.data.candidates.map((c) => ({ ...c, decision: initialDecision(c), originalName: c.name })) });
-    setGroup('all'); setShown(PAGE);
-    setMsg({ tone: 'ok', text: `${r.data.candidates.length} places from the session are on the map. Review them, then press “Save to BSA”.` });
-    fitToItems(r.data.candidates);
+    const id = newAreaId();
+    setAreas((as) => [...as, { id, label: r.data.label, source: 'navigator_import', layers: [], stored: [], notes: r.data.notes }]);
+    addItems(id, r.data.candidates);
+    setMsg({ tone: 'ok', text: `${r.data.candidates.length} new places from the session are on the map${r.data.alreadyInBsa ? ` (${r.data.alreadyInBsa} already in BSA are left out)` : ''}. Review them, then press Save.` });
+    fitToPoints(r.data.candidates);
   }
 
-  /** Hand-placed pin: added to the browser review set (saved with everything else). */
   function addPin(form: { name: string; category: BsaPoiCategory; notes: string }) {
     if (!pin) return;
+    let target = editableAreas.find((a) => a.area && pin && distanceM(a.area.kind === 'circle' ? a.area.lat : (a.area.south + a.area.north) / 2, a.area.kind === 'circle' ? a.area.lon : (a.area.west + a.area.east) / 2, pin.lat, pin.lon) < 3_000);
+    if (!target) {
+      target = editableAreas.find((a) => a.source === 'manual');
+      if (!target) {
+        target = { id: newAreaId(), label: 'Places added by hand', source: 'manual', layers: [], stored: [], notes: [] };
+        const t = target;
+        setAreas((as) => [...as, t]);
+      }
+    }
     const item: ReviewItem = {
       key: `m:${Date.now()}:${pin.lat}:${pin.lon}`, osmRef: null, name: form.name, kind: null, category: form.category,
       lat: pin.lat, lon: pin.lon, origin: 'manual', truthLayer: 'assumed', existingPoiId: null, duplicateOf: null,
-      notes: form.notes || null, decision: 'accept', originalName: form.name,
+      notes: form.notes || null, decision: 'accept', originalName: form.name, areaId: target.id,
     };
-    setReview((r) => r && !r.saved && !r.readOnly
-      ? { ...r, items: [item, ...r.items] }
-      : { source: 'manual', label: 'Places added by hand', notes: [], items: [item], context: site ? { site, vertical: vertical || undefined, brand: brand.trim() || undefined, format } : undefined });
+    setItems((cur) => [item, ...cur]);
     setPin(null); setMode('none');
-    setMsg({ tone: 'ok', text: `“${form.name}” is on the map (Assumed). Press “Save to BSA” to keep it.` });
+    setMsg({ tone: 'ok', text: `“${form.name}” is on the map (Assumed). It will be saved with the next Save.` });
   }
 
   function updateItems(keys: string[], patch: Partial<Pick<ReviewItem, 'decision' | 'name' | 'category'>>) {
     const set = new Set(keys);
-    setReview((r) => r && { ...r, items: r.items.map((it) => (set.has(it.key) ? { ...it, ...patch } : it)) });
+    setItems((cur) => cur.map((it) => (set.has(it.key) ? { ...it, ...patch } : it)));
   }
 
-  /** Step 4: the only write. Sends the accepted places; the server re-derives trust from receipts. */
-  async function save() {
-    if (!review || review.saved || review.readOnly) return;
-    const accepted = review.items.filter((i) => i.decision === 'accept');
-    if (!accepted.length) return;
-    setBefore((b) => b ?? readiness?.summary ?? null);
-    setBusy(`Saving ${accepted.length} places to BSA…`); setMsg(null);
-    const r = await api<NonNullable<Review['saved']>>('/api/admin/capture/save', jsonInit('POST', {
-      source: review.source, label: review.label, area: review.area, layers: review.layers, context: review.context,
-      items: accepted.map((i) => ({ osmRef: i.osmRef, receipt: i.receipt ?? null, name: i.name, kind: i.kind, category: i.category, lat: i.lat, lon: i.lon, origin: i.origin, notes: i.notes ?? null })),
-    }));
-    setBusy(null); setConfirmSave(false);
-    if (!r.ok) { setMsg({ tone: 'err', text: `${r.error.message} Your places are still on the map — you can try Save again.` }); return; }
-    setReview((rv) => rv && { ...rv, saved: r.data });
-    const untagged = r.data.saved - r.data.psgcTagged;
-    setMsg({ tone: 'ok', text: `Saved to BSA: ${r.data.saved} places written${r.data.skippedExisting ? `, ${r.data.skippedExisting} already there and left unchanged` : ''}.${untagged > 0 ? ` ${untagged} have no barangay yet (boundaries not loaded there).` : ' Every place is tagged with its barangay.'}` });
-    await loadBatches(); await loadCoverage();
-    if (reviewSite) {
-      const fresh = await fetchReadiness(reviewSite);
-      if (fresh) setAfter(fresh.summary);
+  function removeArea(a: AreaRun) {
+    if (!a.saved && items.some((i) => i.areaId === a.id && i.decision === 'accept') && !window.confirm('This area has places that are not saved. Remove it from the map?')) return;
+    setAreas((as) => as.filter((x) => x.id !== a.id));
+    setItems((cur) => cur.filter((i) => i.areaId !== a.id));
+  }
+
+  /** The only write: one save per area, then a status screen. */
+  async function saveAll() {
+    const targets = editableAreas.filter((a) => items.some((i) => i.areaId === a.id && i.decision === 'accept') || a.layers.some((l) => l.status === 'loaded'));
+    if (!targets.length) return;
+    setConfirmSave(false); setMsg(null);
+    const done: AreaRun[] = [];
+    for (let i = 0; i < targets.length; i++) {
+      const a = targets[i];
+      setBusy(`Saving area ${i + 1} of ${targets.length}…`);
+      const its = items.filter((x) => x.areaId === a.id && x.decision === 'accept');
+      const r = await api<SaveResult>('/api/admin/capture/save', jsonInit('POST', {
+        source: a.source, label: a.label, area: a.area, layers: a.layers.map((l) => l.layer),
+        fetchedLayers: a.layers.filter((l) => l.status === 'loaded').map((l) => l.layer), context: a.context,
+        items: its.map((x) => ({ osmRef: x.osmRef, receipt: x.receipt ?? null, name: x.name, kind: x.kind, category: x.category, lat: x.lat, lon: x.lon, origin: x.origin, notes: x.notes ?? null })),
+      }));
+      let after: VerticalRead[] | undefined;
+      if (r.ok && a.context?.site && a.context.verticals?.length && a.area?.kind === 'circle') {
+        const rr = await readinessFor(a.context.site, a.context.verticals, a.context.format ?? 'inline', a.area.radiusM, a.context.brand ?? '');
+        if (rr.ok) after = rr.data.byVertical;
+      }
+      const updated: AreaRun = r.ok ? { ...a, saved: r.data, after, saveError: undefined } : { ...a, saveError: r.error.message };
+      done.push(updated);
+      patchArea(a.id, () => updated);
     }
+    setBusy(null);
+    setStatus({ at: new Date().toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit' }), areas: done });
+    await loadBatches(); await loadCoverage(); await loadViewport();
+    if (site) { const rr = await readinessFor(site, verticals, format, radiusM, brand); if (rr.ok) setReadiness(rr.data); }
+    setTimeout(() => document.getElementById('cap-status')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
   }
 
-  function clearReview() {
-    if (!confirmDropUnsaved()) return;
-    setReview(null); setAfter(null); setBefore(null); setConfirmSave(false);
-    setMsg({ tone: 'ok', text: 'Cleared from the map. Nothing was saved.' });
+  function startOver() {
+    if (unsaved && !window.confirm('Some places on the map are not saved. Clear them?')) return;
+    setAreas([]); setItems([]); setStatus(null); setMsg(null);
   }
 
   async function openBatch(id: string) {
-    if (!confirmDropUnsaved()) return;
     const r = await api<SavedBatch>(`/api/admin/capture/batches/${id}`);
     if (!r.ok) { setMsg({ tone: 'err', text: r.error.message }); return; }
     const b = r.data.batch;
-    const c = b.areaSpec?.context ?? undefined;
-    setBefore(null); setAfter(null);
-    setReview({
-      source: b.source as Review['source'], label: b.label, area: b.areaSpec ?? undefined, context: c, notes: b.notes ? [b.notes] : [], readOnly: true,
-      items: r.data.items.map((it) => ({ ...it, origin: it.osmRef ? 'osm' : 'manual', truthLayer: it.truthLayer === 'verified' ? 'verified' : 'assumed', existingPoiId: it.committedPoiId, duplicateOf: null, decision: 'accept', originalName: it.name })),
-    });
-    if (c?.site) {
-      placeSite(c.site.lat, c.site.lon, true);
-      if (c.vertical) setVertical(c.vertical);
-      if (c.brand) setBrand(c.brand);
-      if (c.format) setFormat(c.format);
-      if (b.areaSpec?.kind === 'circle') setRadiusM(b.areaSpec.radiusM);
-      setMode('none');
-    } else fitToItems(r.data.items);
+    const aid = newAreaId();
+    const ctx = b.areaSpec?.context ?? undefined;
+    setAreas((as) => [...as, { id: aid, label: `${b.label} (saved)`, source: b.source as AreaRun['source'], area: b.areaSpec ?? undefined, context: ctx, layers: [], stored: [], notes: b.notes ? [b.notes] : [], readOnly: true }]);
+    setItems((cur) => [...cur, ...r.data.items.filter((it) => !cur.some((c) => c.key === it.key)).map((it) => ({
+      ...it, origin: (it.osmRef ? 'osm' : 'manual') as Candidate['origin'], truthLayer: (it.truthLayer === 'verified' ? 'verified' : 'assumed') as Candidate['truthLayer'],
+      existingPoiId: it.committedPoiId, duplicateOf: null, decision: 'accept' as Decision, originalName: it.name, areaId: aid,
+    }))]);
+    if (ctx?.site) placeSite(ctx.site.lat, ctx.site.lon, true); else fitToPoints(r.data.items);
   }
 
   function flyTo(lat: number, lon: number, zoom = 13) { mapRef.current?.flyTo({ center: [lon, lat], zoom }); }
+  function toggleVertical(v: string, on: boolean) {
+    setVerticals((vs) => (on ? (vs.includes(v) || vs.length >= MAX_CAPTURE_VERTICALS ? vs : [...vs, v]) : vs.filter((x) => x !== v)));
+  }
 
-  /* ---------------------------------------------------------------- review list */
+  /* ---------------------------------------------------------------- derived */
 
+  const areaById = useMemo(() => new Map(areas.map((a) => [a.id, a])), [areas]);
   const counts = useMemo(() => {
-    const c = { direct: 0, adjacent: 0, unrelated: 0, context: 0, pending: 0, existing: 0, accept: 0, reject: 0 };
-    for (const it of tiered) {
-      c[it.tier]++;
-      if (it.decision === 'pending') c.pending++;
-      if (it.decision === 'accept') c.accept++;
-      if (it.decision === 'reject') c.reject++;
-      if (it.existingPoiId) c.existing++;
-    }
+    const c = { direct: 0, adjacent: 0, unrelated: 0, context: 0, pending: 0 };
+    for (const it of tiered) { if (areaFilter !== 'all' && it.areaId !== areaFilter) continue; c[it.tier]++; if (it.decision === 'pending') c.pending++; }
     return c;
-  }, [tiered]);
-
+  }, [tiered, areaFilter]);
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase();
     return tiered
-      .filter((it) => {
-        if (group === 'pending') return it.decision === 'pending';
-        if (group === 'existing') return !!it.existingPoiId;
-        if (group !== 'all') return it.tier === group;
-        return true;
-      })
+      .filter((it) => areaFilter === 'all' || it.areaId === areaFilter)
+      .filter((it) => (group === 'all' ? true : group === 'pending' ? it.decision === 'pending' : it.tier === group))
       .filter((it) => !q || it.name.toLowerCase().includes(q) || (it.kind ?? '').includes(q))
       .sort((a, b) => (a.decision === 'pending' ? -1 : 0) - (b.decision === 'pending' ? -1 : 0) || TIER_META[b.tier].rank - TIER_META[a.tier].rank || a.name.localeCompare(b.name));
-  }, [tiered, group, search]);
-  const editable = !!review && !review.saved && !review.readOnly;
-
-  const projected = useMemo(() => {
-    if (!reviewSite || !readiness || !review || !editable) return null;
-    const known = new Set(tiered.filter((i) => i.existingPoiId).map((i) => i.existingPoiId));
-    const existing = readiness.places.filter((p) => !known.has(p.id)).map((p) => ({ tier: p.tier, distM: p.distM }));
-    const staged = tiered.filter((i) => i.decision === 'accept' || !!i.existingPoiId).map((i) => ({ tier: i.tier, distM: distanceM(reviewSite.lat, reviewSite.lon, i.lat, i.lon) }));
-    return summariseForTerritory([...existing, ...staged], readiness.catchmentM);
-  }, [reviewSite, readiness, review, editable, tiered]);
+  }, [tiered, group, search, areaFilter]);
 
   const step1Done = !!site || !!rect;
-  const step2Done = step1Done && !!vertical;
-  const stage: 'setup' | 'onMap' | 'saved' = !review ? 'setup' : review.saved || review.readOnly ? 'saved' : 'onMap';
+  const step2Done = step1Done && verticals.length > 0;
+  const loading = areas.some((a) => a.layers.some((l) => l.status === 'loading' || l.status === 'waiting'));
+  const stage: 0 | 1 | 2 = status ? 2 : areas.length ? 1 : 0;
 
   /* ---------------------------------------------------------------- render */
 
   return (
     <div className="flex flex-col gap-5">
       <ol className="flex flex-wrap items-center gap-2 text-label" aria-label="Progress">
-        {([['setup', '1–2 · Set up the site'], ['onMap', '3 · Places shown on the map'], ['saved', '4 · Saved to BSA']] as const).map(([k, l], i) => {
-          const order = { setup: 0, onMap: 1, saved: 2 } as const;
-          const done = order[stage] > i;
-          const now = order[stage] === i;
+        {(['1–2 · Set up the site', '3 · Places shown on the map', '4 · Saved to BSA'] as const).map((l, i) => {
+          const done = stage > i;
+          const now = stage === i;
           return (
-            <li key={k} className={`rounded-full border px-3 py-1 ${now ? 'border-accent-soft bg-ink-hover text-ink-text' : done ? 'border-go text-go' : 'border-ink-border text-ink-muted'}`} aria-current={now ? 'step' : undefined}>
+            <li key={l} className={`rounded-full border px-3 py-1 ${now ? 'border-accent-soft bg-ink-hover text-ink-text' : done ? 'border-go text-go' : 'border-ink-border text-ink-muted'}`} aria-current={now ? 'step' : undefined}>
               {done ? '✓ ' : ''}{l}
             </li>
           );
@@ -594,11 +657,22 @@ export function CaptureWorkbench() {
           {tab === 'capture' && (
             <>
               <Step n={1} title="Drop the site pin" done={step1Done}>
-                <p className="field-help">Click the map where the site is (drag the pin to fine-tune), or paste coordinates.</p>
+                <p className="field-help">Jump to any region, then click the map where the site is (drag the pin to fine-tune), or paste coordinates.</p>
                 <div className="mt-3 flex gap-2">
-                  <select aria-label="Jump to region" className="field min-h-[40px] flex-1" defaultValue="" onChange={(e) => { const r = REGIONS.find((x) => x.key === e.target.value); if (r) flyTo(r.warmCentres[0].lat, r.warmCentres[0].lon, 12); }}>
+                  <select aria-label="Jump to region" className="field min-h-[40px] flex-1" value="" onChange={(e) => {
+                    const v = e.target.value;
+                    const r = PH_REGIONS.find((x) => x.code === v);
+                    if (r) { flyTo(r.centre.lat, r.centre.lon, 12); return; }
+                    const p = REGIONS.find((x) => `bsa:${x.key}` === v);
+                    if (p) flyTo(p.warmCentres[0].lat, p.warmCentres[0].lon, 12);
+                  }}>
                     <option value="" disabled>Jump to a region…</option>
-                    {REGIONS.map((r) => <option key={r.key} value={r.key}>{r.name}</option>)}
+                    <optgroup label="All regions of the Philippines">
+                      {PH_REGIONS.map((r) => <option key={r.code} value={r.code}>{r.name} — {r.centre.label}</option>)}
+                    </optgroup>
+                    <optgroup label="Provinces with BSA reference data">
+                      {REGIONS.map((r) => <option key={r.key} value={`bsa:${r.key}`}>{r.name}</option>)}
+                    </optgroup>
                   </select>
                   <button type="button" className={`btn-secondary min-h-[40px] px-3 text-label ${mode === 'site' ? 'border-accent-soft text-ink-text' : ''}`} onClick={() => setMode(mode === 'site' ? 'none' : 'site')}>
                     {mode === 'site' ? 'Click the map…' : site ? 'Move pin' : 'Drop pin'}
@@ -616,18 +690,24 @@ export function CaptureWorkbench() {
                     {readyLoading && !readiness ? <p className="text-ink-muted">Locating…</p>
                       : readiness?.boundary
                         ? <p className="text-ink-muted">Brgy {readiness.boundary.barangay ?? '—'}, {readiness.boundary.city ?? '—'}{readiness.boundary.province ? `, ${readiness.boundary.province}` : ''} <span className="opacity-70">· PSGC {readiness.boundary.psgcCode}</span></p>
-                        : readiness && <p className="text-caution">▲ No barangay boundary loaded here{readiness.region ? ` (approx. region: ${REGIONS.find((r) => r.key === readiness.region)?.name ?? readiness.region})` : ''}. Places still save with exact coordinates; load the region&apos;s boundaries to tag barangays.</p>}
+                        : readiness && <p className="text-caution">▲ No barangay boundary loaded here. Places still save with exact coordinates; load the region&apos;s boundaries to tag barangays.</p>}
                   </div>
                 )}
               </Step>
 
-              <Step n={2} title="Business & catchment" done={step2Done} disabled={!step1Done}>
-                <label className="block"><span className="field-label">Business type (what Territory Guard compares against)</span>
-                  <select className="field mt-1" value={vertical} onChange={(e) => setVertical(e.target.value)} disabled={!step1Done}>
-                    <option value="">Choose…</option>
-                    {CAPTURE_VERTICALS.map((v) => <option key={v.key} value={v.key}>{v.label}</option>)}
-                  </select>
-                </label>
+              <Step n={2} title="Business types & catchment" done={step2Done} disabled={!step1Done}>
+                <fieldset disabled={!step1Done}>
+                  <legend className="field-label">Business types — tick up to {MAX_CAPTURE_VERTICALS} (what Territory Guard compares against)</legend>
+                  <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5">
+                    {CAPTURE_VERTICALS.map((v) => (
+                      <label key={v.key} className="flex items-center gap-2 text-label">
+                        <input type="checkbox" checked={verticals.includes(v.key)} disabled={!verticals.includes(v.key) && verticals.length >= MAX_CAPTURE_VERTICALS}
+                          onChange={(e) => toggleVertical(v.key, e.target.checked)} />
+                        <span>{v.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
                 <label className="mt-3 block"><span className="field-label">Brand (optional — sharpens which rivals count)</span>
                   <input className="field mt-1" value={brand} maxLength={80} placeholder="e.g. Macao Imperial Tea" onChange={(e) => setBrand(e.target.value)} disabled={!step1Done} />
                 </label>
@@ -646,11 +726,11 @@ export function CaptureWorkbench() {
                   <span className="field-label">Capture ring: {radiusM.toLocaleString('en-US')} m {radiusM === DEFAULT_SCAN_M && <span className="opacity-70">(Territory Guard&apos;s scan radius)</span>}</span>
                   <input type="range" min={300} max={2800} step={100} value={radiusM} onChange={(e) => { setRadiusM(Number(e.target.value)); setRect(null); }} className="mt-1 w-full" disabled={!step1Done} />
                 </label>
-                {site && <TerritoryReadout readiness={readiness} loading={readyLoading} vertical={vertical} />}
+                {site && <TerritoryReadout readiness={readiness} loading={readyLoading} />}
               </Step>
 
-              <Step n={3} title="Show places on the map" done={stage !== 'setup'} disabled={!step2Done}>
-                <p className="field-help">Loads the {CAPTURE_VERTICALS.find((v) => v.key === vertical)?.label ?? 'business'} competitor set inside the ring, plus the context places below, <strong>onto the map only</strong>. Nothing is saved until step 4.</p>
+              <Step n={3} title="Show places on the map" done={areas.length > 0} disabled={!step2Done}>
+                <p className="field-help">Places BSA already has appear first (faded). OpenStreetMap is then asked one layer at a time for anything new — <strong>nothing is saved yet</strong>.</p>
                 <fieldset className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2" disabled={!step2Done}>
                   <legend className="sr-only">Also load</legend>
                   {BASE_LAYERS.filter((l) => CONTEXT_LAYERS.includes(l.key as BaseLayerKey)).map((l) => (
@@ -661,9 +741,13 @@ export function CaptureWorkbench() {
                     </label>
                   ))}
                 </fieldset>
-                {area && <p className={`mt-3 text-label font-normal ${tooBig ? 'text-nogo' : 'text-ink-muted'}`}>{tooBig ? '✕ ' : ''}Area ≈ {km2.toFixed(1)} km²{tooBig ? ` — over the ${MAX_CAPTURE_KM2} km² limit. Make the ring smaller.` : ''}</p>}
+                <label className="mt-3 flex items-start gap-2 text-label text-ink-muted">
+                  <input type="checkbox" className="mt-1" checked={refresh} onChange={(e) => setRefresh(e.target.checked)} disabled={!step2Done} />
+                  <span>Check OpenStreetMap again even where this area was captured in the last 90 days</span>
+                </label>
+                {area && <p className={`mt-3 text-label font-normal ${tooBig ? 'text-nogo' : 'text-ink-muted'}`}>{tooBig ? '✕ ' : ''}Area ≈ {km2.toFixed(1)} km² · {layers.length} layer{layers.length === 1 ? '' : 's'}{tooBig ? ` — over the ${MAX_CAPTURE_KM2} km² limit. Make the ring smaller.` : ''}</p>}
                 <button type="button" className="btn-primary mt-3 w-full" disabled={!step2Done || !area || tooBig || !layers.length || !!busy} onClick={showOnMap}>
-                  {busy ?? (review && !review.saved && !review.readOnly ? 'Reload places on the map' : 'Show places on the map')}
+                  {busy ?? (areas.length ? 'Add this area to the map' : 'Show places on the map')}
                 </button>
                 <details className="mt-3">
                   <summary className="cursor-pointer text-label text-ink-muted">Advanced: draw a rectangle instead of the ring</summary>
@@ -681,12 +765,11 @@ export function CaptureWorkbench() {
               <h2 className="font-body text-title">Import a Grid Navigator session</h2>
               <ol className="mt-2 list-decimal space-y-1 pl-5 text-label font-normal text-ink-muted">
                 <li>In Grid Navigator, choose <em>Save session file</em> <strong>without</strong> map tiles.</li>
-                <li>Pick the <code>.gridnav.json</code> file below (10 MB max). Its places appear <strong>on the map only</strong>.</li>
-                <li>Review them, then press <strong>Save to BSA</strong>. File places are saved as Assumed and never overwrite places BSA already has.</li>
+                <li>Pick the <code>.gridnav.json</code> file below (10 MB max). Its places appear <strong>on the map only</strong>; places BSA already has are left out.</li>
+                <li>Review them, then press <strong>Save</strong>. File places are saved as Assumed.</li>
               </ol>
               <input type="file" accept=".json,application/json" className="mt-4 block w-full text-label text-ink-muted" disabled={!!busy}
                 onChange={(e) => { const f = e.target.files?.[0]; if (f) void importFile(f); e.target.value = ''; }} />
-              {busy && <p className="mt-2 text-label text-ink-muted">{busy}</p>}
             </section>
           )}
 
@@ -715,7 +798,7 @@ export function CaptureWorkbench() {
                   <thead><tr className="text-ink-muted"><th className="text-left font-normal">Region</th><th className="text-right font-normal">Places</th><th className="text-right font-normal">With barangay</th></tr></thead>
                   <tbody>
                     {regionTotals.map((r) => (
-                      <tr key={r.region ?? 'none'}><td>{REGIONS.find((x) => x.key === r.region)?.name ?? r.region ?? 'Unassigned'}</td><td className="text-right">{r.total.toLocaleString('en-US')}</td><td className="text-right">{r.tagged.toLocaleString('en-US')}</td></tr>
+                      <tr key={r.region ?? 'none'}><td>{REGIONS.find((x) => x.key === r.region)?.name ?? r.region ?? 'Other / unassigned'}</td><td className="text-right">{r.total.toLocaleString('en-US')}</td><td className="text-right">{r.tagged.toLocaleString('en-US')}</td></tr>
                     ))}
                   </tbody>
                 </table>
@@ -735,14 +818,10 @@ export function CaptureWorkbench() {
                 {mode === 'site' ? 'Click the map to place the site pin' : mode === 'add' ? 'Click where the missing place is' : rectStart.current ? 'Click the opposite corner' : 'Click the first corner'}
               </p>
             )}
-            {busy && (
-              <div className="absolute inset-0 flex items-center justify-center bg-ink-bg/40" aria-live="polite">
-                <p className="rounded-full bg-ink-panel px-4 py-2 text-label text-ink-text shadow-e1">{busy}</p>
-              </div>
-            )}
-            {stage === 'onMap' && review && (
+            {busy && <p className="absolute left-1/2 top-14 -translate-x-1/2 rounded-full bg-ink-panel px-4 py-2 text-label text-ink-text shadow-e1" aria-live="polite">{busy}</p>}
+            {editableAreas.length > 0 && (
               <div className="absolute right-14 top-3 rounded-control bg-ink-panel/95 px-3 py-2 text-label text-ink-text shadow-e1">
-                <strong>Not saved yet</strong> · {counts.accept} to save{counts.pending ? ` · ${counts.pending} need a decision` : ''}
+                <strong>Not saved yet</strong> · {acceptedItems.length} new to save{pendingItems.length ? ` · ${pendingItems.length} need a decision` : ''}
               </div>
             )}
             <details className="absolute bottom-3 left-3 rounded-control bg-ink-panel/90 px-3 py-2 text-[12px] leading-5 text-ink-text shadow-e1" open>
@@ -753,60 +832,93 @@ export function CaptureWorkbench() {
                 <li className="flex items-center gap-2"><span className="inline-flex w-4 justify-center"><span className="inline-block h-2.5 w-2.5 border border-ink-bg bg-caution" /></span> Adjacent format (counted at 35%)</li>
                 <li className="flex items-center gap-2"><span className="inline-flex w-4 justify-center"><span className="mk-other" /></span> Other business (not counted)</li>
                 <li className="flex items-center gap-2"><span className="inline-flex w-4 justify-center"><span className="inline-block h-2.5 w-2.5 rounded-full border-2 border-accent-soft" /></span> Context place</li>
-                <li className="text-ink-muted">Faded = already in BSA or skipped</li>
-                <li className="text-ink-muted">Amber ring = needs a decision</li>
+                <li className="text-ink-muted">Faded = already saved in BSA (or skipped)</li>
+                <li className="text-ink-muted">Green outline = captured area · amber ring = needs a decision</li>
               </ul>
             </details>
           </div>
         </div>
       </div>
 
-      {review && (
-        <section id="cap-review" className="card scroll-mt-4 p-5" aria-labelledby="cap-review-h">
+      {status && <SaveStatus status={status} onNew={startOver} onHistory={() => setTab('history')} />}
+
+      {areas.length > 0 && (
+        <section id="cap-results" className="card scroll-mt-4 p-5" aria-labelledby="cap-results-h">
           <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="min-w-0">
-              <p className="overline">{review.readOnly ? 'Saved capture' : review.saved ? 'Step 4 · saved' : 'Step 4 · review, then save'}</p>
-              <h2 id="cap-review-h" className="font-body text-title">{review.label}</h2>
-              <p className="mt-1 text-label font-normal text-ink-muted">
-                {review.items.length.toLocaleString('en-US')} places on the map
-                {editable && <> · {counts.accept} to save · {counts.pending} need a decision · {counts.reject} skipped</>}
-                {review.saved && <> · <strong className="text-go">✓ saved to BSA</strong></>}
-                {review.readOnly && <> · read-only</>}
-              </p>
+            <div>
+              <p className="overline">Step 4 · results</p>
+              <h2 id="cap-results-h" className="font-body text-title">Captured areas</h2>
+              <p className="mt-1 text-label font-normal text-ink-muted">Places already in BSA are counted but never saved again. Only new places below are saved.</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              {editable && <button type="button" className="btn-secondary" onClick={() => { setMode('add'); setTab('capture'); }} disabled={!!busy}>+ Add a missing place</button>}
-              <button type="button" className="btn-secondary" onClick={clearReview} disabled={!!busy}>{editable ? 'Discard' : 'Clear map'}</button>
-              {editable && (!confirmSave
-                ? <button type="button" className="btn-primary" disabled={counts.pending > 0 || counts.accept === 0 || !!busy} onClick={() => setConfirmSave(true)}>Save {counts.accept} to BSA</button>
-                : <span className="flex items-center gap-2"><span className="text-label">Every broker&apos;s analysis will use these places. Save?</span><button type="button" className="btn-primary" onClick={save} disabled={!!busy}>{busy ?? 'Yes, save'}</button><button type="button" className="btn-secondary" onClick={() => setConfirmSave(false)}>Cancel</button></span>)}
+              {editableAreas.length > 0 && <button type="button" className="btn-secondary" onClick={() => { setMode('add'); setTab('capture'); }} disabled={!!busy}>+ Add a missing place</button>}
+              <button type="button" className="btn-secondary" onClick={startOver} disabled={!!busy}>Clear all</button>
+              {editableAreas.length > 0 && (!confirmSave
+                ? <button type="button" className="btn-primary" disabled={pendingItems.length > 0 || loading || !!busy} onClick={() => setConfirmSave(true)}>Save {acceptedItems.length} new place{acceptedItems.length === 1 ? '' : 's'} to BSA</button>
+                : <span className="flex items-center gap-2"><span className="text-label">Every broker&apos;s analysis will use these places. Save?</span><button type="button" className="btn-primary" onClick={saveAll} disabled={!!busy}>{busy ?? 'Yes, save'}</button><button type="button" className="btn-secondary" onClick={() => setConfirmSave(false)}>Cancel</button></span>)}
             </div>
           </div>
+          {pendingItems.length > 0 && <p className="mt-3 text-label font-normal text-caution">▲ {pendingItems.length} place(s) need a decision before you can save — they look like places already in BSA, or are pins without a category. They are listed first.</p>}
 
-          {(projected || after) && readiness && (
-            <TerritoryDelta before={before ?? readiness.summary} next={after ?? projected!} saved={!!after} conceptLabel={readiness.concept?.label ?? null} catchmentM={readiness.catchmentM} />
-          )}
-          {counts.pending > 0 && editable && <p className="mt-3 text-label font-normal text-caution">▲ {counts.pending} place(s) need a decision before you can save — possible duplicates of places already in BSA, or pins without a category. They are listed first.</p>}
-          {review.notes.length > 0 && <ul className="mt-2 space-y-1 text-label font-normal text-ink-muted">{review.notes.map((n) => <li key={n}>{n}</li>)}</ul>}
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full text-label">
+              <caption className="sr-only">Captured areas</caption>
+              <thead className="text-ink-muted"><tr>
+                <th className="py-2 text-left font-normal">Area</th><th className="text-left font-normal">Layers</th>
+                <th className="text-right font-normal">Already in BSA</th><th className="text-right font-normal">New found</th><th className="text-right font-normal">To save</th><th className="text-left font-normal pl-3">Status</th><th />
+              </tr></thead>
+              <tbody>
+                {areas.map((a) => {
+                  const mine = items.filter((i) => i.areaId === a.id);
+                  const toSave = mine.filter((i) => i.decision === 'accept').length;
+                  const inBsa = a.stored.length;
+                  return (
+                    <tr key={a.id} className="border-t border-ink-border align-top">
+                      <td className="py-2 pr-2">
+                        <button type="button" className="text-left text-ink-text hover:underline" onClick={() => { setAreaFilter(a.id); if (a.area) fitToPoints(a.area.kind === 'circle' ? [{ lat: a.area.lat - a.area.radiusM / 111_320, lon: a.area.lon - a.area.radiusM / 108_000 }, { lat: a.area.lat + a.area.radiusM / 111_320, lon: a.area.lon + a.area.radiusM / 108_000 }] : [{ lat: a.area.south, lon: a.area.west }, { lat: a.area.north, lon: a.area.east }]); }}>{a.label}</button>
+                        {a.notes.length > 0 && <div className="font-normal text-ink-muted">{a.notes.join(' ')}</div>}
+                      </td>
+                      <td className="pr-2">
+                        <ul className="flex flex-wrap gap-1">
+                          {a.layers.map((l) => (
+                            <li key={l.layer} title={l.message} className={`rounded-full border px-2 py-0.5 text-[12px] ${l.status === 'failed' ? 'border-nogo text-nogo' : l.status === 'loaded' ? 'border-go text-go' : l.status === 'covered' ? 'border-ink-border text-ink-muted' : 'border-ink-border text-ink-muted'}`}>
+                              {l.status === 'loading' ? '… ' : l.status === 'waiting' ? '· ' : l.status === 'failed' ? '✕ ' : '✓ '}{LAYER_LABEL[l.layer] ?? l.layer}
+                              {l.status === 'loaded' && ` ${l.newCount} new`}{l.status === 'covered' && ' (saved)'}
+                              {l.status === 'failed' && !a.saved && <button type="button" className="link ml-1" onClick={() => retryLayer(a, l.layer)} disabled={!!busy}>retry</button>}
+                            </li>
+                          ))}
+                          {!a.layers.length && <li className="text-ink-muted">{a.source === 'navigator_import' ? 'From file' : a.source === 'manual' ? 'Hand-placed' : '—'}</li>}
+                        </ul>
+                      </td>
+                      <td className="text-right">{inBsa.toLocaleString('en-US')}</td>
+                      <td className="text-right">{mine.length.toLocaleString('en-US')}</td>
+                      <td className="text-right">{a.saved ? '—' : toSave.toLocaleString('en-US')}</td>
+                      <td className="pl-3">{a.readOnly ? 'Saved earlier' : a.saved ? <span className="text-go">✓ Saved {a.saved.saved}</span> : a.saveError ? <span className="text-nogo">✕ {a.saveError}</span> : a.layers.some((l) => l.status === 'loading' || l.status === 'waiting') ? 'Loading…' : 'Ready to save'}</td>
+                      <td className="text-right"><button type="button" className="link" onClick={() => removeArea(a)} disabled={!!busy} aria-label={`Remove ${a.label}`}>Remove</button></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
 
-          <div className="mt-4 flex flex-wrap items-center gap-2" role="group" aria-label="Show">
+          <div className="mt-5 flex flex-wrap items-center gap-2" role="group" aria-label="Show">
+            <select aria-label="Area" className="field min-h-[36px] w-auto" value={areaFilter} onChange={(e) => { setAreaFilter(e.target.value); setShown(PAGE); }}>
+              <option value="all">All areas</option>
+              {areas.map((a) => <option key={a.id} value={a.id}>{a.label}</option>)}
+            </select>
             {([
-              ['all', `All (${tiered.length})`],
-              ['pending', `Needs decision (${counts.pending})`],
-              ['direct', `◆ Direct (${counts.direct})`],
-              ['adjacent', `■ Adjacent (${counts.adjacent})`],
-              ['unrelated', `● Other businesses (${counts.unrelated})`],
-              ['context', `○ Context (${counts.context})`],
-              ['existing', `Already in BSA (${counts.existing})`],
+              ['all', 'All'], ['pending', `Needs decision (${counts.pending})`], ['direct', `◆ Direct (${counts.direct})`],
+              ['adjacent', `■ Adjacent (${counts.adjacent})`], ['unrelated', `● Other businesses (${counts.unrelated})`], ['context', `○ Context (${counts.context})`],
             ] as Array<[typeof group, string]>).map(([g, l]) => (
               <button key={g} type="button" aria-pressed={group === g} onClick={() => { setGroup(g); setShown(PAGE); }}
                 className={`rounded-full border px-3 py-1 text-label ${group === g ? 'border-accent-soft bg-ink-hover text-ink-text' : 'border-ink-border text-ink-muted'}`}>{l}</button>
             ))}
             <input aria-label="Search names" className="field ml-auto min-h-[36px] w-48" placeholder="Search…" value={search} onChange={(e) => setSearch(e.target.value)} />
           </div>
-          {editable && visible.length > 0 && (
+          {visible.some((i) => !areaById.get(i.areaId)?.saved && !areaById.get(i.areaId)?.readOnly) && (
             <div className="mt-2 flex gap-2">
-              <button type="button" className="link text-label" onClick={() => updateItems(visible.filter((i) => !(i.origin === 'file' && i.existingPoiId)).map((i) => i.key), { decision: 'accept' })}>Save all shown</button>
+              <button type="button" className="link text-label" onClick={() => updateItems(visible.map((i) => i.key), { decision: 'accept' })}>Save all shown</button>
               <span className="text-ink-muted">·</span>
               <button type="button" className="link text-label" onClick={() => updateItems(visible.map((i) => i.key), { decision: 'reject' })}>Skip all shown</button>
             </div>
@@ -814,16 +926,18 @@ export function CaptureWorkbench() {
 
           <div className="mt-3 max-h-[520px] overflow-auto">
             <table className="w-full text-label">
-              <caption className="sr-only">Places on the map</caption>
+              <caption className="sr-only">New places found</caption>
               <thead className="sticky top-0 z-10 bg-ink-panel text-ink-muted">
-                <tr><th className="py-2 text-left font-normal">Place</th><th className="text-left font-normal">Territory Guard</th><th className="text-left font-normal">Category</th><th className="text-left font-normal">Truth</th><th className="text-left font-normal">Status</th>{editable && <th className="text-left font-normal">Decision</th>}</tr>
+                <tr><th className="py-2 text-left font-normal">Place</th><th className="text-left font-normal">Territory Guard</th><th className="text-left font-normal">Category</th><th className="text-left font-normal">Truth</th><th className="text-left font-normal">Status</th><th className="text-left font-normal">Decision</th></tr>
               </thead>
               <tbody>
                 {visible.slice(0, shown).map((it) => {
-                  const d = reviewSite ? Math.round(distanceM(reviewSite.lat, reviewSite.lon, it.lat, it.lon)) : null;
-                  const inCatch = d != null && readiness && d <= readiness.catchmentM;
+                  const a = areaById.get(it.areaId);
+                  const editable = !!a && !a.saved && !a.readOnly;
+                  const s = a?.context?.site;
+                  const d = s ? Math.round(distanceM(s.lat, s.lon, it.lat, it.lon)) : null;
+                  const inCatch = d != null && d <= catchmentFor(a?.context?.format);
                   const renamed = it.name !== it.originalName;
-                  const lockedExisting = it.origin === 'file' && !!it.existingPoiId;
                   return (
                     <tr key={it.key} id={`cap-row-${cssId(it.key)}`} className={`border-t border-ink-border align-top ${selected === it.key ? 'bg-ink-hover' : ''}`}>
                       <td className="py-2 pr-2">
@@ -842,33 +956,26 @@ export function CaptureWorkbench() {
                           : CATEGORY_LABEL[it.category]}
                       </td>
                       <td className="pr-2"><TruthChip layer={renamed ? 'assumed' : it.truthLayer} compact /></td>
-                      <td className="pr-2 text-ink-muted">
-                        {review.readOnly || review.saved ? '✓ in BSA'
-                          : lockedExisting ? 'Already in BSA (kept as is)'
-                            : it.existingPoiId ? 'In BSA — save refreshes it'
-                              : it.duplicateOf ? `▲ looks like “${it.duplicateOf.name}”`
-                                : 'new'}
-                      </td>
-                      {editable && (
-                        <td>
+                      <td className="pr-2 text-ink-muted">{a?.saved || a?.readOnly ? '✓ in BSA' : it.duplicateOf ? `▲ looks like “${it.duplicateOf.name}”` : 'new'}</td>
+                      <td>
+                        {editable ? (
                           <div role="radiogroup" aria-label={`Decision for ${it.name}`} className="flex gap-1">
                             {(['accept', 'reject'] as const).map((dc) => (
-                              <button key={dc} type="button" role="radio" aria-checked={it.decision === dc} disabled={dc === 'accept' && lockedExisting}
-                                onClick={() => updateItems([it.key], { decision: dc })}
-                                className={`rounded-control border px-2 py-1 disabled:opacity-40 ${it.decision === dc ? (dc === 'accept' ? 'border-go text-go' : 'border-nogo text-nogo') : 'border-ink-border text-ink-muted'}`}>
+                              <button key={dc} type="button" role="radio" aria-checked={it.decision === dc} onClick={() => updateItems([it.key], { decision: dc })}
+                                className={`rounded-control border px-2 py-1 ${it.decision === dc ? (dc === 'accept' ? 'border-go text-go' : 'border-nogo text-nogo') : 'border-ink-border text-ink-muted'}`}>
                                 {dc === 'accept' ? '✓ Save' : '✕ Skip'}
                               </button>
                             ))}
                           </div>
-                        </td>
-                      )}
+                        ) : <span className="text-ink-muted">—</span>}
+                      </td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
             {visible.length > shown && <button type="button" className="btn-secondary mt-3" onClick={() => setShown((n) => n + PAGE)}>Show {Math.min(PAGE, visible.length - shown)} more of {visible.length - shown}</button>}
-            {visible.length === 0 && <p className="py-4 text-label text-ink-muted">Nothing in this group.</p>}
+            {visible.length === 0 && <p className="py-4 text-label text-ink-muted">{loading ? 'Loading…' : 'No new places here — everything found is already in BSA.'}</p>}
           </div>
         </section>
       )}
@@ -880,6 +987,80 @@ function cssId(key: string): string {
   return key.replace(/[^a-zA-Z0-9_-]/g, '_');
 }
 
+/** Status screen after Save — one row per area, totals, and Territory Guard before → after. */
+function SaveStatus({ status, onNew, onHistory }: { status: { at: string; areas: AreaRun[] }; onNew: () => void; onHistory: () => void }) {
+  const ok = status.areas.filter((a) => a.saved);
+  const failed = status.areas.filter((a) => a.saveError);
+  const tot = ok.reduce((t, a) => ({ saved: t.saved + a.saved!.saved, already: t.already + a.saved!.alreadyInBsa + a.stored.length, tagged: t.tagged + a.saved!.psgcTagged, cells: t.cells + a.saved!.coverageStamped }), { saved: 0, already: 0, tagged: 0, cells: 0 });
+  return (
+    <section id="cap-status" className="card scroll-mt-4 overflow-hidden" aria-labelledby="cap-status-h" role="status">
+      <div className={`flex flex-wrap items-center justify-between gap-3 px-5 py-4 ${failed.length ? 'bg-caution/15' : 'bg-go/15'}`}>
+        <div>
+          <p className="overline">Save complete · {status.at}</p>
+          <h2 id="cap-status-h" className="font-body text-title">{failed.length ? `▲ Saved ${ok.length} of ${status.areas.length} areas` : `✓ Saved to BSA — ${tot.saved.toLocaleString('en-US')} new place${tot.saved === 1 ? '' : 's'}`}</h2>
+        </div>
+        <div className="flex gap-2">
+          <button type="button" className="btn-secondary" onClick={onHistory}>Saved captures</button>
+          <button type="button" className="btn-primary" onClick={onNew}>Start a new capture</button>
+        </div>
+      </div>
+      <dl className="grid grid-cols-2 gap-3 px-5 py-4 text-center sm:grid-cols-4">
+        <div><dt className="stat-label">New places saved</dt><dd className="text-h3">{tot.saved.toLocaleString('en-US')}</dd></div>
+        <div><dt className="stat-label">Already in BSA (not re-saved)</dt><dd className="text-h3">{tot.already.toLocaleString('en-US')}</dd></div>
+        <div><dt className="stat-label">Tagged with barangay</dt><dd className="text-h3">{tot.tagged.toLocaleString('en-US')}</dd></div>
+        <div><dt className="stat-label">Map cells marked captured</dt><dd className="text-h3">{tot.cells.toLocaleString('en-US')}</dd></div>
+      </dl>
+      <table className="w-full border-t border-ink-border text-label">
+        <caption className="sr-only">Save result per area</caption>
+        <thead className="text-ink-muted"><tr><th className="px-5 py-2 text-left font-normal">Area</th><th className="text-right font-normal">Saved</th><th className="text-right font-normal">Already in BSA</th><th className="px-5 text-left font-normal">Territory Guard — direct competitors in catchment</th></tr></thead>
+        <tbody>
+          {status.areas.map((a) => (
+            <tr key={a.id} className="border-t border-ink-border align-top">
+              <td className="px-5 py-2">{a.saveError ? <span className="text-nogo">✕ </span> : <span className="text-go">✓ </span>}{a.label}{a.saveError && <div className="text-nogo">{a.saveError} — the places are still on the map; press Save again.</div>}</td>
+              <td className="text-right">{a.saved ? a.saved.saved : '—'}</td>
+              <td className="text-right">{a.saved ? a.saved.alreadyInBsa + a.stored.length : '—'}</td>
+              <td className="px-5">
+                {a.after?.length ? a.after.map((v) => {
+                  const b = a.before?.find((x) => x.vertical === v.vertical);
+                  return <div key={v.vertical}>{CAPTURE_VERTICALS.find((x) => x.key === v.vertical)?.label ?? v.concept?.label ?? v.vertical}: {b ? `${b.summary.catchment.direct} → ` : ''}<strong>{v.summary.catchment.direct}</strong> · saturation {Math.round(v.summary.saturationPct)}%</div>;
+                }) : <span className="text-ink-muted">—</span>}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+/** "What Territory Guard sees here now" — per chosen business type, inside the catchment. */
+function TerritoryReadout({ readiness, loading }: { readiness: Readiness | null; loading: boolean }) {
+  if (!readiness) return <p className="mt-3 text-label text-ink-muted">{loading ? 'Checking what BSA already holds here…' : ''}</p>;
+  return (
+    <div className="card-inset mt-4 p-3" aria-live="polite">
+      <p className="overline">Territory Guard sees here now{loading ? ' · updating…' : ''}</p>
+      <p className="mt-1 text-label font-normal text-ink-muted">{readiness.places.length.toLocaleString('en-US')} places already in BSA inside the ring.</p>
+      {readiness.byVertical.length > 0 && (
+        <table className="mt-2 w-full text-label">
+          <thead className="text-ink-muted"><tr><th className="text-left font-normal">Business type</th><th className="text-right font-normal">◆ Direct</th><th className="text-right font-normal">■ Adj.</th><th className="text-right font-normal">Sat.</th></tr></thead>
+          <tbody>
+            {readiness.byVertical.map((v) => (
+              <tr key={v.vertical} className="border-t border-ink-border">
+                <td className="py-1">{CAPTURE_VERTICALS.find((x) => x.key === v.vertical)?.label ?? v.vertical}</td>
+                <td className="text-right">{v.summary.catchment.direct}</td>
+                <td className="text-right">{v.summary.catchment.adjacent}</td>
+                <td className="text-right">{Math.round(v.summary.saturationPct)}%</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      <p className="mt-2 text-label font-normal text-ink-muted">Counted inside the {readiness.catchmentM.toLocaleString('en-US')} m catchment with Territory Guard&apos;s own rules. Saturation is Projected.</p>
+      {readiness.coverage.length > 0 && <p className="mt-1 text-label font-normal text-ink-muted">Already captured: {readiness.coverage.map((c) => `${CAPTURE_VERTICALS.find((x) => x.key === c.vertical)?.label ?? c.vertical} ${c.fresh}/${c.cells} cells`).join(' · ')}</p>}
+    </div>
+  );
+}
+
 function Step({ n, title, done, disabled, children }: { n: number; title: string; done?: boolean; disabled?: boolean; children: React.ReactNode }) {
   return (
     <section className={`card p-5 ${disabled ? 'opacity-60' : ''}`} aria-labelledby={`cap-step-${n}`} aria-disabled={disabled || undefined}>
@@ -889,51 +1070,6 @@ function Step({ n, title, done, disabled, children }: { n: number; title: string
       </h2>
       <div className="mt-3">{children}</div>
     </section>
-  );
-}
-
-/** "What Territory Guard sees here now" — counted inside the catchment exactly as the module does. */
-function TerritoryReadout({ readiness, loading, vertical }: { readiness: Readiness | null; loading: boolean; vertical: string }) {
-  if (!readiness) return <p className="mt-3 text-label text-ink-muted">{loading ? 'Checking what BSA already holds here…' : ''}</p>;
-  const s = readiness.summary;
-  return (
-    <div className="card-inset mt-4 p-3" aria-live="polite">
-      <p className="overline">Territory Guard sees here now{loading ? ' · updating…' : ''}</p>
-      {!vertical
-        ? <p className="mt-1 text-label font-normal text-ink-muted">Pick a business type to see the competitor count. {s.ring.context + s.ring.unrelated + s.ring.direct + s.ring.adjacent} places already in BSA inside the ring.</p>
-        : (
-          <>
-            <dl className="mt-2 grid grid-cols-3 gap-2 text-center">
-              <div><dt className="text-label font-normal text-ink-muted">◆ Direct</dt><dd className="text-h3 text-ink-text">{s.catchment.direct}</dd></div>
-              <div><dt className="text-label font-normal text-ink-muted">■ Adjacent</dt><dd className="text-h3 text-ink-text">{s.catchment.adjacent}</dd></div>
-              <div><dt className="text-label font-normal text-ink-muted">Saturation</dt><dd className="text-h3 text-ink-text">{Math.round(s.saturationPct)}%</dd></div>
-            </dl>
-            <p className="mt-2 text-label font-normal text-ink-muted">
-              Inside the {readiness.catchmentM.toLocaleString('en-US')} m catchment, for {readiness.concept?.label ?? 'this business'}. Saturation is Projected (same curve as Territory Guard).
-              {s.catchment.direct === 0 && ' No direct competitors in BSA here yet — capture to fill this in.'}
-            </p>
-            {readiness.coverage && (
-              <p className="mt-1 text-label font-normal text-ink-muted">Coverage for this business type: {readiness.coverage.fresh} of {readiness.coverage.cells} map cells already captured.</p>
-            )}
-          </>
-        )}
-    </div>
-  );
-}
-
-function TerritoryDelta({ before, next, saved, conceptLabel, catchmentM }: { before: TerritorySummary; next: TerritorySummary; saved: boolean; conceptLabel: string | null; catchmentM: number }) {
-  const row = (label: string, a0: number, b0: number, suffix = '') => {
-    const a = Math.round(a0), b = Math.round(b0);
-    return (
-    <div className="flex items-baseline justify-between gap-3"><dt className="text-ink-muted">{label}</dt><dd className="text-ink-text">{a}{suffix} → <strong>{b}{suffix}</strong>{b !== a && <span className="ml-1 text-ink-muted">({b > a ? '+' : ''}{b - a})</span>}</dd></div>
-    );
-  };
-  return (
-    <div className="card-inset mt-4 grid gap-2 p-4 text-label font-normal sm:grid-cols-[1fr_1fr]">
-      <p className="sm:col-span-2"><strong>{saved ? 'Territory Guard now sees' : 'After saving, Territory Guard will see'}</strong> <span className="text-ink-muted">— {conceptLabel ?? 'this business'}, {catchmentM.toLocaleString('en-US')} m catchment</span></p>
-      <dl className="space-y-1">{row('◆ Direct competitors', before.catchment.direct, next.catchment.direct)}{row('■ Adjacent formats', before.catchment.adjacent, next.catchment.adjacent)}</dl>
-      <dl className="space-y-1">{row('Competitive saturation (Projected)', before.saturationPct, next.saturationPct, '%')}{row('Context places in ring', before.ring.context, next.ring.context)}</dl>
-    </div>
   );
 }
 

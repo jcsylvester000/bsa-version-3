@@ -159,13 +159,23 @@ export function summariseSite(
   const score = rated.reduce((s, d) => s + toneValue(d.finding.tone) * (prim(d.key) ? 2 : 1), 0);
   const primaryNoGo = nogos.some((d) => prim(d.key));
 
+  // Territory deal-breaker (2026-10-07): a site that redistributes its own sales can never read
+  // Proceed, whatever the other modules say; a "mixed" territory call tops out at Caution. The stored
+  // composite applies the same gate (scorecard.territoryGate); this guard also protects runs whose
+  // composite was stored before the gate existed.
+  const tv = input.territory?.verdict ?? null;
+  const territoryVeto = tv === 'redistributes';
+  const territoryCap = tv === 'mixed';
+
   let classification: SiteClass;
   if (compositeBand != null) {
     // Single source of truth: the scorecard band drives the call (agrees with the dashboard).
     classification = BAND_TO_CLASS[compositeBand];
+    if (territoryVeto) classification = 'no_go';
+    else if (territoryCap && classification === 'proceed') classification = 'cautious';
   } else if (coverage === 0) {
     classification = 'cautious';
-  } else if (primaryNoGo || nogos.length >= 2) {
+  } else if (territoryVeto || primaryNoGo || nogos.length >= 2) {
     classification = 'no_go';
   } else if (coverage >= 2 && nogos.length === 0 && score >= 2 && gos.length >= cautions.length) {
     classification = 'proceed';
@@ -186,7 +196,9 @@ export function summariseSite(
     headline = `Proceed — ${base}${cautions.length ? `; watch: ${negatives.join('; ')}` : ''}.`;
   } else if (classification === 'no_go') {
     const drv = (nogos.length ? nogos : cautions).map((d) => d.finding.detail.replace(/ ·.*$/, '').toLowerCase());
-    headline = `No-Go — ${drv.length ? drv.join('; ') : 'the combined score falls below the go/caution threshold'}.`;
+    headline = territoryVeto
+      ? `No-Go — the site redistributes existing sales (cannibalization deal-breaker)${positives.length ? `; ${positives.join('; ')} does not outweigh it` : ''}.`
+      : `No-Go — ${drv.length ? drv.join('; ') : 'the combined score falls below the go/caution threshold'}.`;
   } else {
     headline = `Proceed with caution — ${negatives.length ? negatives.join('; ') : 'the combined score sits in the caution band; review the findings below'}.`;
   }
@@ -195,6 +207,7 @@ export function summariseSite(
 
   const keywords: string[] = [];
   if (input.territory?.verdict) keywords.push(KEYWORD[input.territory.verdict] ?? input.territory.verdict);
+  if (territoryVeto) keywords.push('deal-breaker');
   if (input.lease?.verdict) keywords.push(KEYWORD[input.lease.verdict] ?? input.lease.verdict);
   if (df && df.tone !== 'muted') keywords.push(df.tone === 'go' ? 'strong-window' : df.tone === 'caution' ? 'partial-window' : 'weak-window');
 

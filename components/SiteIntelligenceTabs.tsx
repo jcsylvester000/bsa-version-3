@@ -900,6 +900,7 @@ function AnalysisTab({
         analysedAt={m.meta.analysedAt ?? null}
         truthPct={m.truthPct}
         limited={m.limited}
+        capNote={m.meta.capNote ?? null}
       />
       {m.summary.findings.length > 0 && (
         <FindingsList findings={m.summary.findings} keywords={m.summary.keywords} figures={m.figures} onOpenTab={onOpenTab} />

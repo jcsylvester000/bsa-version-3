@@ -40,6 +40,7 @@ export function captureErrorResponse(e: unknown): Response {
 export function reasonOf(e: unknown): string {
   const msg = e instanceof Error ? `${(e as { code?: string }).code ?? ''} ${e.message}` : String(e);
   if (/poi_capture_(batch|item)|osm_type|capture_batch_id|column .* does not exist|relation .* does not exist|P2021|P2022/i.test(msg)) return 'db_migration_pending';
+  if (/Transactions are not supported in HTTP mode/i.test(msg)) return 'db_http_transaction';
   if (/function similarity|pg_trgm/i.test(msg)) return 'db_pg_trgm_missing';
   if (/st_|postgis|geography/i.test(msg)) return 'db_postgis';
   if (/timeout|timed out|ETIMEDOUT|57014/i.test(msg)) return 'timeout';
@@ -59,6 +60,7 @@ const brand = z.string().trim().max(80);
 export const SiteContextSchema = z.object({
   site: z.object({ lat, lon }).optional(),
   vertical: vertical.optional(),
+  verticals: z.array(vertical).max(6).optional(),
   brand: brand.optional(),
   format: format.optional(),
 });
@@ -67,6 +69,10 @@ export const SiteContextSchema = z.object({
 export const PreviewBody = z.object({
   area: CaptureAreaSchema,
   layers: z.array(layer).min(1).max(12),
+  /** Include the places BSA already holds inside the area (first call for a ring). */
+  withStored: z.boolean().optional(),
+  /** Call OpenStreetMap even when the area was captured in the last 90 days. */
+  refresh: z.boolean().optional(),
 });
 
 /** POST /save — the reviewed places the admin chose to keep. */
@@ -75,6 +81,7 @@ export const SaveBody = z.object({
   label,
   area: CaptureAreaSchema.optional(),
   layers: z.array(layer).max(12).optional(),
+  fetchedLayers: z.array(layer).max(12).optional(),
   context: SiteContextSchema.optional(),
   items: z.array(z.object({
     osmRef: z.string().regex(/^(node|way|relation)\/\d{1,15}$/).nullish(),
@@ -85,7 +92,7 @@ export const SaveBody = z.object({
     lat, lon,
     origin: z.enum(['osm', 'file', 'manual']),
     notes: z.string().max(500).nullish(),
-  })).min(1).max(5_000),
+  })).max(5_000),
 });
 
 /** GET /readiness query. */
@@ -95,6 +102,13 @@ export const ReadinessQuery = z.object({
   radiusM: z.coerce.number().int().min(200).max(3_000).optional(),
   format: format.optional(),
   vertical: vertical.optional(),
+  /** Comma-separated business types (multi-select). */
+  verticals: z.string().max(200).optional().transform((v, ctx) => {
+    if (!v) return undefined;
+    const list = v.split(',').map((x) => x.trim()).filter(Boolean);
+    if (list.length > 6 || !list.every(isCaptureVertical)) { ctx.addIssue({ code: 'custom', message: 'Unknown business type' }); return z.NEVER; }
+    return list;
+  }),
   brand: brand.optional(),
 });
 

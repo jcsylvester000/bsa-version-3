@@ -81,7 +81,6 @@ describe('admin capture routes', () => {
 
   it('save validates every place before anything is written', async () => {
     session.mockResolvedValue(admin);
-    expect((await save(req('/api/admin/capture/save', { source: 'osm', items: [] }))).status).toBe(422);
     expect((await save(req('/api/admin/capture/save', { source: 'osm', items: [{ ...item, lat: 35.6 }] }))).status).toBe(422);
     expect((await save(req('/api/admin/capture/save', { source: 'osm', items: [{ ...item, osmRef: "node/1'; drop" }] }))).status).toBe(422);
     expect((await save(req('/api/admin/capture/save', { source: 'osm', items: [{ ...item, category: 'bogus' }] }))).status).toBe(422);

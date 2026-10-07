@@ -35,14 +35,14 @@ capped at 5 accounts per IP per hour; new passwords need 10+ characters.
 `GET /api/admin/data-stats` requires staff (admin/analyst). Others → `403 forbidden`.
 
 ### Admin Place Capture (`/api/admin/capture/*`) — **admin only**, JSON bodies only
-Workflow (v2, 2026-10-07): **preview/import are read-only → the admin reviews on the map → `/save` is the only write.**
+Workflow (v3, 2026-10-07): **preview/import are read-only → the admin reviews on the map → `/save` is the only write.** The client loads ONE layer per `/preview` call, skips layers already captured for the area (≤ 90 days) and only lists places BSA does not already hold.
 
 | Method & path | Body / query | Returns |
 |---|---|---|
-| `GET /readiness?lat&lon[&radiusM&format&vertical&brand]` | format inline/mall/kiosk; vertical = intake key | PSGC boundary of the pin + what Territory Guard sees there now (same tiers, catchment, saturation) + coverage cells + stored places in the ring. Read-only. |
-| `POST /preview` | `{ area: {kind:'rect',south,west,north,east} \| {kind:'circle',lat,lon,radiusM 50–3000}, layers: string[1–12] }` | `{ candidates[], skipped, notes }` — live OSM pull (server-side, 18 s budget), **writes nothing**. Each OSM candidate carries an HMAC `receipt`; `existingPoiId` / `duplicateOf` mark what BSA already holds (best-effort read). ≤ 25 km²; 40 pulls / admin / hour. |
+| `GET /readiness?lat&lon[&radiusM&format&verticals&brand]` | format inline/mall/kiosk; `verticals` = comma-separated intake keys (≤ 6; `vertical` still accepted) | PSGC boundary of the pin + `byVertical[]` (what Territory Guard sees per business type: tiers, catchment, saturation) + `coverage[]` per type + stored places in the ring. Read-only. |
+| `POST /preview` | `{ area: {kind:'rect',south,west,north,east} \| {kind:'circle',lat,lon,radiusM 50–3000}, layers: string[1–12], withStored?: bool, refresh?: bool }` | `{ layers: [{layer, status: loaded\|covered\|failed, found, newCount, inBsa, message?}], candidates[] (NEW places only), stored?[] (places BSA already holds in the area, when `withStored`), notes }` — **writes nothing**. Layers captured ≤ 90 days ago are `covered` (no Overpass call) unless `refresh`. Overpass: 20 s budget split over two endpoints, results cached in memory 30 min. Each OSM candidate carries an HMAC `receipt`. ≤ 25 km²; 240 calls / admin / hour. |
 | `POST /import` | the `.gridnav.json` file as the JSON body; header `x-file-name` | `{ candidates[], stats, notes }` — **writes nothing**. ≤ 10 MB; tiles/routes ignored. `413` too large, `422` not a Grid Navigator file. |
-| `POST /save` | `{ source: osm\|navigator_import\|manual, label?, area?, layers?, context?: { site, vertical, brand, format }, items: [{ osmRef?, receipt?, name, kind?, category, lat, lon, origin: osm\|file\|manual, notes? }] (1–5000) }` | `{ batchId, saved, inBsa, psgcTagged, skippedExisting, coverageStamped }` — the only write: committed batch record, `poi` upsert (intact receipt → Verified and may refresh a stored row; otherwise Assumed and never overwrites), PSGC tags, Territory Guard `poi_coverage` stamps, audit. Idempotent. |
+| `POST /save` | `{ source: osm\|navigator_import\|manual, label?, area?, layers?, fetchedLayers?, context?: { site, verticals[], brand, format }, items: [{ osmRef?, receipt?, name, kind?, category, lat, lon, origin: osm\|file\|manual, notes? }] (0–5000; 0 allowed when `area`+`fetchedLayers` so the area is still marked captured) }` | `{ batchId, saved, alreadyInBsa, linked, psgcTagged, coverageStamped }` — the only write: batch record, **new places only** (`INSERT … ON CONFLICT DO NOTHING`; a stored place is never re-written), PSGC tags, Territory Guard `poi_coverage` stamps for `fetchedLayers`, audit. Idempotent. Plain statements only — no Prisma `createMany`/interactive transactions (the Neon HTTP adapter refuses them). |
 | `GET /batches` | — | the 30 most recent saved captures. |
 | `GET /batches/:id` | — | a saved capture and the places it saved (view on the map). |
 | `GET /coverage` | — | saved areas (GeoJSON) + POI totals per region. |
@@ -50,7 +50,7 @@ Workflow (v2, 2026-10-07): **preview/import are read-only → the admin reviews 
 | `POST /pois/:id/verify` | — | field-confirm a manual pin → Verified. |
 
 Errors carry a reason code instead of a bare 500, e.g. `[reason: db_migration_pending]` (run `npx prisma migrate deploy`),
-`db_pg_trgm_missing`, `db_postgis`, `timeout`, `db_unreachable`.
+`db_pg_trgm_missing`, `db_postgis`, `timeout`, `db_unreachable`, `db_http_transaction` (a write path used a transaction under Neon HTTP — a code bug).
 
 Layers: `anchors` (grid-navigator's navigation set), `transport`, `health`, `education`, `malls`, `offices`,
 and `v:<vertical>` competitor sets (keys of `osmService.OSM_SELECTORS`). Overpass queries are built only from

@@ -48,10 +48,18 @@ yet — sites there show honest gaps on the lease module until comps are loaded 
 
 ### Gap-filling with the admin screen (Admin → Place Capture)
 
-For a district rather than a province: draw a rectangle/circle (≤ 25 km²), pick layers, **Capture this
-area**, review, **Save**. Grid Navigator field sessions are imported from the same screen (save the session
+For a district rather than a province: drop the site pin (any of the 18 regions), tick the business types, **Show places on
+the map** (layers load one at a time; places BSA already has are shown faded and never saved again), add more areas if you
+like, review the Captured areas table, **Save**, and read the status screen. Grid Navigator field sessions are imported from the same screen (save the session
 *without* map tiles). Hand-placed pins are Assumed until an admin confirms them on the ground. Load the
 region's boundaries first so captured places get barangay/city tags.
+
+### After the 2026-10-07 scoring fix — refresh stored composites
+
+Territory Guard is now a deal-breaker in the Final Report: own-branch overlap ≥ 40 % ("Redistributes") caps the
+composite at 44 and forces **No-Go**; 15–40 % caps it at 64 (Caution). New runs get this automatically. To fix
+runs already saved, run once from the app folder: `npm run db:recompute-composites -- --dry` (preview), then
+`npm run db:recompute-composites`.
 
 ### Local-first path (recommended for big provinces — 2026-09-28)
 

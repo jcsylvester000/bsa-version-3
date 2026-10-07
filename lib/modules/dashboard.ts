@@ -3,6 +3,7 @@
  * Pure assembly from the run's module_results into: KPI tiles, ranked shortlist,
  * Truth Layer quality mix, and Intelligence Alerts (module findings tagged to source).
  */
+import { gateComposite, territoryGate } from './scorecard';
 import type { TruthLayer } from '@/lib/truth/truthLayer';
 
 export interface DashSite {
@@ -147,10 +148,18 @@ export function buildDashboard(
 
     for (const m of s.modules) allLayers.push(m.truthLayer);
 
+    // Territory deal-breaker at read time (runs stored before the gate): the dashboard must agree
+    // with the Final Report — a site that redistributes its own sales never shows Go.
+    const terrOverlap = terr ? Number((terr.payload as { maxOverlapPct?: number }).maxOverlapPct ?? terr.score ?? NaN) : null;
+    const gate = territoryGate(Number.isFinite(terrOverlap as number) ? terrOverlap : null);
+    const rawComposite = s.composite != null ? Number(s.composite) : (fit?.score ?? null);
+    let gatedVerdict = (s.verdict as 'go' | 'caution' | 'nogo' | null) ?? null;
+    if (gatedVerdict && gate.maxBand === 'nogo') gatedVerdict = 'nogo';
+    else if (gatedVerdict === 'go' && gate.maxBand === 'caution') gatedVerdict = 'caution';
     ranked.push({
       siteId: s.id, label: s.label, city: s.city,
-      composite: s.composite != null ? Number(s.composite) : (fit?.score ?? null),
-      verdict: (s.verdict as 'go' | 'caution' | 'nogo' | null) ?? null,
+      composite: gateComposite(rawComposite, gate.cap != null ? terrOverlap : null),
+      verdict: gatedVerdict,
       highlights: highlights.slice(0, 3),
     });
   }

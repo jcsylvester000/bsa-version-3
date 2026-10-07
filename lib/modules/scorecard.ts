@@ -101,6 +101,45 @@ export function scorecardCriteria(moduleScores: ModuleScore[]): ScorecardCriteri
  */
 const NO_SITEFIT_GO_CAP = 64; // scorecardBand: >=65 GO, >=45 CAUTION → 64 tops out at CAUTION
 
+/**
+ * Territory deal-breaker (2026-10-07, owner + Skill 07). A weighted average let strong demand / lease /
+ * site-fit scores outvote a site that takes most of its sales from the brand's own branch — e.g. 75 %
+ * own-branch overlap still read "65 · Proceed". Cannibalization is a knock-out, not one vote among six:
+ *   Territory overlap ≥ 40 % (module verdict "redistributes") → composite capped at 44 → No-Go
+ *   Territory overlap ≥ 15 % (module verdict "mixed")         → composite capped at 64 → at most Caution
+ * Same thresholds as territoryMath.verdictFromOverlap, so the score can never disagree with the
+ * Territory Guard call. The overlap is the module's headline (max of own-branch and competitive).
+ */
+export const TERRITORY_NOGO_OVERLAP_PCT = 40;
+export const TERRITORY_CAUTION_OVERLAP_PCT = 15;
+const TERRITORY_NOGO_CAP = 44;
+const TERRITORY_CAUTION_CAP = 64;
+
+export interface TerritoryGate { cap: number | null; maxBand: 'nogo' | 'caution' | null; reason: string | null }
+
+export function territoryGate(overlapPct: number | null | undefined): TerritoryGate {
+  if (overlapPct == null || !Number.isFinite(overlapPct)) return { cap: null, maxBand: null, reason: null };
+  if (overlapPct >= TERRITORY_NOGO_OVERLAP_PCT) {
+    return { cap: TERRITORY_NOGO_CAP, maxBand: 'nogo', reason: `Cannibalization deal-breaker: ${Math.round(overlapPct * 10) / 10}% territory overlap (≥ ${TERRITORY_NOGO_OVERLAP_PCT}%) — the site mostly redistributes existing sales.` };
+  }
+  if (overlapPct >= TERRITORY_CAUTION_OVERLAP_PCT) {
+    return { cap: TERRITORY_CAUTION_CAP, maxBand: 'caution', reason: `Cannibalization risk: ${Math.round(overlapPct * 10) / 10}% territory overlap (≥ ${TERRITORY_CAUTION_OVERLAP_PCT}%) — cannot rate above Caution.` };
+  }
+  return { cap: null, maxBand: null, reason: null };
+}
+
+/** Apply the territory gate to a stored/computed composite (also used at read time for older runs). */
+export function gateComposite(composite: number | null, overlapPct: number | null | undefined): number | null {
+  const g = territoryGate(overlapPct);
+  return composite != null && g.cap != null ? Math.min(composite, g.cap) : composite;
+}
+
+/** Raw territory overlap % from the criteria (the criterion stores 100 − overlap). */
+function overlapFromCriteria(criteria: ScorecardCriterion[]): number | null {
+  const t = criteria.find((c) => c.key === 'territory');
+  return t?.score != null ? Math.round((100 - t.score) * 10) / 10 : null;
+}
+
 function cappedComposite(criteria: ScorecardCriterion[]): number | null {
   let composite = scorecardComposite(criteria);
   const siteFit = criteria.find((c) => c.key === 'site_fit');
@@ -108,7 +147,7 @@ function cappedComposite(criteria: ScorecardCriterion[]): number | null {
   if (composite != null && siteFitMissing && composite > NO_SITEFIT_GO_CAP) {
     composite = NO_SITEFIT_GO_CAP;
   }
-  return composite;
+  return gateComposite(composite, overlapFromCriteria(criteria));
 }
 
 /**
@@ -119,10 +158,13 @@ function cappedComposite(criteria: ScorecardCriterion[]): number | null {
 export function siteCompositeFromModules(moduleScores: ModuleScore[]): {
   composite: number | null;
   band: Scorecard['band'];
+  /** The weighted average before any cap (shown as "would score X" when a deal-breaker applies). */
+  uncapped: number | null;
+  gate: TerritoryGate;
 } {
   const criteria = scorecardCriteria(moduleScores);
   const composite = cappedComposite(criteria);
-  return { composite, band: scorecardBand(composite) };
+  return { composite, band: scorecardBand(composite), uncapped: scorecardComposite(criteria), gate: territoryGate(overlapFromCriteria(criteria)) };
 }
 
 /** Build the scorecard from the run's module scores for one site. */

@@ -34,12 +34,29 @@ describe('summariseSite', () => {
   });
 
   it('a non-primary no-go does NOT force NO-GO (stays cautious)', () => {
-    const isPrimary = (k: string) => k === 'lease'; // only lease is decision-critical here
+    const isPrimary = (k: string) => k === 'territory'; // daypart is not decision-critical here
     const s = summariseSite({
-      territory: { verdict: 'redistributes' }, // no-go but NOT primary
+      territory: { verdict: 'adds' },
       lease: { verdict: 'at_market' },
-      daypart: { windowMatchPct: 55 },
+      daypart: { windowMatchPct: 20 }, // no-go but NOT primary
     }, isPrimary);
+    expect(s.classification).toBe('cautious');
+  });
+
+  it('territory deal-breaker: "redistributes" is always No-Go, even against a Go composite band', () => {
+    const s = summariseSite({
+      territory: { verdict: 'redistributes', totalCannibalizedPhp: 408240 },
+      lease: { verdict: 'corridor_benchmark' },
+      daypart: { windowMatchPct: 85 },
+    }, undefined, 'go');
+    expect(s.classification).toBe('no_go');
+    expect(s.label).toBe('No-Go');
+    expect(s.headline).toMatch(/redistributes existing sales/);
+    expect(s.keywords).toContain('deal-breaker');
+  });
+
+  it('a "mixed" territory call caps a Go band at Proceed with caution', () => {
+    const s = summariseSite({ territory: { verdict: 'mixed' }, daypart: { windowMatchPct: 85 } }, undefined, 'go');
     expect(s.classification).toBe('cautious');
   });
 

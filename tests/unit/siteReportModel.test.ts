@@ -10,9 +10,9 @@ import { SAMPLE_PAYLOADS, SAMPLE_META } from '../fixtures/siteReportSample';
 const model = () => buildSiteReportModel({ payloads: SAMPLE_PAYLOADS, verdict: 'go', meta: SAMPLE_META });
 
 describe('buildSiteReportModel', () => {
-  it('the composite band decides the call (F-07) and the hero meta is carried through', () => {
+  it('the territory deal-breaker overrides a Go band (fixture: Redistributes + band go) and the hero meta is carried through', () => {
     const m = model();
-    expect(m.summary.label).toBe('Proceed');
+    expect(m.summary.label).toBe('No-Go');
     expect(m.limited).toBe(false);
     expect(m.coverageText).toBe('4 of 4 modules');
     expect(m.meta.rank).toBe(1);

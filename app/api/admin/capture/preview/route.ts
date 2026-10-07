@@ -8,7 +8,7 @@ import { checkLimit, recordAttempt } from '@/lib/auth/rateLimit';
 export const maxDuration = 26;
 
 /** Per-admin cap on live OSM pulls (be kind to public Overpass). */
-const PREVIEW_LIMIT = { max: 40, windowMs: 60 * 60_000 };
+const PREVIEW_LIMIT = { max: 240, windowMs: 60 * 60_000 }; // the screen loads one layer per request
 
 /**
  * POST /api/admin/capture/preview — pull places for an area from OpenStreetMap (server-side) and

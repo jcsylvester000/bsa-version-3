@@ -12,6 +12,7 @@
  * with its Truth Layer kept in place. The call comes from summariseSite() driven by the site's composite
  * band (audit F-07), so the screen, the dashboard and the PDF can never disagree.
  */
+import { gateComposite, territoryGate } from './scorecard';
 import type { ModuleKind } from '@prisma/client';
 import { fmtInt, fmtPeso } from '@/lib/util/format';
 import { manilaShortStampYear } from '@/lib/util/manilaTime';
@@ -116,6 +117,8 @@ export interface SiteReportMeta {
   /** Pre-formatted Manila time. */
   analysedAt?: string | null;
   truthPct?: { verified: number; assumed: number; projected: number } | null;
+  /** Set when the territory deal-breaker capped the composite (scorecard.territoryGate). */
+  capNote?: string | null;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -408,11 +411,20 @@ export function buildSiteReportModel(args: {
 export function siteReportMeta(data: {
   site: { id: string; compositeScore: { toString(): string } | null; analyzedAt: Date | null };
   run: { confidence: 'high' | 'med' | 'low' | null };
-  rows: Array<{ module: string; truthLayer: string }>;
+  rows: Array<{ module: string; truthLayer: string; score?: unknown }>;
   runSites: Array<{ id: string; compositeScore: { toString(): string } | null }>;
 }): SiteReportMeta {
   const num = (v: { toString(): string } | null): number | null => (v == null ? null : Number(v.toString()));
-  const composite = num(data.site.compositeScore);
+  // Territory deal-breaker at read time too, so runs stored before the gate never show "65 · Proceed"
+  // next to a Redistributes territory call.
+  const terr = data.rows.find((r) => r.module === 'territory');
+  const overlap = terr?.score != null && Number.isFinite(Number(terr.score)) ? Number(terr.score) : null;
+  const stored = num(data.site.compositeScore);
+  const composite = gateComposite(stored, overlap);
+  const gate = territoryGate(overlap);
+  const capNote = gate.reason && stored != null && composite != null && composite < stored
+    ? `${gate.reason} Composite capped at ${Math.round(composite)} (the weighted average alone would be ${Math.round(stored)}).`
+    : gate.reason && composite != null && gate.cap != null && composite <= gate.cap ? gate.reason : null;
   const ranked = data.runSites
     .map((s) => ({ id: s.id, composite: num(s.compositeScore) }))
     .sort((a, b) => (b.composite ?? -1) - (a.composite ?? -1));
@@ -424,6 +436,7 @@ export function siteReportMeta(data: {
     rank: composite != null && rankIdx >= 0 ? rankIdx + 1 : null,
     total: composite != null ? ranked.length : null,
     confidence: data.run.confidence ?? null,
+    capNote,
     analysedAt: data.site.analyzedAt ? manilaShortStampYear(data.site.analyzedAt) : null,
     truthPct: layers.length ? { verified: pct('verified'), assumed: pct('assumed'), projected: pct('projected') } : null,
   };

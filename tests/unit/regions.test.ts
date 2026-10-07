@@ -152,3 +152,15 @@ describe('expansion regions (2026-10-07): Laguna + Pampanga', () => {
     expect(regionForPoint(14.55, 121.02)).toBe('ncr');
   });
 });
+
+describe('all Philippine regions for map navigation', () => {
+  it('lists the 18 regions with centres inside the country', async () => {
+    const { PH_REGIONS } = await import('@/lib/geo/phRegions');
+    expect(PH_REGIONS).toHaveLength(18);
+    expect(new Set(PH_REGIONS.map((r) => r.code)).size).toBe(18);
+    for (const r of PH_REGIONS) {
+      expect(r.centre.lat).toBeGreaterThan(4); expect(r.centre.lat).toBeLessThan(21);
+      expect(r.centre.lon).toBeGreaterThan(116); expect(r.centre.lon).toBeLessThan(127);
+    }
+  });
+});

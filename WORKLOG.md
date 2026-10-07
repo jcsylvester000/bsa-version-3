@@ -5,6 +5,30 @@ The cross-thread state record. Read this (with the Master Instruction and the cu
 
 ---
 
+## 2026-10-07 (late) — Place Capture v3, Neon save fix, Territory Guard deal-breaker
+
+**Owner reports:** Save → 500 `[reason: unexpected]`; preview 502 (Overpass timeout); React #418/#423;
+duplicates re-saved; region list too short; one business type at a time; Final Report said Proceed (65) while
+Territory Guard said Redistributes (75 % own-branch overlap).
+
+1) SAVE 500 ROOT CAUSE: `prisma.poiCaptureItem.createMany` — under `PrismaNeonHTTP` Prisma wraps createMany in an
+   implicit transaction → "Transactions are not supported in HTTP mode". Local tests used adapter-pg so missed it.
+   Reproduced with a local Neon `/sql` emulator (real `@neondatabase/serverless` + `PrismaNeonHTTP` client over local
+   PG); replaced with a raw multi-row INSERT; whole preview→save→re-save→readiness→history path passes through it.
+   New reason code `db_http_transaction`.
+2) CAPTURE v3: per-layer `/preview` (first call returns places already in BSA), in-memory Overpass cache (30 min, 60
+   entries), two endpoints, 90-day coverage skip, `refresh` override; only new places listed; save = `ON CONFLICT DO
+   NOTHING` + coverage stamps for `fetchedLayers`; all 18 regions (`lib/geo/phRegions.ts`); up to 6 verticals
+   (`readiness?verticals=`); Captured-areas table with per-layer chips + retry; Save status screen per area.
+3) SCORING: `scorecard.territoryGate` (≥ 40 % overlap → cap 44 / No-Go; 15–40 % → cap 64), applied to stored and
+   read-time composites (dashboard, report model, PDF); `siteVerdict.territoryVeto` turns Redistributes into No-Go with a
+   "cannibalization deal-breaker" headline. `prisma/recomputeComposites.ts` (`npm run db:recompute-composites`).
+4) #418/#423: OnboardingTour read `window.innerWidth` during render (fixed). No other mismatch reproduced in a production
+   build (Asia/Manila, en-PH); remaining reports are most likely a browser extension or a tab holding HTML from the
+   previous build.
+
+Verified: tsc clean · vitest 549/549 · next build OK · headless v3 flow (mocked APIs) incl. a failing layer + save status.
+
 ## 2026-10-07 — Place Capture v2: show on the map first, then save (⏳ awaiting push)
 
 Owner report: "The capture request failed" (HTTP 500 on /preview) + React #418/#423 in the console; asked that places

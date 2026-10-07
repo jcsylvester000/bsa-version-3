@@ -12,7 +12,8 @@
  * statements (Neon HTTP adapter: no interactive transactions) and idempotent on the OSM key.
  *
  * Truth Layer: OSM places with a valid preview receipt (lib/capture/signing) = Verified; edited OSM
- * places, Grid Navigator imports and manual pins = Assumed, and those never overwrite a stored place.
+ * places, Grid Navigator imports and manual pins = Assumed. Places BSA already holds are never saved
+ * again — the map shows them from the database and only NEW places are written.
  */
 import 'server-only';
 import { Prisma } from '@prisma/client';
@@ -31,14 +32,14 @@ import { mapElement, parseSelector, type SkipReason, type TagMatcher } from '@/l
 import { cleanText, dedupeCandidates, parseOsmRef, MAX_NAME_LEN, MAX_NOTES_LEN, type CaptureCandidate } from '@/lib/capture/candidate';
 import { parseNavigatorFile } from '@/lib/capture/navigatorFile';
 import { signCandidate, verifyCandidate } from '@/lib/capture/signing';
-import { catchmentFor, conceptForSite, summariseForTerritory, tierOfPlace, DEFAULT_SCAN_M, type TerritorySummary } from '@/lib/capture/territoryAlign';
+import { catchmentFor, conceptForSite, summariseForTerritory, tierAcross, tierOfPlace, DEFAULT_SCAN_M } from '@/lib/capture/territoryAlign';
 import { haversineMeters } from '@/lib/geo/geo';
 import { cellsForArea, coverageCellKey } from '@/lib/places/poiCache';
 
 /** Max elements one area pull returns (Overpass `out center N`). Hitting it = area too dense. */
 const MAX_ELEMENTS = 5_000;
 /** Time budget for the live Overpass call — keeps the request under the hosting function timeout. */
-const PREVIEW_BUDGET_MS = 18_000;
+const PREVIEW_BUDGET_MS = 20_000;
 /** Possible-duplicate radius / name similarity for unkeyed places. */
 const DUP_RADIUS_M = 50;
 const DUP_SIMILARITY = 0.6;
@@ -169,44 +170,122 @@ async function boundaryNote(lat: number, lon: number): Promise<string | null> {
   return b ? null : 'PSGC boundaries are not loaded for this area yet — places will save with exact coordinates and a coarse region, without barangay/city. Load boundaries (db:fetch-boundaries) and run db:tag-boundaries to fill them in.';
 }
 
-export interface SiteContext { site?: { lat: number; lon: number }; vertical?: string; brand?: string; format?: string }
-export interface PreviewInput { area: CaptureArea; layers: LayerKey[] }
+export interface SiteContext { site?: { lat: number; lon: number }; vertical?: string; verticals?: string[]; brand?: string; format?: string }
+export interface PreviewInput { area: CaptureArea; layers: LayerKey[]; withStored?: boolean; refresh?: boolean }
 
-/** Pull places for an area from OpenStreetMap and return them for the map. Writes NOTHING. */
+/** poi_coverage key for a capture layer: verticals use Territory Guard's own key; others are namespaced. */
+export function coverageKeyForLayer(layer: string): string {
+  return layer.startsWith('v:') ? layer.slice(2) : `layer:${layer}`;
+}
+
+/** Coverage cells (~1.1 km) whose centre lies inside the area; the centre cell for very small areas. */
+function cellsInside(area: CaptureArea): Array<{ key: string; lat: number; lon: number }> {
+  const [s, w, n, e] = bboxOfArea(area);
+  const cLat = (s + n) / 2, cLon = (w + e) / 2;
+  const radius = haversineMeters({ lat: cLat, lon: cLon }, { lat: n, lon: e });
+  const inside = cellsForArea(cLat, cLon, radius).filter((c) => containsPoint(area, c.lat, c.lon));
+  if (inside.length) return inside.map((c) => ({ ...c, key: coverageCellKey(c.lat, c.lon) }));
+  const lat = Math.round(cLat * 100) / 100, lon = Math.round(cLon * 100) / 100;
+  return [{ key: coverageCellKey(lat, lon), lat, lon }];
+}
+
+const COVERAGE_FRESH_MS = 90 * 24 * 3600 * 1000;
+
+/** True when every cell of the area was already captured for this layer within 90 days. */
+async function layerCovered(area: CaptureArea, layer: string): Promise<boolean> {
+  try {
+    const cells = cellsInside(area);
+    const fresh = await prisma.poiCoverage.count({
+      where: { vertical: coverageKeyForLayer(layer), cellKey: { in: cells.map((c) => c.key) }, fetchedAt: { gte: new Date(Date.now() - COVERAGE_FRESH_MS) } },
+    });
+    return fresh >= cells.length;
+  } catch {
+    return false;
+  }
+}
+
+/** A place already stored in BSA inside the area (drawn on the map, never re-saved). */
+export interface StoredPlace { id: string; name: string; category: string; lat: number; lon: number; source: string; truthLayer: string; osmRef: string | null; barangay: string | null; city: string | null }
+
+export async function storedInArea(area: CaptureArea, limit = 4_000): Promise<StoredPlace[]> {
+  const [s, w, n, e] = bboxOfArea(area);
+  const rows = await prisma.$queryRaw<Array<{ id: bigint; name: string; category: string; lat: number; lon: number; source: string; truth_layer: string; osm_type: string | null; osm_id: bigint | null; barangay: string | null; city: string | null }>>`
+    SELECT id, name, category::text AS category, lat, lon, source::text AS source, truth_layer::text AS truth_layer, osm_type, osm_id, barangay, city
+    FROM poi
+    WHERE geom && ST_MakeEnvelope(${w}, ${s}, ${e}, ${n}, 4326)::geography
+    LIMIT ${limit}`;
+  return rows
+    .filter((r) => containsPoint(area, r.lat, r.lon))
+    .map((r) => ({
+      id: r.id.toString(), name: r.name, category: r.category, lat: r.lat, lon: r.lon, source: r.source, truthLayer: r.truth_layer,
+      osmRef: r.osm_type && r.osm_id != null ? `${r.osm_type}/${r.osm_id}` : null, barangay: r.barangay, city: r.city,
+    }));
+}
+
+export interface LayerResult { layer: string; status: 'loaded' | 'covered' | 'failed'; found: number; newCount: number; inBsa: number; message?: string }
+
+/**
+ * Load places for an area onto the map. READ-ONLY. Places BSA already holds come from the
+ * database (`stored`, when withStored); OpenStreetMap is called only for layers this area has not
+ * been captured for in the last 90 days (or when `refresh`), and only NEW places are returned as
+ * candidates — anything already stored is counted, drawn from the DB, and never sent again.
+ */
 export async function previewArea(user: SessionUser, input: PreviewInput) {
   const km2 = areaKm2(input.area);
   if (km2 > MAX_CAPTURE_KM2) {
     throw new CaptureError('area_too_large', `This area is about ${km2.toFixed(1)} km². One capture can cover up to ${MAX_CAPTURE_KM2} km² — make the ring smaller, or use the province sweep (npm run db:ingest:osm) for whole regions.`, 422);
   }
-  const { selectors, matchers } = selectorsForLayers(input.layers);
-  if (!selectors.length) throw new CaptureError('no_layers', 'Pick at least one layer to capture.', 422);
-
-  let elements;
-  try {
-    elements = await captureElementsInBbox(selectors, bboxOfArea(input.area), { max: MAX_ELEMENTS, budgetMs: PREVIEW_BUDGET_MS });
-  } catch {
-    throw new CaptureError('osm_unavailable', 'OpenStreetMap did not answer in time. Try a smaller ring or fewer layers, or try again in a minute. Nothing was changed.', 502);
-  }
-
-  const skipped: Record<SkipReason, number> = { no_coords: 0, no_match: 0, unnamed: 0, outside_area: 0 };
-  const mapped: CaptureCandidate[] = [];
-  for (const el of elements) {
-    const r = mapElement(el, matchers, input.area);
-    if (typeof r === 'string') skipped[r]++;
-    else mapped.push(r);
-  }
-  const candidates = dedupeCandidates(mapped).kept.map((c) => toPreview(c, 'osm'));
-
   const notes: string[] = [];
-  if (elements.length >= MAX_ELEMENTS) notes.push(`OpenStreetMap returned the maximum of ${MAX_ELEMENTS} places — this area is dense. Capture it in smaller rings so nothing is cut off.`);
-  const known = await markKnown(candidates);
-  if (known) notes.push(known);
-  const [s, w, n, e] = bboxOfArea(input.area);
-  const bn = await boundaryNote((s + n) / 2, (w + e) / 2);
-  if (bn) notes.push(bn);
+  let stored: StoredPlace[] | undefined;
+  if (input.withStored) {
+    try { stored = await storedInArea(input.area); }
+    catch (e) { console.error('[capture] stored read failed', e); notes.push('Could not read the places BSA already holds here (database unreachable).'); }
+    const [s, w, n, e] = bboxOfArea(input.area);
+    const bn = await boundaryNote((s + n) / 2, (w + e) / 2);
+    if (bn) notes.push(bn);
+  }
 
-  await audit({ actorId: actorId(user), action: 'poi.capture.preview', entity: 'admin_capture', entityId: null, meta: { km2: Number(km2.toFixed(2)), layers: input.layers, found: candidates.length, skipped } });
-  return { candidates, skipped, notes, area: input.area, layers: input.layers, label: describeArea(input.area) };
+  const results: LayerResult[] = [];
+  const candidates: PreviewCandidate[] = [];
+  for (const layer of input.layers) {
+    if (!input.refresh && await layerCovered(input.area, layer)) {
+      results.push({ layer, status: 'covered', found: 0, newCount: 0, inBsa: 0, message: 'Already captured here — showing saved places' });
+      continue;
+    }
+    const { selectors, matchers } = selectorsForLayers([layer]);
+    if (!selectors.length) { results.push({ layer, status: 'failed', found: 0, newCount: 0, inBsa: 0, message: 'Unknown layer' }); continue; }
+    let elements;
+    try {
+      elements = await captureElementsInBbox(selectors, bboxOfArea(input.area), { max: MAX_ELEMENTS, budgetMs: PREVIEW_BUDGET_MS / Math.max(1, input.layers.length) });
+    } catch {
+      results.push({ layer, status: 'failed', found: 0, newCount: 0, inBsa: 0, message: 'OpenStreetMap did not answer in time' });
+      continue;
+    }
+    const mapped: CaptureCandidate[] = [];
+    for (const el of elements) {
+      const r = mapElement(el, matchers, input.area);
+      if (typeof r !== 'string') mapped.push(r);
+    }
+    const list = dedupeCandidates(mapped).kept.map((c) => toPreview(c, 'osm'));
+    const known = await markKnown(list);
+    if (known && !notes.includes(known)) notes.push(known);
+    const fresh = list.filter((c) => !c.existingPoiId);
+    candidates.push(...fresh);
+    results.push({
+      layer, status: 'loaded', found: list.length, newCount: fresh.length, inBsa: list.length - fresh.length,
+      message: elements.length >= MAX_ELEMENTS ? `Hit the ${MAX_ELEMENTS}-place limit — use a smaller ring` : undefined,
+    });
+  }
+
+  if (input.withStored) {
+    await audit({ actorId: actorId(user), action: 'poi.capture.preview', entity: 'admin_capture', entityId: null, meta: { km2: Number(km2.toFixed(2)), layers: input.layers, results } });
+  }
+  return { layers: results, candidates: dedupeByKey(candidates), stored, notes };
+}
+
+function dedupeByKey(list: PreviewCandidate[]): PreviewCandidate[] {
+  const seen = new Set<string>();
+  return list.filter((c) => (seen.has(c.key) ? false : (seen.add(c.key), true)));
 }
 
 /** Parse a Grid Navigator session file and return its places for the map. Writes NOTHING. */
@@ -223,8 +302,10 @@ export async function importNavigator(user: SessionUser, raw: unknown, fileName:
   ].filter(Boolean);
   const known = await markKnown(candidates);
   if (known) notes.push(known);
+  const inBsa = candidates.filter((c) => c.existingPoiId).length;
+  if (inBsa) notes.push(`${inBsa} of these places are already saved in BSA — they are shown but not saved again.`);
   await audit({ actorId: actorId(user), action: 'poi.capture.import_preview', entity: 'admin_capture', entityId: null, meta: { ...s } });
-  return { candidates, stats: s, notes, label: `Grid Navigator — ${cleanText(fileName, 60) || 'session'}` };
+  return { candidates: candidates.filter((c) => !c.existingPoiId), alreadyInBsa: inBsa, stats: s, notes, label: `Grid Navigator — ${cleanText(fileName, 60) || 'session'}` };
 }
 
 /* ------------------------------------------------------------------ save (the only write path) */
@@ -245,6 +326,8 @@ export interface SaveInput {
   label?: string;
   area?: CaptureArea;
   layers?: LayerKey[];
+  /** Layers that were actually loaded from OpenStreetMap for this area (stamped as covered on save). */
+  fetchedLayers?: LayerKey[];
   context?: SiteContext;
   items: SaveItem[];
 }
@@ -292,7 +375,9 @@ export function resolveSaveItems(items: SaveItem[]): ResolvedItem[] {
  */
 export async function saveCapture(user: SessionUser, input: SaveInput) {
   const items = resolveSaveItems(input.items);
-  if (!items.length) throw new CaptureError('nothing_to_save', 'There are no places to save.', 422);
+  // An area can be saved with no new places (everything was already in BSA): it still records the
+  // capture and marks the area as covered so it is not fetched from OpenStreetMap again.
+  if (!items.length && !(input.area && input.fetchedLayers?.length)) throw new CaptureError('nothing_to_save', 'There are no places to save.', 422);
   if (items.length > MAX_SAVE_ITEMS) throw new CaptureError('too_many', `Save at most ${MAX_SAVE_ITEMS.toLocaleString('en-US')} places at a time.`, 422);
 
   // 1) The batch record (committed straight away — there are no drafts in the database any more).
@@ -318,31 +403,24 @@ export async function saveCapture(user: SessionUser, input: SaveInput) {
     await prisma.$executeRaw`UPDATE poi_capture_batch SET area = ST_SetSRID(ST_GeomFromGeoJSON(${gj}), 4326)::geography WHERE id = ${batchId}::uuid`;
   }
 
-  // 2) Places. Verified OSM refreshes a stored element; Assumed keyed rows only add new elements.
+  // 2) Places — NEW ONLY. A place BSA already holds is never written again (ON CONFLICT DO NOTHING);
+  //    verified elements first claim a legacy typeless row so it is recognised instead of duplicated.
   const keyed = items.filter((i) => i.osmType && i.osmId != null);
   const manual = items.filter((i) => !i.osmType || i.osmId == null);
   const CHUNK = 300;
   let written = 0;
-  for (const [verified, group] of [[true, keyed.filter((i) => i.verified)], [false, keyed.filter((i) => !i.verified)]] as const) {
-    for (let i = 0; i < group.length; i += CHUNK) {
-      const chunk = group.slice(i, i + CHUNK);
-      if (verified) await prisma.$executeRaw(claimLegacyOsmSql(chunk.map((c) => ({ osmType: c.osmType!, osmId: c.osmId!, lat: c.lat, lon: c.lon }))));
-      const prov = `${input.source === 'navigator_import' ? 'osm:navigator-import' : 'osm:admin-capture'}:${batchId}`;
-      const values = Prisma.join(chunk.map((c) => Prisma.sql`(
-        ${c.name}, ${c.category}::"PoiCategory", ${c.lat}, ${c.lon}, ${regionForPoint(c.lat, c.lon)},
-        'osm'::"PoiSource", ${prov}, ${verified ? 'verified' : 'assumed'}::"TruthLayer", ${c.osmId}, ${c.osmType}, ${c.kind}, ${batchId}::uuid)`));
-      const onConflict = verified
-        ? Prisma.sql`ON CONFLICT (osm_type, osm_id) DO UPDATE SET
-            name = EXCLUDED.name, category = EXCLUDED.category, lat = EXCLUDED.lat, lon = EXCLUDED.lon,
-            kind = EXCLUDED.kind, source = EXCLUDED.source, provenance = EXCLUDED.provenance,
-            truth_layer = EXCLUDED.truth_layer, capture_batch_id = EXCLUDED.capture_batch_id,
-            region = COALESCE(poi.region, EXCLUDED.region)`
-        : Prisma.sql`ON CONFLICT DO NOTHING`;
-      written += await prisma.$executeRaw(Prisma.sql`
-        INSERT INTO poi (name, category, lat, lon, region, source, provenance, truth_layer, osm_id, osm_type, kind, capture_batch_id)
-        VALUES ${values}
-        ${onConflict}`);
-    }
+  const prov = `${input.source === 'navigator_import' ? 'osm:navigator-import' : 'osm:admin-capture'}:${batchId}`;
+  for (let i = 0; i < keyed.length; i += CHUNK) {
+    const chunk = keyed.slice(i, i + CHUNK);
+    const verifiedChunk = chunk.filter((c) => c.verified);
+    if (verifiedChunk.length) await prisma.$executeRaw(claimLegacyOsmSql(verifiedChunk.map((c) => ({ osmType: c.osmType!, osmId: c.osmId!, lat: c.lat, lon: c.lon }))));
+    const values = Prisma.join(chunk.map((c) => Prisma.sql`(
+      ${c.name}, ${c.category}::"PoiCategory", ${c.lat}, ${c.lon}, ${regionForPoint(c.lat, c.lon)},
+      'osm'::"PoiSource", ${prov}, ${c.verified ? 'verified' : 'assumed'}::"TruthLayer", ${c.osmId}, ${c.osmType}, ${c.kind}, ${batchId}::uuid)`));
+    written += await prisma.$executeRaw(Prisma.sql`
+      INSERT INTO poi (name, category, lat, lon, region, source, provenance, truth_layer, osm_id, osm_type, kind, capture_batch_id)
+      VALUES ${values}
+      ON CONFLICT DO NOTHING`);
   }
   for (const m of manual) {
     written += await prisma.$executeRaw`
@@ -352,14 +430,16 @@ export async function saveCapture(user: SessionUser, input: SaveInput) {
   }
 
   // 3) Audit trail of exactly what was saved (one row per place).
-  for (let i = 0; i < items.length; i += 500) {
-    await prisma.poiCaptureItem.createMany({
-      data: items.slice(i, i + 500).map((c) => ({
-        batchId, osmType: c.osmType, osmId: c.osmId != null ? BigInt(c.osmId) : null, name: c.name, kind: c.kind,
-        category: c.category, lat: c.lat, lon: c.lon, source: c.source, truthLayer: c.verified ? 'verified' : 'assumed',
-        decision: 'accept', notes: c.notes,
-      })),
-    });
+  //    Raw multi-row INSERT, not createMany: under the Neon HTTP adapter Prisma runs createMany inside
+  //    an implicit transaction, which HTTP mode refuses ("Transactions are not supported in HTTP mode").
+  for (let i = 0; i < items.length; i += 300) {
+    const rows = Prisma.join(items.slice(i, i + 300).map((c) => Prisma.sql`(
+      ${batchId}::uuid, ${c.osmType}, ${c.osmId != null ? String(c.osmId) : null}::bigint, ${c.name}, ${c.kind},
+      ${c.category}::"PoiCategory", ${c.lat}, ${c.lon}, ${c.source}::"PoiSource", ${c.verified ? 'verified' : 'assumed'}::"TruthLayer",
+      'accept'::"CaptureDecision", ${c.notes})`));
+    await prisma.$executeRaw(Prisma.sql`
+      INSERT INTO poi_capture_item (batch_id, osm_type, osm_id, name, kind, category, lat, lon, source, truth_layer, decision, notes)
+      VALUES ${rows}`);
   }
   await prisma.$executeRaw`
     UPDATE poi_capture_item i SET committed_poi_id = p.id
@@ -390,12 +470,12 @@ export async function saveCapture(user: SessionUser, input: SaveInput) {
     WHERE p.id = sub.pid`;
 
   // 5) Territory Guard coverage + batch totals + audit.
-  const coverageStamped = input.source === 'osm' && input.area ? await stampCoverage(input.area, input.layers ?? []) : 0;
+  const coverageStamped = input.source === 'osm' && input.area ? await stampCoverage(input.area, input.fetchedLayers ?? []) : 0;
   const linked = await prisma.poiCaptureItem.count({ where: { batchId, committedPoiId: { not: null } } });
   await prisma.poiCaptureBatch.update({ where: { id: batchId }, data: { committedCount: linked } });
-  const skippedExisting = items.length - written;
-  await audit({ actorId: actorId(user), action: 'poi.capture.save', entity: 'poi_capture_batch', entityId: batchId, meta: { items: items.length, written, verified: verifiedN, psgcTagged, skippedExisting, coverageStamped } });
-  return { batchId, saved: written, inBsa: linked, psgcTagged, skippedExisting, coverageStamped };
+  const alreadyInBsa = items.length - written;
+  await audit({ actorId: actorId(user), action: 'poi.capture.save', entity: 'poi_capture_batch', entityId: batchId, meta: { items: items.length, written, verified: verifiedN, psgcTagged, alreadyInBsa, coverageStamped } });
+  return { batchId, saved: written, alreadyInBsa, linked, psgcTagged, coverageStamped };
 }
 
 /**
@@ -404,19 +484,15 @@ export async function saveCapture(user: SessionUser, input: SaveInput) {
  * a fresh `poi_coverage` stamp (source 'admin_capture'), using the same cell keys the cache reads.
  */
 async function stampCoverage(area: CaptureArea, layers: string[]): Promise<number> {
-  const verticals = layers.filter((l) => l.startsWith('v:')).map((l) => l.slice(2)).filter((v) => OSM_SELECTORS[v]);
-  if (!verticals.length) return 0;
-  const [s, w, n, e] = bboxOfArea(area);
-  const cLat = (s + n) / 2, cLon = (w + e) / 2;
-  const radius = haversineMeters({ lat: cLat, lon: cLon }, { lat: n, lon: e });
-  const cells = cellsForArea(cLat, cLon, radius).filter((c) => containsPoint(area, c.lat, c.lon));
+  const keys = [...new Set(layers.filter((l) => !l.startsWith('v:') || OSM_SELECTORS[l.slice(2)]).map(coverageKeyForLayer))];
+  if (!keys.length) return 0;
+  const cells = cellsInside(area);
   let stamped = 0;
-  for (const v of verticals) {
+  for (const k of keys) {
     for (const c of cells) {
-      const key = coverageCellKey(c.lat, c.lon);
       await prisma.poiCoverage.upsert({
-        where: { coverage_cell_vertical: { cellKey: key, vertical: v } },
-        create: { cellKey: key, vertical: v, lat: c.lat, lon: c.lon, poiCount: 0, source: 'admin_capture' },
+        where: { coverage_cell_vertical: { cellKey: c.key, vertical: k } },
+        create: { cellKey: c.key, vertical: k, lat: c.lat, lon: c.lon, poiCount: 0, source: 'admin_capture' },
         update: { fetchedAt: new Date(), source: 'admin_capture' },
       });
       stamped++;
@@ -503,17 +579,18 @@ export async function poisInBbox(bbox: [number, number, number, number], limit =
  * re-pull the same places from OpenStreetMap. Only live OSM batches with an area stamp coverage.
  */
 
-export interface ReadinessInput { lat: number; lon: number; radiusM?: number; format?: string; vertical?: string; brand?: string }
+export interface ReadinessInput { lat: number; lon: number; radiusM?: number; format?: string; vertical?: string; verticals?: string[]; brand?: string }
 
 /**
  * "What Territory Guard sees here right now" for a site pin — the same query, tiers, catchment
- * radii and saturation curve the module uses, plus where the pin falls (PSGC barangay / city /
- * province) so the admin can confirm the coordinate before capturing.
+ * radii and saturation curve the module uses, per chosen business type, plus where the pin falls
+ * (PSGC barangay / city / province) so the admin can confirm the coordinate before capturing.
  */
 export async function siteReadiness(input: ReadinessInput) {
   const radiusM = Math.min(3_000, Math.max(200, input.radiusM ?? DEFAULT_SCAN_M));
   const catchmentM = catchmentFor(input.format);
-  const concept = conceptForSite(input.vertical, input.brand);
+  const verticals = [...new Set([...(input.verticals ?? []), ...(input.vertical ? [input.vertical] : [])])].slice(0, 6);
+  const concepts = verticals.map((v) => ({ vertical: v, concept: conceptForSite(v, input.brand) }));
   const boundary = await resolveAdminBoundary(input.lat, input.lon);
   const rows = await prisma.$queryRaw<Array<{ id: bigint; name: string; category: string; lat: number; lon: number; source: string; truth_layer: string }>>`
     SELECT id, name, category::text AS category, lat, lon, source::text AS source, truth_layer::text AS truth_layer
@@ -522,31 +599,35 @@ export async function siteReadiness(input: ReadinessInput) {
       AND ST_DWithin(geom, ST_SetSRID(ST_MakePoint(${input.lon}, ${input.lat}), 4326)::geography, ${radiusM})
     ORDER BY ST_Distance(geom, ST_SetSRID(ST_MakePoint(${input.lon}, ${input.lat}), 4326)::geography) ASC
     LIMIT 1500`;
-  const places = rows.map((r) => {
-    const distM = Math.round(haversineMeters({ lat: input.lat, lon: input.lon }, { lat: r.lat, lon: r.lon }));
-    return { id: r.id.toString(), name: r.name, category: r.category, lat: r.lat, lon: r.lon, source: r.source, truthLayer: r.truth_layer, distM, tier: tierOfPlace(r, concept) };
-  });
-  const summary: TerritorySummary = summariseForTerritory(places, catchmentM);
-  let coverage: { cells: number; fresh: number } | null = null;
-  if (input.vertical && OSM_SELECTORS[input.vertical]) {
-    const cells = cellsForArea(input.lat, input.lon, radiusM);
-    const keys = cells.map((c) => coverageCellKey(c.lat, c.lon));
-    const fresh = await prisma.poiCoverage.count({
-      where: { vertical: input.vertical, cellKey: { in: keys }, fetchedAt: { gte: new Date(Date.now() - 90 * 24 * 3600 * 1000) } },
-    });
-    coverage = { cells: keys.length, fresh };
-  }
+  const base = rows.map((r) => ({
+    id: r.id.toString(), name: r.name, category: r.category, lat: r.lat, lon: r.lon, source: r.source, truthLayer: r.truth_layer,
+    distM: Math.round(haversineMeters({ lat: input.lat, lon: input.lon }, { lat: r.lat, lon: r.lon })),
+  }));
+  const byVertical = concepts.map(({ vertical, concept }) => ({
+    vertical,
+    concept: concept ? { key: concept.key, label: concept.label } : null,
+    summary: summariseForTerritory(base.map((p) => ({ tier: tierOfPlace(p, concept), distM: p.distM })), catchmentM),
+  }));
+  const places = base.map((p) => ({ ...p, tier: tierAcross(p, concepts.map((c) => c.concept)) }));
+  const cells = cellsForArea(input.lat, input.lon, radiusM);
+  const keys = cells.map((c) => coverageCellKey(c.lat, c.lon));
+  const coverage = await Promise.all(verticals.filter((v) => OSM_SELECTORS[v]).map(async (v) => ({
+    vertical: v,
+    cells: keys.length,
+    fresh: await prisma.poiCoverage.count({ where: { vertical: v, cellKey: { in: keys }, fetchedAt: { gte: new Date(Date.now() - COVERAGE_FRESH_MS) } } }),
+  })));
+  const first = byVertical[0];
   return {
     site: { lat: input.lat, lon: input.lon },
     boundary,
     region: boundary?.region ?? regionForPoint(input.lat, input.lon),
     catchmentM,
     radiusM,
-    concept: concept ? { key: concept.key, label: concept.label } : null,
-    summary,
+    byVertical,
+    concept: first?.concept ?? null,
+    summary: first?.summary ?? summariseForTerritory(places.map((p) => ({ tier: p.tier, distM: p.distM })), catchmentM),
     coverage,
     places: places.slice(0, 600),
     capped: rows.length >= 1500,
   };
 }
-

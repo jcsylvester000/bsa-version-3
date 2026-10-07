@@ -5,9 +5,17 @@ always-current snapshot. `WORKLOG.md` is the full history (newest first). This f
 rewritten at the end of every work batch — if it disagrees with older notes (e.g.
 `2 - Data Intake/Migration Guide/PROJECT_MEMORY_EXPORT.md`, 2026-08-10), **this file wins**.
 
-_Last updated: 2026-10-07 — Admin Place Capture built (awaiting push); Design v2 batches 0–13 pushed (HEAD `498db86`, hotfix `db36c53`)._
+_Last updated: 2026-10-07 (late) — Place Capture v3 + Neon save fix + Territory Guard deal-breaker in scoring (awaiting push); Design v2 batches 0–13 pushed (HEAD `498db86`, hotfix `db36c53`)._
 
-**Latest batch (2026-10-07, ⏳ awaiting push):** Admin → Place Capture (`/admin/capture`, admins only), v2 workflow:
+**Latest batch (2026-10-07 late, ⏳ awaiting push):** (1) **Save fixed on Neon** — `createMany` ran inside an implicit
+Prisma transaction, which the Neon HTTP adapter refuses → 500 `[reason: unexpected]`; now a plain multi-row INSERT
+(verified through an emulated Neon HTTP endpoint). Rule: no `createMany`/nested writes/`$transaction` on Neon paths.
+(2) **Capture v3**: all 18 PH regions in the jump list, tick up to 6 business types, one `/preview` per layer
+(cached 30 min, two Overpass endpoints, 90-day coverage skip), only NEW places listed/saved (`ON CONFLICT DO NOTHING`),
+multi-area results table + save status screen. (3) **Scoring**: Territory Guard overlap ≥ 40 % caps composite at 44 and
+forces No-Go (15–40 % caps at 64) — `scorecard.territoryGate`, `siteVerdict.territoryVeto`; run
+`npm run db:recompute-composites` once for existing runs.
+**Previous batch (2026-10-07):** Admin → Place Capture (`/admin/capture`, admins only), v2 workflow:
 pin a site (Territory Guard catchment rings + live "what Territory Guard sees") → **load places onto the map
 (read-only `/preview`, `/import`)** → review in the browser → **`/save` is the only write** (poi + PSGC + coverage
 stamps + audit; OSM receipts decide Verified vs Assumed). New regions **laguna** + **pampanga**. OSM key
