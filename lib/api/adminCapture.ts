@@ -60,7 +60,7 @@ const brand = z.string().trim().max(80);
 export const SiteContextSchema = z.object({
   site: z.object({ lat, lon }).optional(),
   vertical: vertical.optional(),
-  verticals: z.array(vertical).max(6).optional(),
+  verticals: z.array(vertical).max(3).optional(),
   brand: brand.optional(),
   format: format.optional(),
 });
@@ -77,6 +77,9 @@ export const PreviewBody = z.object({
   label,
   context: SiteContextSchema.optional(),
 });
+
+/** POST /plan — the pre-flight check for an area before anything is fetched. */
+export const PlanBody = z.object({ area: CaptureAreaSchema, layers: z.array(layer).min(1).max(12) });
 
 /** POST /gaps/:id — dismiss or re-open a retry-queue entry. */
 export const GapActionBody = z.object({ action: z.enum(['dismiss', 'reopen']) });

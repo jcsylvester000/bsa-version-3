@@ -2,6 +2,21 @@
 
 _Audience: Grid admins capturing places for new areas (Admin → Place Capture / Capture Coverage). 2026-10-08._
 
+## Enforced in the app (2026-10-08)
+
+The rules below are built into Admin → Place Capture and Capture Coverage (`lib/capture/capturePolicy.ts`), not just advice:
+
+| Practice | How the app applies it |
+|---|---|
+| Check coverage first, capture gaps | Capture Coverage map + "What to capture next"; the capture map draws saved areas (green fresh / grey due / red retry); the **Before you capture** checklist lists layers already captured here — they are skipped |
+| Boundaries before capturing | No barangay boundary at the pin → capture is blocked until boundaries are loaded or the admin ticks "Capture anyway"; Coverage shows boundaries per region |
+| Ring 700–1,000 m in dense centres, ≤ 1,500 m in towns | Slider is capped per spot (dense centres list or ≥ 300 stored places/km²), default 800 m when dense; the server rejects bigger rings (`ring_too_large`) |
+| 2–3 business types | Max 3 per capture on screen and in the API |
+| One area at a time, don't reload | The next area is blocked until the current one is saved or removed; the browser warns before leaving while loading |
+| Off-peak (5 AM–12 PM PHT) | Live banner with the window and OpenStreetMap's free slots; the capture waits for a free slot (≤ 45 s); retries wait longer in busy hours |
+| Save even if a layer failed | Save is always available ("Mark this area as captured" when nothing is new); missed layers go to the retry list |
+| Re-capture after 90 days | Coverage older than 90 days is "due", fetched again, listed in "What to capture next" |
+
 ## Why captures miss data
 
 Place Capture asks the **public OpenStreetMap Overpass servers** for each layer, one layer per request. Those
@@ -22,7 +37,7 @@ area — one ring or several smaller ones.
 
 1. **Open Capture Coverage first.** Green = captured (skipped for 90 days), grey = re-capture due, red dashed =
    retry queue. Work the gaps; don't re-scan green areas.
-2. **Load the region's barangay boundaries** (`npm run db:boundaries -- <region>` then `db:load-boundaries`) so saved
+2. **Load the region's barangay boundaries** (`npm run db:fetch-boundaries -- --region=<region>` then `npm run db:load-boundaries`) so saved
    places are tagged with barangay / city / province.
 
 ## During a capture

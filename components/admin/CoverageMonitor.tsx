@@ -19,6 +19,7 @@ import { defaultBasemapUrl, basemapPaint, OSM_ATTRIBUTION, OSM_MAX_ZOOM } from '
 import { ALL_LAYERS } from '@/lib/capture/layers';
 import { listRegions } from '@/lib/geo/regions';
 import { manilaShortStampYear } from '@/lib/util/manilaTime';
+import { FRESH_DAYS, osmWindow, type OsmWindow } from '@/lib/capture/capturePolicy';
 
 type ApiResult<T> = { ok: true; data: T } | { ok: false; error: { code: string; message: string } };
 async function api<T>(url: string, init?: RequestInit): Promise<ApiResult<T>> {
@@ -44,11 +45,12 @@ interface LogData {
   totals: { batches: number; places: number; areas_km2: number; last_at: string | null; openGaps: number };
   areas: LogArea[]; gaps: Gap[];
   regions: Array<{ region: string | null; total: number; tagged: number }>;
+  boundaries?: Array<{ region: string | null; barangays: number }>;
   coverageKeys: Array<{ vertical: string; cells: number }>;
 }
+interface OsmStatus { reachable: boolean; slotsNow: number | null; waitSeconds: number; window: OsmWindow }
 interface Cell { key: string; lat: number; lon: number; poiCount: number; fetchedAt: string; source: string }
 
-const FRESH_DAYS = 90;
 const DAY = 86_400_000;
 const EMPTY_FC = { type: 'FeatureCollection' as const, features: [] as GeoJSON.Feature[] };
 const LAYER_LABEL: Record<string, string> = Object.fromEntries(ALL_LAYERS.map((l) => [l.key, l.label]));
@@ -97,6 +99,13 @@ export function CoverageMonitor() {
   const [pickMode, setPickMode] = useState(false);
   const pickRef = useRef(false);
   const [busyGap, setBusyGap] = useState<string | null>(null);
+  const [osm, setOsm] = useState<OsmStatus | null>(null);
+  useEffect(() => {
+    const go = async () => { const r = await api<OsmStatus>('/api/admin/capture/osm-status'); if (r.ok) setOsm(r.data); };
+    void go();
+    const t = setInterval(() => { void go(); }, 60_000);
+    return () => clearInterval(t);
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -144,8 +153,25 @@ export function CoverageMonitor() {
     for (const a of data?.areas ?? []) { const e = get(a.region); e.captures++; e.places += a.savedCount; if (!e.last || a.createdAt > e.last) e.last = a.createdAt; }
     for (const g of data?.gaps ?? []) if (g.status === 'open') get(g.region).openGaps++;
     const poi = new Map((data?.regions ?? []).map((r) => [r.region ?? '—', r.total]));
-    return [...m.values()].map((e) => ({ ...e, inBsa: poi.get(e.region ?? '—') ?? 0 })).sort((a, b) => b.captures - a.captures);
+    const bnd = new Map((data?.boundaries ?? []).map((r) => [r.region ?? '—', r.barangays]));
+    return [...m.values()].map((e) => ({ ...e, inBsa: poi.get(e.region ?? '—') ?? 0, barangays: e.region ? bnd.get(e.region) ?? 0 : null })).sort((a, b) => b.captures - a.captures);
   }, [data]);
+
+  /** "What to capture next" — the playbook's order: retries, then re-captures due, then missing boundaries. */
+  const next = useMemo(() => {
+    const out: Array<{ key: string; tone: 'nogo' | 'caution'; title: string; detail: string; href?: string; action: string; code?: string }> = [];
+    for (const g of (data?.gaps ?? []).filter((x) => x.status === 'open').sort((a, b) => a.attempts - b.attempts)) {
+      out.push({ key: `g${g.id}`, tone: 'nogo', title: `${g.reason === 'limit' ? 'Recapture in smaller rings' : 'Retry'}: ${layerName(g.layer)}`, detail: `${g.label} · ${place(g)}`, href: `/admin/capture?retry=${g.id}`, action: g.reason === 'limit' ? 'Recapture smaller' : 'Retry now' });
+    }
+    for (const a of (data?.areas ?? []).filter((x) => ageDays(x.createdAt) > FRESH_DAYS).sort((x, y) => x.createdAt.localeCompare(y.createdAt))) {
+      out.push({ key: `a${a.id}`, tone: 'caution', title: `Re-capture due (${ageDays(a.createdAt)} days)`, detail: `${a.label} · ${place(a)}`, href: `/admin/capture?lat=${a.lat.toFixed(6)}&lon=${a.lon.toFixed(6)}`, action: 'Re-capture' });
+    }
+    for (const r of byRegion) {
+      if (r.region && (r.barangays ?? 0) === 0) out.push({ key: `b${r.region}`, tone: 'caution', title: `Load barangay boundaries: ${regionName(r.region)}`, detail: `${r.captures} capture(s) saved without barangay / city tags.`, action: '', code: `npm run db:fetch-boundaries -- --region=${r.region} && npm run db:load-boundaries && npm run db:tag-boundaries` });
+    }
+    return out;
+  }, [data, byRegion]);
+  const win = osm?.window ?? osmWindow();
 
   /* ---------------------------------------------------------------- map */
 
@@ -297,6 +323,30 @@ export function CoverageMonitor() {
 
       {err && <p role="alert" className="card-inset p-3 text-label text-nogo">✕ {err}</p>}
 
+      <div className={`card flex flex-wrap items-center gap-3 px-5 py-3 text-label font-normal ${win.offPeak ? '' : 'border-caution/60'}`} role="status">
+        <span className={`rounded-full border px-3 py-1 ${win.offPeak ? 'border-go text-go' : 'border-caution text-caution'}`}>{win.offPeak ? '✓' : '▲'} {win.label}</span>
+        <span className="text-ink-muted">{win.advice}</span>
+        {osm && <span className="ml-auto text-ink-muted">OpenStreetMap: {!osm.reachable ? 'status unknown' : osm.waitSeconds > 0 ? `next free slot in ${osm.waitSeconds} s` : `${osm.slotsNow ?? 0} slot${osm.slotsNow === 1 ? '' : 's'} free`}</span>}
+      </div>
+
+      <section className="card overflow-hidden" aria-labelledby="cov-next-h">
+        <div className="px-5 py-4">
+          <h2 id="cov-next-h" className="font-body text-title">What to capture next</h2>
+          <p className="text-label font-normal text-ink-muted">Retries first, then areas past {FRESH_DAYS} days, then regions missing barangay boundaries. For new ground, pick a spot with no colour on the map below.</p>
+        </div>
+        <ul className="divide-y divide-ink-border border-t border-ink-border">
+          {next.slice(0, 8).map((n) => (
+            <li key={n.key} className="flex flex-wrap items-center gap-3 px-5 py-2.5 text-label">
+              <span aria-hidden className={n.tone === 'nogo' ? 'text-nogo' : 'text-caution'}>{n.tone === 'nogo' ? '✕' : '▲'}</span>
+              <span className="min-w-0 flex-1"><span className="text-ink-text">{n.title}</span><span className="block text-ink-muted">{n.detail}</span>{n.code && <code className="mt-1 block break-all text-[12px] text-ink-muted">{n.code}</code>}</span>
+              {n.href && <a className="btn-secondary min-h-[32px] px-3 text-label" href={n.href}>{n.action}</a>}
+            </li>
+          ))}
+          {!next.length && <li className="px-5 py-3 text-label text-ink-muted">✓ No retries, nothing overdue, boundaries loaded wherever you captured. Pick an uncaptured spot on the map.</li>}
+          {next.length > 8 && <li className="px-5 py-2 text-label text-ink-muted">+ {next.length - 8} more in the retry list and capture log below.</li>}
+        </ul>
+      </section>
+
       <section className="card overflow-hidden">
         <div className="flex flex-wrap items-end gap-3 border-b border-ink-border px-5 py-3">
           <label className="text-label"><span className="field-label">Period</span>
@@ -424,16 +474,18 @@ export function CoverageMonitor() {
         <section className="card overflow-hidden">
           <div className="px-5 py-4"><h2 className="font-body text-title">By region</h2><p className="text-label font-normal text-ink-muted">Captures saved per region and how many places BSA now holds there.</p></div>
           <table className="w-full text-label">
-            <thead className="text-ink-muted"><tr><th className="px-5 py-2 text-left font-normal">Region</th><th className="text-right font-normal">Captures</th><th className="text-right font-normal">New places</th><th className="text-right font-normal">Places in BSA</th><th className="text-right font-normal">Open retries</th><th className="px-5 text-left font-normal">Last</th></tr></thead>
+            <thead className="text-ink-muted"><tr><th className="px-5 py-2 text-left font-normal">Region</th><th className="text-right font-normal">Captures</th><th className="text-right font-normal">New places</th><th className="text-right font-normal">Places in BSA</th><th className="text-right font-normal">Open retries</th><th className="text-right font-normal">Barangay boundaries</th><th className="px-5 text-left font-normal">Last</th></tr></thead>
             <tbody>
               {byRegion.map((r) => (
                 <tr key={r.region ?? '—'} className="border-t border-ink-border">
                   <td className="px-5 py-2"><button type="button" className="link text-left" onClick={() => setRegion(r.region ?? 'all')}>{regionName(r.region)}</button></td>
                   <td className="text-right">{r.captures}</td><td className="text-right">{r.places.toLocaleString('en-US')}</td><td className="text-right">{r.inBsa.toLocaleString('en-US')}</td>
-                  <td className={`text-right ${r.openGaps ? 'text-nogo' : ''}`}>{r.openGaps}</td><td className="px-5 text-ink-muted">{r.last ? stamp(r.last) : '—'}</td>
+                  <td className={`text-right ${r.openGaps ? 'text-nogo' : ''}`}>{r.openGaps}</td>
+                  <td className={`text-right ${r.barangays === 0 ? 'text-nogo' : ''}`}>{r.barangays == null ? '—' : r.barangays ? r.barangays.toLocaleString('en-US') : '✕ none'}</td>
+                  <td className="px-5 text-ink-muted">{r.last ? stamp(r.last) : '—'}</td>
                 </tr>
               ))}
-              {!byRegion.length && <tr><td colSpan={6} className="px-5 py-4 text-ink-muted">Nothing captured yet.</td></tr>}
+              {!byRegion.length && <tr><td colSpan={7} className="px-5 py-4 text-ink-muted">Nothing captured yet.</td></tr>}
             </tbody>
           </table>
         </section>

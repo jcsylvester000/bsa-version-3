@@ -52,7 +52,8 @@ export function isCaptureVertical(v: unknown): v is string {
 }
 
 /** Most business types one capture can include. */
-export const MAX_CAPTURE_VERTICALS = 6;
+/** Business types per capture — the playbook's "2–3 at a time" (lib/capture/capturePolicy). */
+export const MAX_CAPTURE_VERTICALS = 3;
 
 /** Layers to pull for a site: each chosen vertical's competitor set + the context layers. */
 export function layersForSite(verticals: string | string[] | null | undefined, extras: LayerKey[]): LayerKey[] {

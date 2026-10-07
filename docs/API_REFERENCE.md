@@ -52,9 +52,11 @@ Workflow (v3, 2026-10-07): **preview/import are read-only → the admin reviews 
 | `GET /gaps[?status=open\|resolved\|dismissed\|all]` | — | the retry queue (default open). |
 | `GET /gaps/:id` | — | one entry (area spec, layer, setup) — Place Capture's `?retry=<id>` re-runs it. |
 | `POST /gaps/:id` | `{ action: 'dismiss' \| 'reopen' }` (JSON only) | close an entry by hand / re-open a dismissed one. Audited (`poi.capture.gap.*`). |
+| `POST /plan` | `{ area, layers[] }` (JSON only) | the pre-flight: `{ layers[] (covered, cells, freshCells, lastCapturedAt), toFetch[], openGaps[], ring {ok, message, dense, reason, maxM, defaultM}, storedPlaces, boundary, previousCaptures[] }`. Read-only. |
+| `GET /osm-status` | — | `{ reachable, slotsNow, waitSeconds, window {offPeak, hour, label, advice} }` — Overpass slots for this server (cached 20 s) + the PHT off-peak window. |
 | `GET /cells?bbox=s,w,n,e&layer=KEY` | bbox ≤ 2° a side; KEY = vertical (`fnb_qsr`) or `layer:<base>` | Territory Guard coverage cells (~1.1 km) with `fetchedAt` — the freshness map. |
 
-Retry queue: `/preview` logs a layer that failed (`timeout`/`error`) or hit the place limit (`limit`, returned as
+Policy (lib/capture/capturePolicy): `/preview` rejects rings over 1,000 m in dense centres / 1,500 m elsewhere (`422 ring_too_large`); at most 3 business types (`verticals`). Retry queue: `/preview` logs a layer that failed (`timeout`/`error`) or hit the place limit (`limit`, returned as
 `truncated: true` and never stamped as covered) in `poi_capture_gap`; `/save` returns `gapsResolved` (entries now
 covered). `/readiness` also returns `previousCaptures[]` (saved captures whose area contains the pin).
 

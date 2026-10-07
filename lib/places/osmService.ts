@@ -397,6 +397,40 @@ const CAPTURE_CACHE_TTL_MS = 30 * 60_000;
 const CAPTURE_CACHE_MAX = 60;
 const captureCache = new Map<string, { at: number; elements: OverpassElement[] }>();
 
+export interface OverpassStatus { reachable: boolean; slotsNow: number | null; waitSeconds: number; checkedAt: string }
+let statusCache: { at: number; value: OverpassStatus } | null = null;
+
+/**
+ * Is the public Overpass server ready for this server (its rate limit is per caller IP)? Reads
+ * `/api/status` ("N slots available now" / "Slot available after …, in S seconds."). Cached 20 s;
+ * never throws — unreachable just reports `reachable: false`.
+ */
+export async function overpassStatus(): Promise<OverpassStatus> {
+  if (statusCache && Date.now() - statusCache.at < 20_000) return statusCache.value;
+  const url = OVERPASS_ENDPOINTS[0].replace(/\/interpreter$/, '/status');
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 4_000);
+  let value: OverpassStatus;
+  try {
+    const res = await fetch(url, { headers: { 'User-Agent': 'GridBSA/1.0 (site-analysis; admin capture)' }, signal: controller.signal });
+    const text = res.ok ? await res.text() : '';
+    const slots = /(\d+) slots? available now/i.exec(text);
+    const waits = [...text.matchAll(/in (\d+) seconds?/gi)].map((m) => Number(m[1])).filter(Number.isFinite);
+    value = {
+      reachable: res.ok,
+      slotsNow: slots ? Number(slots[1]) : res.ok ? 0 : null,
+      waitSeconds: slots && Number(slots[1]) > 0 ? 0 : waits.length ? Math.min(...waits) : 0,
+      checkedAt: new Date().toISOString(),
+    };
+  } catch {
+    value = { reachable: false, slotsNow: null, waitSeconds: 0, checkedAt: new Date().toISOString() };
+  } finally {
+    clearTimeout(timer);
+  }
+  statusCache = { at: Date.now(), value };
+  return value;
+}
+
 export function clearCaptureCache(): void {
   captureCache.clear();
 }

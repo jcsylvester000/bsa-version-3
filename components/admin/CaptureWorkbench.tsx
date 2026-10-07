@@ -32,6 +32,7 @@ import { BSA_POI_CATEGORIES, CATEGORY_LABEL, type BsaPoiCategory } from '@/lib/p
 import { markerElement } from '@/components/MapMarkers';
 import { TruthChip } from '@/components/ui/Chips';
 import { manilaShortStampYear } from '@/lib/util/manilaTime';
+import { FRESH_DAYS, RING_MIN_M, osmWindow, ringPolicy, type OsmWindow } from '@/lib/capture/capturePolicy';
 
 type Decision = 'accept' | 'reject' | 'pending';
 type MapMode = 'site' | 'rect' | 'add' | 'none';
@@ -76,6 +77,16 @@ interface Readiness {
   places: Array<{ id: string; name: string; category: string; lat: number; lon: number; distM: number; tier: PlaceTier }>;
   previousCaptures?: Array<{ id: string; label: string; createdAt: string; layers: string[]; savedCount: number }>;
 }
+interface CapturePlan {
+  layers: Array<{ layer: string; covered: boolean; cells: number; freshCells: number; lastCapturedAt: string | null }>;
+  toFetch: string[];
+  openGaps: Array<{ id: string; layer: string; reason: string; label: string; attempts: number }>;
+  ring: { ok: boolean; message: string | null; dense: boolean; reason: string | null; maxM: number; defaultM: number; maxKm2: number };
+  storedPlaces: number;
+  boundary: { barangay: string | null; city: string | null; province: string | null } | null;
+  previousCaptures: Array<{ id: string; label: string; createdAt: string; layers: string[]; savedCount: number }>;
+}
+interface OsmStatus { reachable: boolean; slotsNow: number | null; waitSeconds: number; checkedAt: string; window: OsmWindow }
 interface GapEntry { id: string; layer: string; label: string; areaSpec: CaptureArea; context: SiteContext | null; reason: string; attempts: number }
 interface SavedBatch {
   batch: BatchSummary & { notes: string | null; areaSpec: (CaptureArea & { context?: SiteContext | null }) | null; layers: string[] };
@@ -201,6 +212,12 @@ export function CaptureWorkbench() {
   const [pin, setPin] = useState<{ lat: number; lon: number } | null>(null);
   const [showCoverage, setShowCoverage] = useState(true);
   const [regionTotals, setRegionTotals] = useState<Array<{ region: string | null; total: number; tagged: number }>>([]);
+  /** Pre-flight (playbook as code): coverage, ring rule, boundaries, retry entries for the current area. */
+  const [plan, setPlan] = useState<CapturePlan | null>(null);
+  const [planLoading, setPlanLoading] = useState(false);
+  const [osm, setOsm] = useState<OsmStatus | null>(null);
+  /** Admin acknowledged capturing without barangay boundaries (places save untagged). */
+  const [noBoundaryOk, setNoBoundaryOk] = useState(false);
 
   useEffect(() => { modeRef.current = mode; if (mode !== 'rect') rectStart.current = null; }, [mode]);
 
@@ -209,11 +226,11 @@ export function CaptureWorkbench() {
   const acceptedItems = items.filter((i) => i.decision === 'accept' && editableAreas.some((a) => a.id === i.areaId));
   const unsaved = acceptedItems.length > 0;
   useEffect(() => {
-    if (!unsaved) return;
+    if (!unsaved && !busy) return;
     const h = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ''; };
     window.addEventListener('beforeunload', h);
     return () => window.removeEventListener('beforeunload', h);
-  }, [unsaved]);
+  }, [unsaved, busy]);
 
   const catchmentM = catchmentFor(format);
   const conceptsByArea = useMemo(() => {
@@ -228,6 +245,10 @@ export function CaptureWorkbench() {
   const km2 = area ? areaKm2(area) : 0;
   const tooBig = km2 > MAX_CAPTURE_KM2;
   const layers = layersForSite(verticals, extras);
+  const ring = plan?.ring ?? (site ? ringPolicy(site.lat, site.lon) : ringPolicy(0, 0));
+  const ringMax = ring.maxM;
+  /** Playbook rule 5 — one area at a time: the area on the map must be saved (or removed) first. */
+  const blockingArea = areas.find((a) => !a.saved && !a.readOnly && a.source === 'osm');
 
   /* ---------------------------------------------------------------- data */
 
@@ -237,11 +258,18 @@ export function CaptureWorkbench() {
   }, []);
 
   const loadCoverage = useCallback(async () => {
-    const r = await api<{ areas: Array<{ id: string; label: string; geometry: GeoJSON.Geometry | null }>; regions: typeof regionTotals }>('/api/admin/capture/coverage');
+    const r = await api<{ areas: Array<{ id: string; label: string; fresh?: boolean; geometry: GeoJSON.Geometry | null }>; gaps?: Array<{ id: string; layer: string; geometry: GeoJSON.Geometry | null }>; regions: typeof regionTotals }>('/api/admin/capture/coverage');
     if (!r.ok) return;
     setRegionTotals(r.data.regions ?? []);
+    // Playbook rule 1 — coverage first: green = captured ≤ 90 days (skipped), grey = re-capture due, red = retry queue.
     const src = mapRef.current?.getSource('coverage') as maplibregl.GeoJSONSource | undefined;
-    src?.setData({ type: 'FeatureCollection', features: (r.data.areas ?? []).filter((a) => a.geometry).map((a) => ({ type: 'Feature', properties: { label: a.label }, geometry: a.geometry! })) });
+    src?.setData({
+      type: 'FeatureCollection',
+      features: [
+        ...(r.data.areas ?? []).filter((a) => a.geometry).map((a) => ({ type: 'Feature' as const, properties: { label: a.label, kind: a.fresh === false ? 'stale' : 'fresh' }, geometry: a.geometry! })),
+        ...(r.data.gaps ?? []).filter((g) => g.geometry).map((g) => ({ type: 'Feature' as const, properties: { label: `Retry: ${LAYER_LABEL[g.layer] ?? g.layer}`, kind: 'gap' }, geometry: g.geometry! })),
+      ],
+    });
   }, []);
 
   const readinessFor = useCallback(async (s: { lat: number; lon: number }, vs: string[], fmt: string, radius: number, br: string) => {
@@ -259,6 +287,42 @@ export function CaptureWorkbench() {
     }, 350);
     return () => clearTimeout(t);
   }, [site, verticals, format, radiusM, brand, readinessFor]);
+
+  /* ---------------------------------------------------------------- playbook: pre-flight */
+
+  // The capture plan for the current area + layers (debounced): what is already covered, ring rule, boundaries.
+  const planKey = area && verticals.length && layers.length ? JSON.stringify([area, layers]) : '';
+  useEffect(() => {
+    if (!planKey) { setPlan(null); return; }
+    const [a, ls] = JSON.parse(planKey) as [CaptureArea, LayerKey[]];
+    let stale = false;
+    const t = setTimeout(async () => {
+      setPlanLoading(true);
+      const r = await api<CapturePlan>('/api/admin/capture/plan', jsonInit('POST', { area: a, layers: ls }));
+      if (stale) return;
+      setPlanLoading(false);
+      if (r.ok) setPlan(r.data);
+    }, 450);
+    return () => { stale = true; clearTimeout(t); };
+  }, [planKey]);
+
+  // Keep the ring inside the rule for this spot (1,000 m in dense centres, 1,500 m elsewhere).
+  useEffect(() => {
+    if (radiusM > ringMax) setRadiusM(Math.min(ring.defaultM, ringMax));
+  }, [ringMax, ring.defaultM, radiusM]);
+  useEffect(() => { setNoBoundaryOk(false); }, [site?.lat, site?.lon]);
+
+  // OpenStreetMap readiness + the off-peak window, refreshed every minute.
+  const loadOsm = useCallback(async () => {
+    const r = await api<OsmStatus>('/api/admin/capture/osm-status');
+    if (r.ok) setOsm(r.data);
+    return r.ok ? r.data : null;
+  }, []);
+  useEffect(() => {
+    void loadOsm();
+    const t = setInterval(() => { void loadOsm(); }, 60_000);
+    return () => clearInterval(t);
+  }, [loadOsm]);
 
   /** Places already saved in BSA inside the current view (zoom ≥ 14) — shown before any capture. */
   const loadViewport = useCallback(async () => {
@@ -320,8 +384,9 @@ export function CaptureWorkbench() {
         addTierIcons(map);
         const accent = token('--accent-text', '#E2B985');
         for (const id of ['coverage', 'areas', 'catchment', 'scan', 'rect', 'viewport', 'existing', 'items']) map.addSource(id, { type: 'geojson', data: EMPTY_FC });
-        map.addLayer({ id: 'coverage-fill', type: 'fill', source: 'coverage', paint: { 'fill-color': token('--projected', '#B39AE8'), 'fill-opacity': 0.07 } });
-        map.addLayer({ id: 'coverage-line', type: 'line', source: 'coverage', paint: { 'line-color': token('--projected', '#B39AE8'), 'line-width': 1, 'line-dasharray': [2, 2] } });
+        const covColor: maplibregl.ExpressionSpecification = ['match', ['get', 'kind'], 'gap', token('--nogo', '#F28C86'), 'stale', token('--text-muted', '#A9B6CE'), token('--go', '#5CCB98')];
+        map.addLayer({ id: 'coverage-fill', type: 'fill', source: 'coverage', paint: { 'fill-color': covColor, 'fill-opacity': 0.08 } });
+        map.addLayer({ id: 'coverage-line', type: 'line', source: 'coverage', paint: { 'line-color': covColor, 'line-width': 1.2, 'line-dasharray': [2, 2] } });
         map.addLayer({ id: 'areas-line', type: 'line', source: 'areas', paint: { 'line-color': token('--go', '#5CCB98'), 'line-width': 1.5 } });
         map.addLayer({ id: 'scan-line', type: 'line', source: 'scan', paint: { 'line-color': accent, 'line-width': 2, 'line-dasharray': [3, 2] } });
         map.addLayer({ id: 'rect-fill', type: 'fill', source: 'rect', paint: { 'fill-color': accent, 'fill-opacity': 0.08 } });
@@ -491,8 +556,9 @@ export function CaptureWorkbench() {
       const lr = r.ok ? r.data.layers[0] : undefined;
       const retryable = !r.ok ? RETRYABLE.test(r.error.code) : lr?.status === 'failed' && !/Unknown layer/.test(lr.message ?? '');
       if ((!r.ok || lr?.status === 'failed') && retryable && attempt < AUTO_ATTEMPTS) {
-        setBusy(`OpenStreetMap is busy — retrying ${label} in ${RETRY_WAIT_S[attempt - 1]} s…`);
-        await new Promise((res) => setTimeout(res, RETRY_WAIT_S[attempt - 1] * 1000));
+        const wait = RETRY_WAIT_S[attempt - 1] * (osmWindow().offPeak ? 1 : 1.5);
+        setBusy(`OpenStreetMap is busy — retrying ${label} in ${Math.round(wait)} s…`);
+        await new Promise((res) => setTimeout(res, wait * 1000));
         continue;
       }
       if (!r.ok) {
@@ -519,6 +585,14 @@ export function CaptureWorkbench() {
     };
     setStatus(null); setMsg(null); setConfirmSave(false);
     setAreas((as) => [...as, run]);
+    // Playbook: don't start while OpenStreetMap has no free slot for us — wait it out (≤ 45 s) instead of failing.
+    const st = await loadOsm();
+    if (st?.reachable && st.waitSeconds > 0) {
+      for (let left = Math.min(45, st.waitSeconds); left > 0; left--) {
+        setBusy(`OpenStreetMap is busy — starting in ${left} s…`);
+        await new Promise((res) => setTimeout(res, 1000));
+      }
+    }
     for (let i = 0; i < lyrs.length; i++) {
       setBusy(`Loading ${LAYER_LABEL[lyrs[i]] ?? lyrs[i]} (${i + 1} of ${lyrs.length})…`);
       await runLayer(id, a, lyrs[i], i === 0, force, { label, context });
@@ -528,7 +602,7 @@ export function CaptureWorkbench() {
   }
 
   async function showOnMap() {
-    if (!area || tooBig || !layers.length) return;
+    if (!area || tooBig || !layers.length || blockers.length) return;
     const label = [verticals.map((v) => CAPTURE_VERTICALS.find((x) => x.key === v)?.label).filter(Boolean).join(' + '), brand.trim(), readiness?.boundary?.barangay ? `Brgy ${readiness.boundary.barangay}` : null, readiness?.boundary?.city]
       .filter(Boolean).join(' · ') || 'Capture area';
     await loadArea(area, layers, label, { site: site ?? undefined, verticals, brand: brand.trim() || undefined, format }, refresh, readiness?.byVertical);
@@ -538,6 +612,7 @@ export function CaptureWorkbench() {
 
   /** Re-run one retry-queue entry: same area, same setup, only the layer that was missed. */
   async function runGap(id: string) {
+    if (blockingArea) { setMsg({ tone: 'err', text: `Save or remove “${blockingArea.label}” first — one area at a time.` }); return; }
     const r = await api<GapEntry>(`/api/admin/capture/gaps/${encodeURIComponent(id)}`);
     if (!r.ok) { setMsg({ tone: 'err', text: r.error.message }); return; }
     const g = r.data;
@@ -688,6 +763,13 @@ export function CaptureWorkbench() {
 
   const step1Done = !!site || !!rect;
   const step2Done = step1Done && verticals.length > 0;
+  /** Playbook rules that stop a capture (warnings are shown, blockers disable the button). */
+  const blockers: string[] = [];
+  if (blockingArea) blockers.push(`Save or remove “${blockingArea.label}” first — one area at a time.`);
+  if (plan && !plan.ring.ok && plan.ring.message) blockers.push(plan.ring.message);
+  if (plan && !plan.boundary && !noBoundaryOk) blockers.push('No barangay boundaries here — load them first, or tick “capture anyway”.');
+  if (step2Done && area && planLoading && !plan) blockers.push('Checking what is already captured here…');
+  const allCovered = !!plan && !refresh && plan.toFetch.length === 0;
   const loading = areas.some((a) => a.layers.some((l) => l.status === 'loading' || l.status === 'waiting'));
   const stage: 0 | 1 | 2 = status ? 2 : areas.length ? 1 : 0;
 
@@ -719,7 +801,7 @@ export function CaptureWorkbench() {
           {tab === 'capture' && (
             <>
               <Step n={1} title="Drop the site pin" done={step1Done}>
-                <p className="field-help">Jump to any region, then click the map where the site is (drag the pin to fine-tune), or paste coordinates.</p>
+                <p className="field-help">Check the <a className="link" href="/admin/coverage">coverage map</a> first and pick a gap (no colour or red). Then jump to the region and click the map where the site is (drag the pin to fine-tune), or paste coordinates.</p>
                 <div className="mt-3 flex gap-2">
                   <select aria-label="Jump to region" className="field min-h-[40px] flex-1" value="" onChange={(e) => {
                     const v = e.target.value;
@@ -770,7 +852,7 @@ export function CaptureWorkbench() {
 
               <Step n={2} title="Business types & catchment" done={step2Done} disabled={!step1Done}>
                 <fieldset disabled={!step1Done}>
-                  <legend className="field-label">Business types — tick up to {MAX_CAPTURE_VERTICALS} (what Territory Guard compares against)</legend>
+                  <legend className="field-label">Business types — tick 2–3 (max {MAX_CAPTURE_VERTICALS} per capture; capture more types as a second area)</legend>
                   <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5">
                     {CAPTURE_VERTICALS.map((v) => (
                       <label key={v.key} className="flex items-center gap-2 text-label">
@@ -797,7 +879,8 @@ export function CaptureWorkbench() {
                 </fieldset>
                 <label className="mt-3 block">
                   <span className="field-label">Capture ring: {radiusM.toLocaleString('en-US')} m {radiusM === DEFAULT_SCAN_M && <span className="opacity-70">(Territory Guard&apos;s scan radius)</span>}</span>
-                  <input type="range" min={300} max={2800} step={100} value={radiusM} onChange={(e) => { setRadiusM(Number(e.target.value)); setRect(null); }} className="mt-1 w-full" disabled={!step1Done} />
+                  <input type="range" min={RING_MIN_M} max={ringMax} step={100} value={Math.min(radiusM, ringMax)} onChange={(e) => { setRadiusM(Number(e.target.value)); setRect(null); }} className="mt-1 w-full" disabled={!step1Done} />
+                  <span className="field-help block">{ring.dense ? `Dense area — max ${ringMax.toLocaleString('en-US')} m (${ring.reason}). Cover a bigger district with several rings.` : `Max ${ringMax.toLocaleString('en-US')} m here; in dense centres the limit is 1,000 m.`}</span>
                 </label>
                 {site && <TerritoryReadout readiness={readiness} loading={readyLoading} />}
               </Step>
@@ -819,9 +902,15 @@ export function CaptureWorkbench() {
                   <span>Check OpenStreetMap again even where this area was captured in the last 90 days</span>
                 </label>
                 {area && <p className={`mt-3 text-label font-normal ${tooBig ? 'text-nogo' : 'text-ink-muted'}`}>{tooBig ? '✕ ' : ''}Area ≈ {km2.toFixed(1)} km² · {layers.length} layer{layers.length === 1 ? '' : 's'}{tooBig ? ` — over the ${MAX_CAPTURE_KM2} km² limit. Make the ring smaller.` : ''}</p>}
-                <button type="button" className="btn-primary mt-3 w-full" disabled={!step2Done || !area || tooBig || !layers.length || !!busy} onClick={showOnMap}>
-                  {busy ?? (areas.length ? 'Add this area to the map' : 'Show places on the map')}
+                {step2Done && area && (
+                  <Preflight plan={plan} loading={planLoading} osm={osm} verticals={verticals.length} radiusM={area.kind === 'circle' ? area.radiusM : null}
+                    blockingArea={blockingArea?.label ?? null} refresh={refresh} noBoundaryOk={noBoundaryOk} onNoBoundaryOk={setNoBoundaryOk} />
+                )}
+                <button type="button" className="btn-primary mt-3 w-full" disabled={!step2Done || !area || tooBig || !layers.length || !!busy || blockers.length > 0} onClick={showOnMap}
+                  title={blockers[0]}>
+                  {busy ?? (allCovered ? 'Show saved places (nothing new to fetch)' : plan ? `Show places on the map · ${(refresh ? layers.length : plan.toFetch.length)} layer${(refresh ? layers.length : plan.toFetch.length) === 1 ? '' : 's'} to fetch` : 'Show places on the map')}
                 </button>
+                {blockers.length > 0 && !busy && <p className="mt-2 text-label font-normal text-nogo">✕ {blockers[0]}</p>}
                 <details className="mt-3">
                   <summary className="cursor-pointer text-label text-ink-muted">Advanced: draw a rectangle instead of the ring</summary>
                   <div className="mt-2 flex items-center gap-2">
@@ -909,7 +998,8 @@ export function CaptureWorkbench() {
                 <li className="flex items-center gap-2"><span className="inline-flex w-4 justify-center"><span className="mk-other" /></span> Other business (not counted)</li>
                 <li className="flex items-center gap-2"><span className="inline-flex w-4 justify-center"><span className="inline-block h-2.5 w-2.5 rounded-full border-2 border-accent-soft" /></span> Context place</li>
                 <li className="text-ink-muted">Faded = already saved in BSA (or skipped)</li>
-                <li className="text-ink-muted">Green outline = captured area · amber ring = needs a decision</li>
+                <li className="text-ink-muted">Dashed: green = captured ≤ 90 days (skipped) · grey = re-capture due · red = retry list</li>
+                <li className="text-ink-muted">Solid green = this session&apos;s area · amber ring = needs a decision</li>
               </ul>
             </details>
           </div>
@@ -930,7 +1020,7 @@ export function CaptureWorkbench() {
               {editableAreas.length > 0 && <button type="button" className="btn-secondary" onClick={() => { setMode('add'); setTab('capture'); }} disabled={!!busy}>+ Add a missing place</button>}
               <button type="button" className="btn-secondary" onClick={startOver} disabled={!!busy}>Clear all</button>
               {editableAreas.length > 0 && (!confirmSave
-                ? <button type="button" className="btn-primary" disabled={pendingItems.length > 0 || loading || !!busy} onClick={() => setConfirmSave(true)}>Save {acceptedItems.length} new place{acceptedItems.length === 1 ? '' : 's'} to BSA</button>
+                ? <button type="button" className="btn-primary" disabled={pendingItems.length > 0 || loading || !!busy} onClick={() => setConfirmSave(true)}>{acceptedItems.length ? `Save ${acceptedItems.length} new place${acceptedItems.length === 1 ? '' : 's'} to BSA` : 'Mark this area as captured'}</button>
                 : <span className="flex items-center gap-2"><span className="text-label">Every broker&apos;s analysis will use these places. Save?</span><button type="button" className="btn-primary" onClick={saveAll} disabled={!!busy}>{busy ?? 'Yes, save'}</button><button type="button" className="btn-secondary" onClick={() => setConfirmSave(false)}>Cancel</button></span>)}
             </div>
           </div>
@@ -1118,6 +1208,59 @@ function SaveStatus({ status, onNew, onHistory }: { status: { at: string; areas:
         </tbody>
       </table>
     </section>
+  );
+}
+
+/**
+ * Pre-flight checklist — the capture playbook applied to the area on screen (docs/PLACE_CAPTURE_PLAYBOOK.md).
+ * ✓ ok · ▲ worth knowing · ✕ stops the capture until fixed.
+ */
+function Preflight({ plan, loading, osm, verticals, radiusM, blockingArea, refresh, noBoundaryOk, onNoBoundaryOk }: {
+  plan: CapturePlan | null; loading: boolean; osm: OsmStatus | null; verticals: number; radiusM: number | null;
+  blockingArea: string | null; refresh: boolean; noBoundaryOk: boolean; onNoBoundaryOk: (v: boolean) => void;
+}) {
+  const win = osm?.window ?? osmWindow();
+  const Row = ({ tone, children }: { tone: 'ok' | 'warn' | 'stop'; children: React.ReactNode }) => (
+    <li className="flex gap-2"><span aria-hidden className={tone === 'ok' ? 'text-go' : tone === 'warn' ? 'text-caution' : 'text-nogo'}>{tone === 'ok' ? '✓' : tone === 'warn' ? '▲' : '✕'}</span><span className="min-w-0 flex-1">{children}</span></li>
+  );
+  const covered = plan?.layers.filter((l) => l.covered) ?? [];
+  const due = plan?.layers.filter((l) => !l.covered && l.lastCapturedAt && Date.now() - new Date(l.lastCapturedAt).getTime() > FRESH_DAYS * 86_400_000) ?? [];
+  return (
+    <div className="card-inset mt-3 p-3 text-label font-normal" aria-live="polite">
+      <p className="overline">Before you capture</p>
+      {!plan ? <p className="mt-1 text-ink-muted">{loading ? 'Checking coverage, boundaries and ring size…' : 'Pre-flight check unavailable — you can still capture.'}</p> : (
+        <ul className="mt-1.5 space-y-1.5 text-ink-muted">
+          <Row tone="ok">
+            <strong className="text-ink-text">Coverage:</strong>{' '}
+            {covered.length === plan.layers.length && !refresh ? 'everything here is already captured (last 90 days) — saved places are shown, nothing is fetched.'
+              : covered.length ? `${covered.length} of ${plan.layers.length} layers already captured here and skipped (${covered.map((l) => LAYER_LABEL[l.layer] ?? l.layer).join(', ')}); fetching ${plan.toFetch.map((l) => LAYER_LABEL[l] ?? l).join(', ')}.`
+              : 'not captured yet — every layer will be fetched.'}
+            {due.length > 0 && <span className="block text-caution">Re-capture due (&gt; {FRESH_DAYS} days): {due.map((l) => LAYER_LABEL[l.layer] ?? l.layer).join(', ')} — fetched again.</span>}
+            {plan.openGaps.length > 0 && <span className="block text-caution">{plan.openGaps.length} retry entr{plan.openGaps.length === 1 ? 'y' : 'ies'} inside this area ({[...new Set(plan.openGaps.map((g) => LAYER_LABEL[g.layer] ?? g.layer))].join(', ')}) — closed when you save these layers here.</span>}
+          </Row>
+          {plan.boundary
+            ? <Row tone="ok"><strong className="text-ink-text">Boundaries:</strong> loaded — places will be tagged Brgy {plan.boundary.barangay ?? '—'}, {plan.boundary.city ?? '—'}.</Row>
+            : (
+              <Row tone={noBoundaryOk ? 'warn' : 'stop'}>
+                <strong className="text-ink-text">Boundaries:</strong> no barangay boundaries loaded here, so places would save without barangay / city tags. Load the region first (<code>npm run db:fetch-boundaries</code> → <code>db:load-boundaries</code>).
+                <label className="mt-1 block text-ink-text"><input type="checkbox" className="mr-2 align-middle" checked={noBoundaryOk} onChange={(e) => onNoBoundaryOk(e.target.checked)} />Capture anyway — tag them later with <code>db:tag-boundaries</code></label>
+              </Row>
+            )}
+          <Row tone={plan.ring.ok ? 'ok' : 'stop'}>
+            <strong className="text-ink-text">Ring size:</strong>{' '}
+            {plan.ring.ok ? `${radiusM ? `${radiusM.toLocaleString('en-US')} m` : 'rectangle'} — within the ${plan.ring.maxM.toLocaleString('en-US')} m limit${plan.ring.dense ? ` for a dense area (${plan.ring.reason})` : ''}.` : plan.ring.message}
+          </Row>
+          <Row tone={verticals <= 3 ? 'ok' : 'stop'}><strong className="text-ink-text">Business types:</strong> {verticals} of max 3 — fewer types, fewer OpenStreetMap calls.</Row>
+          <Row tone={blockingArea ? 'stop' : 'ok'}><strong className="text-ink-text">One area at a time:</strong> {blockingArea ? `save or remove “${blockingArea}” first.` : 'ready — keep this page open until loading finishes.'}</Row>
+          <Row tone={win.offPeak && (!osm || osm.waitSeconds === 0) ? 'ok' : 'warn'}>
+            <strong className="text-ink-text">OpenStreetMap:</strong> {win.label}. {win.advice}
+            {osm && !osm.reachable && <span className="block">Status check didn&apos;t answer — loads may be slow; automatic retries are on.</span>}
+            {osm?.reachable && osm.waitSeconds > 0 && <span className="block">Our next free slot is in {osm.waitSeconds} s — the capture waits for it automatically.</span>}
+          </Row>
+          <Row tone="ok"><strong className="text-ink-text">If a layer fails:</strong> save anyway — what loaded is kept and the missed layer goes to the retry list.</Row>
+        </ul>
+      )}
+    </div>
   );
 }
 

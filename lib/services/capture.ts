@@ -32,7 +32,8 @@ import { mapElement, parseSelector, type SkipReason, type TagMatcher } from '@/l
 import { cleanText, dedupeCandidates, parseOsmRef, MAX_NAME_LEN, MAX_NOTES_LEN, type CaptureCandidate } from '@/lib/capture/candidate';
 import { parseNavigatorFile } from '@/lib/capture/navigatorFile';
 import { signCandidate, verifyCandidate } from '@/lib/capture/signing';
-import { catchmentFor, conceptForSite, summariseForTerritory, tierAcross, tierOfPlace, DEFAULT_SCAN_M } from '@/lib/capture/territoryAlign';
+import { catchmentFor, conceptForSite, summariseForTerritory, tierAcross, tierOfPlace, DEFAULT_SCAN_M, MAX_CAPTURE_VERTICALS } from '@/lib/capture/territoryAlign';
+import { checkAreaPolicy, FRESH_DAYS } from '@/lib/capture/capturePolicy';
 import { haversineMeters } from '@/lib/geo/geo';
 import { cellsForArea, coverageCellKey } from '@/lib/places/poiCache';
 
@@ -195,7 +196,7 @@ function cellsInside(area: CaptureArea): Array<{ key: string; lat: number; lon: 
   return [{ key: coverageCellKey(lat, lon), lat, lon }];
 }
 
-const COVERAGE_FRESH_MS = 90 * 24 * 3600 * 1000;
+const COVERAGE_FRESH_MS = FRESH_DAYS * 24 * 3600 * 1000;
 
 /** True when every cell of the area was already captured for this layer within 90 days. */
 async function layerCovered(area: CaptureArea, layer: string): Promise<boolean> {
@@ -245,6 +246,9 @@ export async function previewArea(user: SessionUser, input: PreviewInput) {
   if (km2 > MAX_CAPTURE_KM2) {
     throw new CaptureError('area_too_large', `This area is about ${km2.toFixed(1)} km². One capture can cover up to ${MAX_CAPTURE_KM2} km² — make the ring smaller, or use the province sweep (npm run db:ingest:osm) for whole regions.`, 422);
   }
+  // Playbook: ≤ 1,000 m rings in dense centres, ≤ 1,500 m elsewhere — bigger rings come back incomplete.
+  const pol = checkAreaPolicy(input.area);
+  if (!pol.ok) throw new CaptureError('ring_too_large', pol.message, 422);
   const notes: string[] = [];
   let stored: StoredPlace[] | undefined;
   if (input.withStored) {
@@ -563,8 +567,19 @@ export async function coverage() {
            COUNT(*) FILTER (WHERE truth_layer = 'verified')::int AS verified,
            COUNT(*) FILTER (WHERE psgc_code IS NOT NULL)::int AS tagged
     FROM poi GROUP BY region ORDER BY total DESC`;
+  // Open retry entries, drawn red on the capture map so the admin works gaps, not covered ground.
+  let gaps: Array<{ id: string; layer: string; geojson: string | null }> = [];
+  try {
+    gaps = await prisma.$queryRaw`SELECT id::text, layer, ST_AsGeoJSON(area, 6)::text AS geojson FROM poi_capture_gap WHERE status = 'open' AND area IS NOT NULL LIMIT 500`;
+  } catch { /* retry queue not migrated yet */ }
+  const freshSince = Date.now() - COVERAGE_FRESH_MS;
   return {
-    areas: areas.map((a) => ({ id: a.id, label: a.label, committedCount: a.committed_count, committedAt: a.committed_at, geometry: a.geojson ? JSON.parse(a.geojson) : null })),
+    areas: areas.map((a) => ({
+      id: a.id, label: a.label, committedCount: a.committed_count, committedAt: a.committed_at,
+      fresh: !!a.committed_at && a.committed_at.getTime() >= freshSince,
+      geometry: a.geojson ? JSON.parse(a.geojson) : null,
+    })),
+    gaps: gaps.map((g) => ({ id: g.id, layer: g.layer, geometry: g.geojson ? JSON.parse(g.geojson) : null })),
     regions,
   };
 }
@@ -607,7 +622,7 @@ export interface ReadinessInput { lat: number; lon: number; radiusM?: number; fo
 export async function siteReadiness(input: ReadinessInput) {
   const radiusM = Math.min(3_000, Math.max(200, input.radiusM ?? DEFAULT_SCAN_M));
   const catchmentM = catchmentFor(input.format);
-  const verticals = [...new Set([...(input.verticals ?? []), ...(input.vertical ? [input.vertical] : [])])].slice(0, 6);
+  const verticals = [...new Set([...(input.verticals ?? []), ...(input.vertical ? [input.vertical] : [])])].slice(0, MAX_CAPTURE_VERTICALS);
   const concepts = verticals.map((v) => ({ vertical: v, concept: conceptForSite(v, input.brand) }));
   const boundary = await resolveAdminBoundary(input.lat, input.lon);
   const rows = await prisma.$queryRaw<Array<{ id: bigint; name: string; category: string; lat: number; lon: number; source: string; truth_layer: string }>>`
@@ -778,6 +793,9 @@ export async function captureLog(opts: { days?: number; limit?: number } = {}) {
   const regions = await prisma.$queryRaw<Array<{ region: string | null; total: number; tagged: number }>>`
     SELECT region, COUNT(*)::int AS total, COUNT(*) FILTER (WHERE psgc_code IS NOT NULL)::int AS tagged
     FROM poi GROUP BY region ORDER BY total DESC`;
+  const boundaries = await prisma.$queryRaw<Array<{ region: string | null; barangays: number }>>`
+    SELECT region, COUNT(*)::int AS barangays FROM admin_boundary
+    WHERE level = 'barangay' AND geom IS NOT NULL GROUP BY region`;
   const layersSeen = await prisma.$queryRaw<Array<{ vertical: string; cells: number }>>`
     SELECT vertical, COUNT(*)::int AS cells FROM poi_coverage GROUP BY vertical ORDER BY cells DESC LIMIT 80`;
   return {
@@ -790,6 +808,7 @@ export async function captureLog(opts: { days?: number; limit?: number } = {}) {
     })),
     gaps,
     regions,
+    boundaries,
     coverageKeys: layersSeen,
   };
 }
@@ -868,4 +887,55 @@ export async function capturesAtPoint(lat: number, lon: number, limit = 5) {
   } catch {
     return [];
   }
+}
+
+/* ------------------------------------------------------------------ capture plan (pre-flight) */
+
+export interface CapturePlanLayer { layer: string; covered: boolean; cells: number; freshCells: number; lastCapturedAt: Date | null }
+
+/**
+ * The pre-flight check the screen shows before anything is fetched — the playbook applied to one area:
+ * which layers are already captured (and will be skipped), open retry entries inside the area, the ring
+ * rule for this spot, whether barangay boundaries are loaded, and earlier captures here. Read-only.
+ */
+export async function planCapture(input: { area: CaptureArea; layers: LayerKey[] }) {
+  const [s, w, n, e] = bboxOfArea(input.area);
+  const lat = (s + n) / 2, lon = (w + e) / 2;
+  const cells = cellsInside(input.area);
+  const keys = cells.map((c) => c.key);
+  const since = new Date(Date.now() - COVERAGE_FRESH_MS);
+  const layers: CapturePlanLayer[] = [];
+  for (const layer of input.layers) {
+    const rows = await prisma.poiCoverage.findMany({
+      where: { vertical: coverageKeyForLayer(layer), cellKey: { in: keys } },
+      select: { fetchedAt: true },
+    });
+    const fresh = rows.filter((r) => r.fetchedAt >= since).length;
+    const last = rows.reduce<Date | null>((m, r) => (!m || r.fetchedAt > m ? r.fetchedAt : m), null);
+    layers.push({ layer, covered: fresh >= cells.length, cells: cells.length, freshCells: fresh, lastCapturedAt: last });
+  }
+  const gj = JSON.stringify(areaGeoJson(input.area));
+  let openGaps: Array<{ id: string; layer: string; reason: string; label: string; attempts: number }> = [];
+  try {
+    openGaps = await prisma.$queryRaw`
+      SELECT id::text, layer, reason, label, attempts FROM poi_capture_gap
+      WHERE status = 'open' AND area IS NOT NULL
+        AND ST_Intersects(area::geometry, ST_SetSRID(ST_GeomFromGeoJSON(${gj}), 4326))
+      ORDER BY last_attempt_at DESC LIMIT 20`;
+  } catch { /* retry queue not migrated yet */ }
+  const boundary = await resolveAdminBoundary(lat, lon);
+  const storedCount = await prisma.$queryRaw<Array<{ n: number }>>`
+    SELECT COUNT(*)::int AS n FROM poi WHERE geom && ST_MakeEnvelope(${w}, ${s}, ${e}, ${n}, 4326)::geography`;
+  const km2 = areaKm2(input.area);
+  const density = km2 > 0 ? (storedCount[0]?.n ?? 0) / km2 : 0;
+  const policy = checkAreaPolicy(input.area, density);
+  return {
+    layers,
+    toFetch: layers.filter((l) => !l.covered).map((l) => l.layer),
+    openGaps,
+    ring: { ok: policy.ok, message: policy.ok ? null : policy.message, ...policy.policy },
+    storedPlaces: storedCount[0]?.n ?? 0,
+    boundary: boundary ? { barangay: boundary.barangay, city: boundary.city, province: boundary.province } : null,
+    previousCaptures: await capturesAtPoint(lat, lon),
+  };
 }

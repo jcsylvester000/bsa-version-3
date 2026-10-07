@@ -5,6 +5,35 @@ The cross-thread state record. Read this (with the Master Instruction and the cu
 
 ---
 
+## 2026-10-08 — End of day (paused)
+
+Day's work, in order: Place Capture v3 + Neon save fix + Territory Guard deal-breaker (pushed `623941d`) →
+Capture Coverage screen + retry queue (pushed `55ff1f0`) → capture playbook enforced in the app (tested, **in the
+working tree, not yet pushed**). Owner asked for the default admin login: `admin@grid.test` / `bsa-demo-1234`
+(seeded demo; mock admin disabled on Netlify) — flagged to change the password (F-31). Resume from the
+"⏸ Paused" section of PROJECT_MEMORY.md.
+
+## 2026-10-08 (b) — Capture playbook enforced in the app
+
+**Owner ask:** implement the capture best practices on the admin side, not just document them.
+
+- `lib/capture/capturePolicy.ts` (shared screen/server): dense-centre list + stored-density rule → ring cap 1,000 m
+  (dense, default 800) / 1,500 m; 3 business types max; off-peak window 05–12 PHT; 90-day freshness.
+- Server: `/preview` rejects oversize rings (`ring_too_large`); schemas cap verticals at 3; new `POST /plan`
+  (pre-flight: layers covered/skipped, open retry entries, ring rule, boundary, earlier captures) and
+  `GET /osm-status` (Overpass slots, cached 20 s, + window). `/coverage` adds freshness + open retry entries;
+  `/log` adds barangay boundaries per region.
+- Place Capture: "Before you capture" checklist (✓/▲/✕) gating the button — boundaries (or explicit "capture anyway"),
+  ring rule, ≤ 3 types, one area at a time (next area blocked until Save/Remove); slider capped per spot; waits for a
+  free Overpass slot (≤ 45 s); longer retry waits in busy hours; leave-page warning while loading; capture map colours
+  saved areas fresh/due/retry; "Mark this area as captured" when nothing is new; step 1 points to the coverage map.
+- Capture Coverage: off-peak/OSM banner, "What to capture next" (retries → re-captures due → missing boundaries),
+  boundaries column per region.
+
+Verified: tsc clean · vitest 559/559 (new `capturePolicy.test.ts`, plan/status route tests) · plan + ring rule on
+PG16 through the Neon HTTP emulator · next build OK · headless: Makati pin → slider max 1,000 m (800 default),
+4th type disabled, no-boundary blocks until acknowledged, second area blocked until save, no console errors.
+
 ## 2026-10-08 — Capture Coverage screen, retry queue, capture best practices
 
 **Owner ask:** track and display every captured area in a separate admin tab so admins know where to capture next

@@ -5,9 +5,36 @@ always-current snapshot. `WORKLOG.md` is the full history (newest first). This f
 rewritten at the end of every work batch — if it disagrees with older notes (e.g.
 `2 - Data Intake/Migration Guide/PROJECT_MEMORY_EXPORT.md`, 2026-08-10), **this file wins**.
 
-_Last updated: 2026-10-08 — Capture Coverage screen + retry queue (awaiting push; v3/Neon fix/scoring pushed by owner); Design v2 batches 0–13 pushed (HEAD `498db86`, hotfix `db36c53`)._
+_Last updated: 2026-10-08 (end of day, paused) — capture playbook enforced (in the folder, **not yet pushed**); Capture Coverage pushed `55ff1f0`; Design v2 batches 0–13 pushed (HEAD `498db86`, hotfix `db36c53`)._
 
-**Latest batch (2026-10-08, ⏳ awaiting push):** Admin → **Capture Coverage** (`/admin/coverage`): map of saved capture
+## ⏸ Paused 2026-10-08 — resume here
+
+**State:** git HEAD `55ff1f0` (Capture Coverage + retry queue). Working tree holds the uncommitted, tested
+"capture playbook enforced" batch (tsc clean · vitest 559/559 · next build OK). Nothing else is in flight.
+
+**Owner to-do before/at next session**
+1. Push the playbook batch: `git add -A` → `git commit -m "Capture playbook enforced: pre-flight checklist, ring limits, 3 types max, one area at a time, OSM status, what-to-capture-next"` → `git push` (no migration).
+2. Confirm Netlify applied migration `20261008000000_capture_gaps` (Capture Coverage loads without a `db_migration_pending` reason).
+3. If not done yet: `npm run db:recompute-composites` once (Territory Guard deal-breaker for runs saved before 2026-10-07).
+4. Security: the seeded admin `admin@grid.test` uses the public demo password `bsa-demo-1234` — change it
+   (Settings → Change password) or create a real admin and retire the demo one (runbook F-31).
+5. Load barangay boundaries for every region being captured (`db:fetch-boundaries -- --region=<r>` → `db:load-boundaries` → `db:tag-boundaries`); Capture Coverage lists regions missing them.
+
+**Suggested next work (not started)**
+- Owner smoke test of the enforced playbook on the live site (dense pin, no-boundary pin, failed layer → retry list → retry → save closes it).
+- Optional hardening for the dev team: self-hosted/paid Overpass instance; overnight job that works the retry queue.
+- Read-only capture coverage view for analysts; Laguna/Pampanga lease corridors when comps exist.
+
+**Dev notes for the next thread**
+- Neon HTTP adapter refuses transactions: no `createMany`, nested writes or `$transaction` on request paths — plain statements only.
+- Local real-DB checks used a Neon `/sql` emulator over PG16+PostGIS (real `@neondatabase/serverless` + `PrismaNeonHTTP`); not shipped — rebuild if needed.
+- Capture rules live in `lib/capture/capturePolicy.ts` (shared by screen and API); playbook text in `docs/PLACE_CAPTURE_PLAYBOOK.md` (also saved to the claude.ai project).
+
+**Latest batch (2026-10-08 b, ⏳ awaiting push):** the capture playbook is enforced, not advisory —
+`lib/capture/capturePolicy.ts` (ring ≤ 1,000 m dense / 1,500 m, ≤ 3 types, off-peak 05–12 PHT, 90-day freshness),
+`POST /plan` pre-flight + `GET /osm-status`, "Before you capture" checklist gating the button, one area at a time,
+no-boundary acknowledgement, "What to capture next" on Capture Coverage. No migration.
+**Batch before (2026-10-08, pushed `55ff1f0`):** Admin → **Capture Coverage** (`/admin/coverage`): map of saved capture
 areas by freshness (90 d), Territory Guard coverage cells per layer, capture log (where/when/who/layers/new places),
 by-region table, playbook; **retry queue** `poi_capture_gap` (migration `20261008000000_capture_gaps`, also
 `poi_capture_batch.fetched_layers`) — `/preview` logs failed / place-limit layers, `/save` auto-resolves covered

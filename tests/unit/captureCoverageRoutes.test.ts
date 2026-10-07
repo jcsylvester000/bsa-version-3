@@ -13,6 +13,7 @@ const svc = {
   getGap: vi.fn(async (id: string) => (id === '22222222-2222-4222-8222-222222222222' ? { id } : null)),
   setGapStatus: vi.fn(async () => ({ id: 'g', status: 'dismissed' })),
   coverageCells: vi.fn(async () => []),
+  planCapture: vi.fn(async () => ({ layers: [], toFetch: [] })),
 };
 vi.mock('@/lib/services/capture', () => ({
   CaptureError: class CaptureError extends Error { constructor(public code: string, m: string, public status = 400) { super(m); } },
@@ -21,12 +22,17 @@ vi.mock('@/lib/services/capture', () => ({
   getGap: (...a: unknown[]) => svc.getGap(...(a as [string])),
   setGapStatus: (...a: unknown[]) => svc.setGapStatus(...(a as [])),
   coverageCells: (...a: unknown[]) => svc.coverageCells(...(a as [])),
+  planCapture: (...a: unknown[]) => svc.planCapture(...(a as [])),
 }));
+vi.mock('@/lib/places/osmService', () => ({ overpassStatus: vi.fn(async () => ({ reachable: true, slotsNow: 2, waitSeconds: 0, checkedAt: '' })) }));
 
 import { GET as log } from '@/app/api/admin/capture/log/route';
 import { GET as gaps } from '@/app/api/admin/capture/gaps/route';
 import { GET as gapGet, POST as gapPost } from '@/app/api/admin/capture/gaps/[id]/route';
 import { GET as cells } from '@/app/api/admin/capture/cells/route';
+import { POST as plan } from '@/app/api/admin/capture/plan/route';
+import { GET as osmStatus } from '@/app/api/admin/capture/osm-status/route';
+import { SiteContextSchema } from '@/lib/api/adminCapture';
 
 const admin = { id: '11111111-1111-4111-8111-111111111111', email: 'a@grid', role: 'admin', franchisorId: null };
 const analyst = { ...admin, role: 'analyst' };
@@ -77,5 +83,24 @@ describe('capture coverage routes', () => {
     expect((await cells(get('/api/admin/capture/cells?bbox=10,118,14.5,124&layer=fnb_qsr'))).status).toBe(422);
     expect((await cells(get("/api/admin/capture/cells?bbox=14.4,120.8,14.5,120.9&layer=x';drop"))).status).toBe(422);
     expect(svc.coverageCells).toHaveBeenCalledTimes(2);
+  });
+
+  it('plan (pre-flight) and OpenStreetMap status: admin only; plan is JSON-only and validated', async () => {
+    const area = { kind: 'circle', lat: 14.43, lon: 120.88, radiusM: 700 };
+    session.mockResolvedValue(analyst);
+    expect((await plan(post('/api/admin/capture/plan', { area, layers: ['anchors'] }))).status).toBe(403);
+    expect((await osmStatus()).status).toBe(403);
+    session.mockResolvedValue(admin);
+    expect((await plan(post('/api/admin/capture/plan', { area, layers: ['anchors'] }, 'text/plain'))).status).toBe(415);
+    expect((await plan(post('/api/admin/capture/plan', { area, layers: [] }))).status).toBe(422);
+    expect((await plan(post('/api/admin/capture/plan', { area, layers: ['anchors', 'v:fnb_qsr'] }))).status).toBe(200);
+    const st = await (await osmStatus()).json();
+    expect(st.data.window).toHaveProperty('offPeak');
+    expect(svc.planCapture).toHaveBeenCalledTimes(1);
+  });
+
+  it('API refuses more than 3 business types per capture', () => {
+    expect(SiteContextSchema.safeParse({ verticals: ['fnb_qsr', 'fnb_bakery', 'pharmacy'] }).success).toBe(true);
+    expect(SiteContextSchema.safeParse({ verticals: ['fnb_qsr', 'fnb_bakery', 'pharmacy', 'salon'] }).success).toBe(false);
   });
 });
