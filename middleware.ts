@@ -38,7 +38,7 @@ function tileOrigin(): string {
 
 function buildCsp(nonce: string): string {
   const isDev = process.env.NODE_ENV !== 'production';
-  const tiles = ['https://*.basemaps.cartocdn.com', 'https://*.tile.openstreetmap.org', tileOrigin()].filter(Boolean).join(' ');
+  const tiles = ['https://tile.openstreetmap.org', 'https://*.tile.openstreetmap.org', 'https://*.basemaps.cartocdn.com', tileOrigin()].filter(Boolean).join(' ');
   return [
     "default-src 'self'",
     // Nonce + strict-dynamic, NO 'unsafe-inline' (F-30). 'unsafe-eval' stays dev-only (HMR).

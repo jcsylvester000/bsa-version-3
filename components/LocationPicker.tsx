@@ -14,7 +14,7 @@
 import { useEffect, useRef, useState } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { defaultBasemapUrl } from '@/lib/ui/theme';
+import { defaultBasemapUrl, basemapPaint, OSM_ATTRIBUTION, OSM_MAX_ZOOM } from '@/lib/ui/theme';
 import { markerElement, MapLegend } from '@/components/MapMarkers';
 
 export interface PickedLocation { lat: number; lon: number; address?: string }
@@ -49,7 +49,7 @@ export function LocationPicker({ title, initial, onPick, onClose }: Props) {
       // under app load and renders a blank map. Override via NEXT_PUBLIC_MAP_TILE_URL.
       const fallback = {
         tiles: process.env.NEXT_PUBLIC_MAP_TILE_URL ?? defaultBasemapUrl(),
-        attribution: '© OpenStreetMap contributors © CARTO',
+        attribution: OSM_ATTRIBUTION,
       };
       try {
         const res = await fetch('/api/maptiles');
@@ -64,7 +64,7 @@ export function LocationPicker({ title, initial, onPick, onClose }: Props) {
       const start = picked ?? DEFAULT_CENTER;
       const map = new maplibregl.Map({
         container: ref.current,
-        style: { version: 8, sources: { base: { type: 'raster', tiles: [basemap.tiles], tileSize: 256, attribution: basemap.attribution } }, layers: [{ id: 'base', type: 'raster', source: 'base' }] },
+        style: { version: 8, sources: { base: { type: 'raster', tiles: [basemap.tiles], tileSize: 256, attribution: basemap.attribution, maxzoom: OSM_MAX_ZOOM } }, layers: [{ id: 'base', type: 'raster', source: 'base', paint: basemapPaint(basemap.tiles) }] },
         center: [start.lon, start.lat],
         zoom: picked ? 15 : 11,
       });

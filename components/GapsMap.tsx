@@ -3,7 +3,7 @@
 import { useEffect, useRef } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { defaultBasemapUrl } from '@/lib/ui/theme';
+import { defaultBasemapUrl, basemapPaint, OSM_ATTRIBUTION, OSM_MAX_ZOOM } from '@/lib/ui/theme';
 import { markerElement, MapLegend, SrMarkerList, type LegendKind } from '@/components/MapMarkers';
 
 export interface GapPoint {
@@ -28,7 +28,7 @@ export interface BusinessPoint {
 }
 
 /**
- * GapsMap — a single OpenStreetMap (free CARTO dark basemap) that pins every ranked
+ * GapsMap — a single OpenStreetMap basemap (theme-tinted, see lib/ui/theme.ts) that pins every ranked
  * White-Space area with its rank number, and (optionally) plots the actual nearby businesses
  * as coloured dots: red for exact/direct rivals, white for similar/adjacent formats. Read-only,
  * no API key (same free basemap the Territory map uses).
@@ -52,8 +52,8 @@ export function GapsMap({ gaps, businesses = [] }: { gaps: GapPoint[]; businesse
       container: ref.current,
       style: {
         version: 8,
-        sources: { osm: { type: 'raster', tiles: [tiles], tileSize: 256, attribution: '© OpenStreetMap contributors © CARTO' } },
-        layers: [{ id: 'osm', type: 'raster', source: 'osm' }],
+        sources: { osm: { type: 'raster', tiles: [tiles], tileSize: 256, attribution: OSM_ATTRIBUTION, maxzoom: OSM_MAX_ZOOM } },
+        layers: [{ id: 'osm', type: 'raster', source: 'osm', paint: basemapPaint(tiles) }],
       },
       center: [cLon, cLat],
       zoom: 11,

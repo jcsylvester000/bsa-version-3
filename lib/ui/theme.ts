@@ -22,7 +22,34 @@ export function isLightThemeActive(): boolean {
   return false;
 }
 
-/** Default free basemap (CARTO) matching the active theme. NEXT_PUBLIC_MAP_TILE_URL still overrides it. */
+/**
+ * Default basemap: OpenStreetMap's standard tiles (2026-10-07 — CARTO's free basemaps started returning
+ * "API KEY REQUIRED" tiles). MapLibre stays the map engine; only the tile source changed.
+ * NEXT_PUBLIC_MAP_TILE_URL still overrides it — production should point that at a tile provider or a
+ * self-hosted tile server, because the public OSM tile server is a donated service for light use only
+ * (https://operations.osmfoundation.org/policies/tiles/).
+ */
+export const OSM_TILE_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+export const OSM_ATTRIBUTION = '© OpenStreetMap contributors';
+/** OSM's standard tiles stop at zoom 19. */
+export const OSM_MAX_ZOOM = 19;
+
 export function defaultBasemapUrl(): string {
-  return `https://a.basemaps.cartocdn.com/${isLightThemeActive() ? 'light_all' : 'dark_all'}/{z}/{x}/{y}.png`;
+  return OSM_TILE_URL;
+}
+
+/**
+ * Raster paint for the basemap layer. OSM tiles exist only in a light style, so in the dark theme the
+ * default tiles are inverted in the GPU (brightness flip + 180° hue rotation keeps water blue and parks
+ * green) and slightly desaturated to sit behind the UI. Any other tile source is left untouched.
+ */
+export function basemapPaint(tileUrl: string): Record<string, number> {
+  if (tileUrl !== OSM_TILE_URL || isLightThemeActive()) return {};
+  return {
+    'raster-brightness-min': 0.95,
+    'raster-brightness-max': 0.08,
+    'raster-hue-rotate': 180,
+    'raster-saturation': -0.35,
+    'raster-contrast': 0.05,
+  };
 }

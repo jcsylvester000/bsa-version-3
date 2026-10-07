@@ -12,7 +12,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { defaultBasemapUrl } from '@/lib/ui/theme';
+import { defaultBasemapUrl, basemapPaint, OSM_ATTRIBUTION, OSM_MAX_ZOOM } from '@/lib/ui/theme';
 import { listRegions } from '@/lib/geo/regions';
 import { BASE_LAYERS, VERTICAL_LAYERS, type LayerKey } from '@/lib/capture/layers';
 import { areaGeoJson, areaKm2, MAX_CAPTURE_KM2, type CaptureArea } from '@/lib/capture/area';
@@ -136,7 +136,7 @@ export function CaptureWorkbench() {
     let cancelled = false;
     (async () => {
       let tiles = process.env.NEXT_PUBLIC_MAP_TILE_URL ?? defaultBasemapUrl();
-      let attribution = '© OpenStreetMap contributors © CARTO';
+      let attribution = OSM_ATTRIBUTION;
       try {
         const j = await fetch('/api/maptiles').then((x) => x.json());
         if (j.ok && j.data?.tileUrlTemplate) { tiles = j.data.tileUrlTemplate; attribution = '© Google'; }
@@ -144,7 +144,7 @@ export function CaptureWorkbench() {
       if (cancelled || !mapEl.current) return;
       const map = new maplibregl.Map({
         container: mapEl.current,
-        style: { version: 8, sources: { base: { type: 'raster', tiles: [tiles], tileSize: 256, attribution } }, layers: [{ id: 'base', type: 'raster', source: 'base' }] },
+        style: { version: 8, sources: { base: { type: 'raster', tiles: [tiles], tileSize: 256, attribution, maxzoom: OSM_MAX_ZOOM } }, layers: [{ id: 'base', type: 'raster', source: 'base', paint: basemapPaint(tiles) }] },
         center: [121.0244, 14.5547],
         zoom: 11,
       });

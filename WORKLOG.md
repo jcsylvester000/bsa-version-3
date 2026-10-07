@@ -5,6 +5,21 @@ The cross-thread state record. Read this (with the Master Instruction and the cu
 
 ---
 
+## 2026-10-07 — Basemap: CARTO → OpenStreetMap tiles (⏳ awaiting push)
+
+Owner screenshot: every map showed "API KEY REQUIRED" — CARTO's free basemaps now need a key. MapLibre stays
+the map engine; only the tile source changed. `lib/ui/theme.ts`: `OSM_TILE_URL` (tile.openstreetmap.org),
+`OSM_ATTRIBUTION`, `OSM_MAX_ZOOM` 19, `basemapPaint()` — in the dark theme the OSM tiles are inverted on the
+GPU (brightness flip + 180° hue rotate, −35% saturation) so water stays blue and parks green. Applied to all
+four maps (TerritoryMap, GapsMap, LocationPicker, CaptureWorkbench); Google tiles via /api/maptiles and
+`NEXT_PUBLIC_MAP_TILE_URL` still override. CSP now allows `https://tile.openstreetmap.org` (bare host).
+**Caveat:** OSM's public tile server is for light use (policy: no heavy/app-scale use; may throttle). Fine for
+the prototype and admin capture; production should set `NEXT_PUBLIC_MAP_TILE_URL` to a keyed provider
+(MapTiler / Stadia / Thunderforest) or a self-hosted tile server. Verified: tsc 0, vitest pass, build passes,
+dark/light rendered headless with a synthetic tile (real tiles unreachable from the sandbox).
+
+---
+
 ## 2026-10-07 — Admin Place Capture (grid-navigator blended in) + Laguna/Pampanga + OSM key fix (⏳ awaiting push)
 
 Owner answers to the plan (§9 of `docs/ADMIN_POI_CAPTURE_PLAN.md`): grid-navigator stays the separate offline

@@ -3,7 +3,7 @@
 import { useEffect, useRef } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { defaultBasemapUrl } from '@/lib/ui/theme';
+import { defaultBasemapUrl, basemapPaint, OSM_ATTRIBUTION, OSM_MAX_ZOOM } from '@/lib/ui/theme';
 import { geoCircle, VERDICT_COLOR } from '@/lib/geo/mapGeometry';
 import { markerElement, MapLegend, SrMarkerList, type MarkerKind } from '@/components/MapMarkers';
 
@@ -67,17 +67,15 @@ export function TerritoryMap({ outlets, candidate, competitors = [] }: { outlets
     let cancelled = false;
 
     /**
-     * Prefer Google Maps tiles (via our server proxy) when configured; otherwise use a
-     * CDN-backed basemap. We deliberately do NOT default to tile.openstreetmap.org — that
-     * is OSM's donated server with a strict no-bulk-use policy, and it returns HTTP 503
-     * (throttled) under normal app load, which shows as a BLANK map. Carto's basemaps are
-     * CDN-hosted, free with attribution, app-tolerant, and the dark theme matches our UI.
+     * Prefer Google Maps tiles (via our server proxy) when configured; otherwise OpenStreetMap's
+     * standard tiles (CARTO's free basemaps began requiring an API key, 2026-10). OSM's public tile
+     * server is for light use only — production should set its own tile source (see lib/ui/theme.ts).
      * Override with NEXT_PUBLIC_MAP_TILE_URL if you have your own tile source.
      */
     async function resolveTiles(): Promise<{ tiles: string; attribution: string }> {
       const fallback = {
         tiles: process.env.NEXT_PUBLIC_MAP_TILE_URL ?? defaultBasemapUrl(),
-        attribution: '© OpenStreetMap contributors © CARTO',
+        attribution: OSM_ATTRIBUTION,
       };
       try {
         const res = await fetch('/api/maptiles');
@@ -102,9 +100,9 @@ export function TerritoryMap({ outlets, candidate, competitors = [] }: { outlets
       style: {
         version: 8,
         sources: {
-          osm: { type: 'raster', tiles: [tileUrl], tileSize: 256, attribution },
+          osm: { type: 'raster', tiles: [tileUrl], tileSize: 256, attribution, maxzoom: OSM_MAX_ZOOM },
         },
-        layers: [{ id: 'osm', type: 'raster', source: 'osm' }],
+        layers: [{ id: 'osm', type: 'raster', source: 'osm', paint: basemapPaint(tileUrl) }],
       },
       center: [candidate.lon, candidate.lat],
       zoom: 12,
