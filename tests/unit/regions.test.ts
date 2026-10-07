@@ -10,9 +10,9 @@ import {
 import { canonicalNcrCity } from '@/lib/modules/leaseMath';
 
 describe('registry', () => {
-  it('registers ncr, davao, cavite, batangas', () => {
-    expect(REGION_KEYS.sort()).toEqual(['batangas', 'cavite', 'davao', 'ncr']);
-    expect(listRegions()).toHaveLength(4);
+  it('registers ncr, davao, cavite, batangas (+ laguna, pampanga since 2026-10-07)', () => {
+    expect([...REGION_KEYS].sort()).toEqual(['batangas', 'cavite', 'davao', 'laguna', 'ncr', 'pampanga']);
+    expect(listRegions()).toHaveLength(6);
     expect(getRegion('cavite')?.name).toBe('Cavite');
     expect(getRegion('nope')).toBeNull();
   });
@@ -115,5 +115,40 @@ describe('corridorsForRegion', () => {
     expect(corridorsForRegion('ncr')).toContain('BGC');
     expect(corridorsForRegion('cavite')).toEqual(['Bacoor–Imus', 'Dasmariñas–General Trias', 'Tagaytay–Silang']);
     expect(corridorsForRegion('batangas')).toContain('Lipa');
+  });
+});
+
+describe('expansion regions (2026-10-07): Laguna + Pampanga', () => {
+  it('are registered with PSGC download codes', async () => {
+    const { getRegion } = await import('@/lib/geo/regions');
+    expect(getRegion('laguna')?.psgcProvinces).toEqual(['403400000']);
+    expect(getRegion('pampanga')?.psgcProvinces).toEqual(['305400000']);
+    expect(getRegion('pampanga')?.psgcExtraCities?.[0]).toEqual({ code: '330100000', name: 'Angeles City' });
+  });
+  it('resolve their LGUs by name without stealing NCR / Batangas names', async () => {
+    const { canonicalCity, regionForSite, regionForProvinceName } = await import('@/lib/geo/regions');
+    expect(canonicalCity('Santa Rosa', 'Nuvali')).toEqual({ region: 'laguna', city: 'Santa Rosa' });
+    expect(canonicalCity('Calamba')?.region).toBe('laguna');
+    expect(canonicalCity('Angeles', 'Balibago')).toEqual({ region: 'pampanga', city: 'Angeles City' });
+    expect(canonicalCity('Sto. Tomas, Pampanga')?.region).toBe('pampanga');
+    expect(canonicalCity('Sto. Tomas')?.region).toBe('batangas'); // unchanged
+    expect(canonicalCity('Santa Ana')?.region).toBe('ncr'); // Manila district, not Santa Ana, Pampanga
+    expect(canonicalCity('Sta. Cruz')?.region).toBe('ncr'); // Manila district, not Santa Cruz, Laguna
+    expect(canonicalCity('Santa Cruz, Laguna')?.region).toBe('laguna');
+    expect(regionForSite({ city: 'Biñan', lat: 14.33, lon: 121.08 })).toBe('laguna'); // name beats the coarse box
+    expect(regionForProvinceName('Pampanga')).toBe('pampanga');
+    expect(regionForProvinceName('Cebu')).toBeNull();
+  });
+  it('coarse point tagging leaves the original regions unchanged', () => {
+    expect(regionForPoint(15.0286, 120.6898)).toBe('pampanga'); // City of San Fernando
+    expect(regionForPoint(14.0683, 121.3256)).toBe('laguna'); // San Pablo
+    expect(regionForPoint(14.2846, 121.0966)).toBe('laguna'); // Santa Rosa
+    expect(regionForPoint(14.2116, 121.1653)).toBe('laguna'); // Calamba
+    expect(regionForPoint(14.1699, 121.2441)).toBe('laguna'); // Los Baños
+    expect(regionForPoint(14.0863, 121.1497)).toBe('batangas'); // Tanauan
+    expect(regionForPoint(13.9411, 121.1622)).toBe('batangas'); // Lipa
+    expect(regionForPoint(14.31, 121.04)).toBe('cavite'); // Carmona / GMA
+    expect(regionForPoint(14.1079, 121.1416)).toBe('batangas'); // Sto. Tomas, Batangas
+    expect(regionForPoint(14.55, 121.02)).toBe('ncr');
   });
 });

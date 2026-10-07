@@ -5,6 +5,113 @@ The cross-thread state record. Read this (with the Master Instruction and the cu
 
 ---
 
+## 2026-10-07 — Admin Place Capture (grid-navigator blended in) + Laguna/Pampanga + OSM key fix (⏳ awaiting push)
+
+Owner answers to the plan (§9 of `docs/ADMIN_POI_CAPTURE_PLAN.md`): grid-navigator stays the separate offline
+field tool and BSA imports its files; expand to Cavite, Laguna, Pampanga; only admins commit; earlier
+migrations/pushes applied. **Skills:** 12, 02, 03, 04, 01, 07, 11.
+
+- **Data (Skill 02)** — migration `20261007000000_admin_poi_capture` (idempotent):
+  - `poi.osm_type` + unique `(osm_type, osm_id)`; legacy rows keep `osm_id` uniqueness via partial index
+    `poi_osm_legacy_key`; `lib/ingest/poiKeySql.ts` lets the real element claim its legacy row (same id ≤150 m).
+    **Fixes the node/way collision** (node N used to overwrite way N). `loadPoi`, `poiCache.persistPois`,
+    `ingestOsm`, `pushRegion` (composite key + partial target, local-only cols skipped) all on the new key.
+  - `poi.kind` (matched OSM tag), `poi.psgc_code` (existing column now modelled), `capture_batch_id`,
+    `verified_at/by`; new `poi_capture_batch` (area polygon, GiST) + `poi_capture_item`.
+  - Region stamping: bulk upserts no longer overwrite a stored region; `tagByBoundary` lets the polygon win
+    for POIs (a Laguna sweep can't re-stamp Cavite border POIs).
+- **Regions** — `laguna` (IV-A, PSGC 403400000, tight `pointBoxes` so Santa Rosa/Calamba/Los Baños/San Pablo
+  don't coarse-tag to Cavite/Batangas) and `pampanga` (III, 305400000 + Angeles City 330100000 via new
+  `psgcExtraCities`; `fetchBoundaries` derives the city row from its barangays). LGU name order puts
+  Laguna/Pampanga before Batangas so "Sto. Tomas, Pampanga" resolves correctly; bare "Sto. Tomas" stays
+  Batangas, "Santa Ana"/"Sta. Cruz" stay NCR. No lease corridors yet (honest gaps). npm scripts added.
+- **Category rule** — `lib/places/osmCategory.ts` (pure): the ingest rule unchanged + civic overrides for the
+  capture (church → anchor, town hall → office, fire station → other). Plan's first draft (pharmacy → anchor)
+  was corrected: it would have pulled pharmacies out of Territory Guard's competitor set.
+- **Capture (Skills 03/04)** — `lib/capture/*` (pure: areas ≤25 km², layers incl. grid-navigator's anchor set
+  + 20 competitor verticals, Overpass element mapping, `.gridnav.json` import), `lib/services/capture.ts`,
+  `/api/admin/capture/*` (preview · import · manual · batches · review PATCH · discard · commit · coverage ·
+  pois · verify). Admin-only at the API, JSON-only mutations, zod everywhere, Overpass built from constant
+  selectors only, 40 previews/admin/hour, 10 MB import cap, every action audit-logged. Commit refuses while
+  items are pending, PSGC-tags what it wrote, is re-runnable. Imports are Assumed and never overwrite.
+- **UI (Skills 01/07)** — `/admin/capture` (Admin nav group, admins only): region jump, Move/Rectangle/
+  Circle/Pin tools, layer checklist, import, history + coverage + per-region totals, review table (truth
+  chip, duplicate/existing flags, category fix, accept/skip, bulk), map legend (status not colour-only).
+
+**Verification:** tsc 0 · vitest 52 files **531/531** (+31: adminCapture 21, adminCaptureRoutes 5 — 401/403/
+415/422/413/404 paths, regions +3, pushRegion +1, batchLoaders +1) · `next build` passes. Key SQL (index swap,
+legacy claim, typed upsert, partial-index upsert, import DO NOTHING) run on a real Postgres 16 — node 7 and
+way 7 now coexist. Screen rendered headless with mocked API data (tools, circle draw, review table). **Not
+run:** against live Neon/PostGIS, live Overpass from the deployed function.
+
+**⚠️ ACTION REQUIRED (owner):** see the PowerShell block in the chat / PROJECT_MEMORY: `prisma generate`,
+`prisma migrate deploy`, push. Then Admin → Place Capture → draw a small circle in Santa Rosa → Capture →
+Save; then `db:fetch-boundaries --region=laguna` / `--region=pampanga` + `db:tag-boundaries`.
+
+---
+
+## 2026-10-07 — Review of grid-navigator → Admin POI Capture plan (📝 plan; built same day, see above)
+
+Owner asked how the grid-navigator app (`2 -  Data Intake/grid-navigator`) can give BSA an admin screen that
+captures locations into the DB so BSA can expand to other PH regions. **Skills:** 12, 02, 03, 04, 01, 07.
+
+- Reviewed navigator: browser-side Overpass + Nominatim, 23-tag navigation whitelist, IndexedDB, centre-of-view
+  city stamp, checkpoints, rect/circle shapes, `.gridnav.json` save file. Useful as a UX pattern + field tool, not
+  as a pipeline.
+- **Plan written:** `docs/ADMIN_POI_CAPTURE_PLAN.md` — reuse/leave-behind, field-by-field conversion spec and
+  category map to BSA `PoiCategory`, staging tables (`poi_capture_batch` / `poi_capture_item`), admin-only
+  `/api/admin/capture/*` routes, `/admin/capture` MapLibre screen, region-expansion order, open decisions.
+- **Bug found (not yet fixed):** `poi.osm_id` holds the bare numeric OSM id but both nodes and ways are ingested,
+  so node N and way N collide and `loadPoi`'s `ON CONFLICT (osm_id) DO UPDATE` overwrites one place with another.
+  Fix scheduled as Phase A of the plan (`osm_type` + unique `(osm_type, osm_id)`).
+- Next: owner answers §9 of the plan → build Phase A (migration + pure helpers + tests).
+
+---
+
+## 2026-10-01 — Handoff document set (4 Word documents) (⏳ awaiting push)
+
+Owner request: four Word documents. Saved in `docs/handoff/`:
+1. `BSA_Technical_Support_Document.docx` (26 pp, dev team) — stack with versions, conventions, architecture
+   (diagrams: system, pipeline, ERD), databases (Neon / Docker / mock, extensions, 22 migrations, two Prisma
+   clients), 21-table structure + enums, reference data and local-first load, API surface, security, deployment,
+   testing, and **§12 MapLibre → Google Maps JavaScript API migration plan** (options, Cloud setup with separate
+   restricted browser/server keys + Map IDs, env vars, file-by-file changes, feature mapping, CSP domains per
+   Google’s CSP guide, cost from Google’s Sept-2026 price list, flag-based rollout, acceptance, risks, 5–8 days).
+2. `BSA_Business_Requirements_Document.docx` (21 pp) — problem, objectives/KPIs, scope, personas, as-is/to-be,
+   ~45 MoSCoW requirements with delivery status, business rules, NFRs, data, compliance (RA 9646, RA 10173),
+   risks, release plan, UAT scenarios.
+3. `BSA_Marketing_Copy_Kit.docx` (14 pp) — compliance say/don’t-say rules + required notice, positioning,
+   taglines, 25/50/100/200-word descriptions, feature copy, audience messages, landing page, social, email,
+   one-pager, demo script, FAQ, boilerplate.
+4. `BSA_User_Guide_and_User_Journey.docx` (17 pp) — key ideas, journey diagram + per-role journeys, step-by-step
+   for every screen, sharing, settings, broker tips, troubleshooting, quick reference.
+Built with docx-js (sources in the session outputs `docs-build/`); all four pass OOXML validation and were
+rendered to PDF and visually checked. UI labels cross-checked against the components. No code changes.
+
+---
+
+## 2026-09-28 — Local-first region load: Docker → Neon push (⏳ awaiting push)
+
+Owner: the Cavite OSM ingest against Neon looked frozen ("nothing is happening") after the 57P01 drop; asked to
+load into Docker first, then copy to Neon. **Skills:** 12, 02 (data layer), 04 (no credentials in logs), 11.
+
+- **`prisma/pushRegion.ts`** + `npm run db:push-region -- --region=<key> [--dry-run]`: copies one region from
+  `SOURCE_DATABASE_URL` (default docker-compose `localhost:5433/bsa_dev`) to the target (`DIRECT_URL`/
+  `DATABASE_URL`, i.e. Neon). `admin_boundary` upserted on `psgc_code`, then `poi` on `osm_id`; `poi.id` is a
+  per-DB autoincrement and is never copied. Rows travel as JSON (`to_jsonb(t) - 'id'`, geom as hex EWKB text)
+  into `jsonb_populate_recordset(NULL::table, $1)`, column list from the target's information_schema; batches
+  of 500 with keyset pagination; target writes use the retrying `scriptDb`. Refuses source == target; logs
+  hosts only (`hostOf`, no credentials). Verified the generated SQL against a real Postgres in the sandbox:
+  1,200 rows copied, re-run idempotent, existing target rows kept their ids, other regions untouched, rows
+  without `osm_id` skipped. (Prisma's engine can't download in the sandbox, so the Node wrapper itself wasn't
+  run end-to-end; PostGIS types not available there — geography text round-trip is standard PostGIS I/O.)
+- **`prisma/ingestOsm.ts`:** live per-tile progress line in the tiled competitor sweep (previously a vertical
+  printed nothing until all its tiles finished — minutes of silence); brand-pull label now names the region.
+- `docs/OWNER_RUNBOOK.md` F-19: "Local-first path" command block. Tests: `pushRegion.test.ts` (+3). tsc 0 ·
+  vitest 50 files 500/500.
+
+---
+
 ## 2026-09-28 — HOTFIX: Cavite OSM ingest aborted with Postgres 57P01 (⏳ awaiting push)
 
 Owner ran `npm run db:ingest:osm:cavite`; it died in the competitor sweep with `57P01 terminating connection

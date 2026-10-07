@@ -43,7 +43,7 @@ export function MobileNav({ email, role }: { email: string; role: string }) {
             </div>
             <button type="button" onClick={() => setOpen(false)} className="btn min-w-tap px-0 text-ink-muted" aria-label="Close menu">✕</button>
           </div>
-          <SidebarNav onNavigate={() => setOpen(false)} />
+          <SidebarNav onNavigate={() => setOpen(false)} role={role} />
           <div className="mt-auto space-y-1 border-t border-ink-border px-5 pb-6 pt-4">
             <p className="text-label font-normal text-ink-text">{email}</p>
             <p className="overline">{role}</p>

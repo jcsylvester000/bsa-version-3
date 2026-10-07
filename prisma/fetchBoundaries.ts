@@ -4,6 +4,8 @@
  *
  *   npm run db:fetch-boundaries -- --region=cavite
  *   npm run db:fetch-boundaries -- --region=batangas
+ *   npm run db:fetch-boundaries -- --region=laguna
+ *   npm run db:fetch-boundaries -- --region=pampanga   (includes Angeles City)
  *
  * Pulls ready-made GeoJSON from faeldon/philippines-json-maps (MIT; PSGC Q4-2023, sourced from
  * the same PSA shapefiles) at medium resolution, for the province → its cities → their barangays,
@@ -90,6 +92,32 @@ async function main() {
       }
       console.log(`     city ${cc}: ${n} barangays`);
     }
+  }
+
+  // 4) Highly-urbanised cities that are their own PSGC provdist (e.g. Angeles City in Pampanga):
+  //    load their barangays straight from the municity file, then derive the city row from them
+  //    (name from the registry, polygon = union of its own barangays — nothing invented).
+  for (const extra of region.psgcExtraCities ?? []) {
+    await sleep(300);
+    const bgyFc = await getJson(`${BASE}/municities/medres/bgysubmuns-municity-${extra.code}.${RES}.json`);
+    let n = 0;
+    for (const f of bgyFc?.features ?? []) {
+      if (await upsertBoundaryFeature(f, 'barangay', regionKey)) { barangays++; n++; }
+    }
+    if (n > 0) {
+      await prisma.adminBoundary.upsert({
+        where: { psgcCode: extra.code },
+        update: { level: 'city', name: extra.name, region: regionKey },
+        create: { psgcCode: extra.code, level: 'city', name: extra.name, parentPsgc: null, region: regionKey },
+      });
+      await prisma.$executeRaw`
+        UPDATE admin_boundary SET geom = (
+          SELECT ST_Multi(ST_Union(b.geom::geometry))::geography FROM admin_boundary b
+          WHERE b.level = 'barangay' AND b.parent_psgc = ${extra.code} AND b.geom IS NOT NULL)
+        WHERE psgc_code = ${extra.code}`;
+      cities++;
+    }
+    console.log(`     ${extra.name} (${extra.code}, independent city): ${n} barangays`);
   }
 
   console.log(`\nDone — ${provinces} province, ${cities} cities, ${barangays} barangays loaded for ${region.name}.`);

@@ -14,7 +14,7 @@
  * corridors are owner-loaded (prisma/data/lease/README.md) — the names here are the CSV keys.
  */
 
-export type RegionKey = 'ncr' | 'davao' | 'cavite' | 'batangas';
+export type RegionKey = 'ncr' | 'davao' | 'cavite' | 'batangas' | 'laguna' | 'pampanga';
 
 /** [south, west, north, east] in WGS84 degrees. */
 export type BBox = [number, number, number, number];
@@ -42,6 +42,10 @@ export interface RegionDef {
   provinces: string[];
   /** Bounding box for OSM sweeps and coarse point-tagging (before real polygons land in R-02). */
   bbox: BBox;
+  /** Optional tighter boxes checked BEFORE neighbouring regions' bboxes in point-tagging, for a
+   *  province whose bbox overlaps an earlier-registered neighbour (Laguna vs Cavite/Batangas).
+   *  Drawn from the PSGC municipal extents so they hold no neighbour's municipality. */
+  pointBoxes?: BBox[];
   /** OSM area name(s) at admin_level=4 for Overpass `area[...]` queries. */
   overpassAreas: string[];
   /** Busy centres the on-demand cache pre-warms per vertical. */
@@ -55,6 +59,10 @@ export interface RegionDef {
   /** philippines-json-maps province (adm2) codes to fetch for this region. Empty/undefined =
    *  the auto-downloader has no mapping yet (use the ogr2ogr file path). */
   psgcProvinces?: string[];
+  /** Highly-urbanised cities that sit inside the province geographically but are their own PSGC
+   *  "provdist" (e.g. Angeles City in Pampanga). The auto-downloader loads their barangays from the
+   *  municity file directly and derives the city row from those barangays. */
+  psgcExtraCities?: Array<{ code: string; name: string }>;
   /** Rent-to-land calibration: monthly rent (₱/sqm) per ₱1,000 of commercial-zonal midpoint.
    *  Derived per region from corridors that have BOTH lease comps and CR zonal. Undefined =
    *  NOT yet calibrated for this region → the zonal cross-check / indicative rent is withheld
@@ -218,10 +226,116 @@ const BATANGAS: RegionDef = {
   ],
 };
 
-const REGISTRY: Record<RegionKey, RegionDef> = { ncr: NCR, davao: DAVAO, cavite: CAVITE, batangas: BATANGAS };
+// 2026-10-07 — expansion regions (admin POI capture). Bounds, Overpass areas and PSGC codes are
+// taken from the PSA/philippines-json-maps 2023 boundaries (province extents rounded outward).
+// No lease corridors yet: sites here run with honest gaps until comps are loaded (R-06 CSV).
+const LAGUNA: RegionDef = {
+  key: 'laguna',
+  name: 'Laguna',
+  psaRegion: 'IV-A',
+  provinces: ['Laguna'],
+  bbox: [13.95, 121.0, 14.6, 121.65],
+  // West ≥ 121.08 clears Carmona/Silang/Talisay; south ≥ 14.157 clears Tanauan/Sto. Tomas; the
+  // San Pablo box starts east of Lipa (121.273). San Pedro / west Biñan still need the LGU name or
+  // the loaded boundaries.
+  pointBoxes: [[14.157, 121.08, 14.6, 121.65], [13.95, 121.275, 14.157, 121.65]],
+  overpassAreas: ['Laguna'],
+  warmCentres: [
+    { lat: 14.3594, lon: 121.0473, label: 'San Pedro' },
+    { lat: 14.3336, lon: 121.0806, label: 'Biñan' },
+    { lat: 14.2846, lon: 121.0966, label: 'Santa Rosa' },
+    { lat: 14.2731, lon: 121.1238, label: 'Cabuyao' },
+    { lat: 14.2116, lon: 121.1653, label: 'Calamba' },
+    { lat: 14.1699, lon: 121.2441, label: 'Los Baños' },
+    { lat: 14.0683, lon: 121.3256, label: 'San Pablo' },
+    { lat: 14.2794, lon: 121.4155, label: 'Santa Cruz' },
+  ],
+  corridors: [],
+  psgcRegionCode: '400000000', // CALABARZON (Region IV-A)
+  psgcProvinces: ['403400000'], // Laguna
+  cities: [
+    { canonical: 'San Pedro', tokens: /san pedro, ?laguna|city of san pedro|\bsan pedro city\b|\bsan pedro\b/ },
+    { canonical: 'Biñan', tokens: /bi(ñ|n)an/ },
+    { canonical: 'Santa Rosa', tokens: /santa rosa|sta\.? ?rosa|nuvali/ },
+    { canonical: 'Cabuyao', tokens: /cabuyao/ },
+    { canonical: 'Calamba', tokens: /calamba/ },
+    { canonical: 'Los Baños', tokens: /los ba(ñ|n)os|\blb\b, ?laguna/ },
+    { canonical: 'Bay', tokens: /\bbay, ?laguna/ },
+    { canonical: 'Calauan', tokens: /calauan/ },
+    { canonical: 'San Pablo', tokens: /san pablo/ },
+    { canonical: 'Santa Cruz', tokens: /(santa|sta\.?) ?cruz, ?laguna/ },
+    { canonical: 'Pagsanjan', tokens: /pagsanjan/ },
+    { canonical: 'Nagcarlan', tokens: /nagcarlan/ },
+    { canonical: 'Liliw', tokens: /liliw/ },
+    { canonical: 'Majayjay', tokens: /majayjay/ },
+    { canonical: 'Paete', tokens: /paete/ },
+    { canonical: 'Siniloan', tokens: /siniloan/ },
+    { canonical: 'Pila', tokens: /\bpila, ?laguna/ },
+    { canonical: 'Victoria', tokens: /victoria, ?laguna/ },
+    { canonical: 'Alaminos', tokens: /alaminos, ?laguna/ },
+  ],
+};
 
-/** Priority order for coarse bbox point-tagging: tighter/urban boxes before the large Davao box. */
-const POINT_ORDER: RegionKey[] = ['ncr', 'cavite', 'batangas', 'davao'];
+const PAMPANGA: RegionDef = {
+  key: 'pampanga',
+  name: 'Pampanga',
+  psaRegion: 'III',
+  provinces: ['Pampanga'],
+  bbox: [14.76, 120.35, 15.29, 120.95],
+  overpassAreas: ['Pampanga'],
+  warmCentres: [
+    { lat: 15.0286, lon: 120.6898, label: 'City of San Fernando' },
+    { lat: 15.1450, lon: 120.5887, label: 'Angeles' },
+    { lat: 15.1857, lon: 120.5468, label: 'Clark' },
+    { lat: 15.2235, lon: 120.5732, label: 'Mabalacat' },
+    { lat: 14.9585, lon: 120.7600, label: 'Apalit' },
+    { lat: 14.9667, lon: 120.6333, label: 'Guagua' },
+  ],
+  corridors: [],
+  psgcRegionCode: '300000000', // Central Luzon (Region III)
+  psgcProvinces: ['305400000'], // Pampanga
+  // Angeles City is a highly-urbanised city with its own PSGC provdist (not under the province).
+  psgcExtraCities: [{ code: '330100000', name: 'Angeles City' }],
+  cities: [
+    { canonical: 'Angeles City', tokens: /angeles|\bclark\b|balibago/ },
+    { canonical: 'Mabalacat', tokens: /mabalacat|\bdau\b/ },
+    { canonical: 'City of San Fernando', tokens: /san fernando, ?pampanga|city of san fernando|\bcsfp\b|san fernando city, ?pampanga/ },
+    { canonical: 'Apalit', tokens: /apalit/ },
+    { canonical: 'Arayat', tokens: /arayat/ },
+    { canonical: 'Bacolor', tokens: /bacolor/ },
+    { canonical: 'Candaba', tokens: /candaba/ },
+    { canonical: 'Floridablanca', tokens: /floridablanca/ },
+    { canonical: 'Guagua', tokens: /guagua/ },
+    { canonical: 'Lubao', tokens: /lubao/ },
+    { canonical: 'Macabebe', tokens: /macabebe/ },
+    { canonical: 'Magalang', tokens: /magalang/ },
+    { canonical: 'Masantol', tokens: /masantol/ },
+    { canonical: 'Mexico', tokens: /mexico, ?pampanga/ },
+    { canonical: 'Porac', tokens: /porac/ },
+    { canonical: 'Santa Rita', tokens: /(santa|sta\.?) ?rita, ?pampanga/ },
+    { canonical: 'Sto. Tomas', tokens: /(sto\.?|santo) ?tomas, ?pampanga/ },
+    { canonical: 'Sasmuan', tokens: /sasmuan/ },
+  ],
+};
+
+const REGISTRY: Record<RegionKey, RegionDef> = { ncr: NCR, davao: DAVAO, cavite: CAVITE, batangas: BATANGAS, laguna: LAGUNA, pampanga: PAMPANGA };
+
+/** Priority order for coarse bbox point-tagging: tighter/urban boxes before the large Davao box.
+ *  Laguna's tight `pointBoxes` go right after NCR (they contain no Cavite/Batangas municipality),
+ *  its full bbox only after Cavite and Batangas. Loaded PSGC boundaries always win over this. */
+const POINT_ORDER: Array<{ key: RegionKey; boxes: 'point' | 'bbox' }> = [
+  { key: 'ncr', boxes: 'bbox' },
+  { key: 'laguna', boxes: 'point' },
+  { key: 'cavite', boxes: 'bbox' },
+  { key: 'batangas', boxes: 'bbox' },
+  { key: 'laguna', boxes: 'bbox' },
+  { key: 'pampanga', boxes: 'bbox' },
+  { key: 'davao', boxes: 'bbox' },
+];
+
+/** Order for LGU-name matching. Laguna and Pampanga go before Batangas because their qualified
+ *  tokens ("Sto. Tomas, Pampanga") must win over Batangas' bare "Sto. Tomas". */
+const CITY_ORDER: RegionKey[] = ['ncr', 'cavite', 'laguna', 'pampanga', 'batangas', 'davao'];
 
 export const REGION_KEYS = Object.keys(REGISTRY) as RegionKey[];
 
@@ -237,6 +351,16 @@ function inBBox(lat: number, lon: number, b: BBox): boolean {
   return lat >= b[0] && lat <= b[2] && lon >= b[1] && lon <= b[3];
 }
 
+/** Registry key for a PSGC province name (e.g. from admin_boundary), or null if unregistered. */
+export function regionForProvinceName(name: string | null | undefined): RegionKey | null {
+  const n = (name ?? '').trim().toLowerCase();
+  if (!n) return null;
+  for (const k of REGION_KEYS) {
+    if (REGISTRY[k].provinces.some((p) => p.toLowerCase() === n)) return k;
+  }
+  return null;
+}
+
 /**
  * Coarse region for a coordinate by bounding box. Approximate near province borders (NCR/Cavite
  * overlap around Bacoor/Las Piñas); prefer `regionForSite` which uses the LGU name first, and
@@ -244,8 +368,9 @@ function inBBox(lat: number, lon: number, b: BBox): boolean {
  */
 export function regionForPoint(lat: number | null | undefined, lon: number | null | undefined): RegionKey | null {
   if (lat == null || lon == null || !Number.isFinite(lat) || !Number.isFinite(lon)) return null;
-  for (const k of POINT_ORDER) {
-    if (inBBox(lat, lon, REGISTRY[k].bbox)) return k;
+  for (const { key, boxes } of POINT_ORDER) {
+    const list = boxes === 'point' ? REGISTRY[key].pointBoxes ?? [] : [REGISTRY[key].bbox];
+    if (list.some((b) => inBBox(lat, lon, b))) return key;
   }
   return null;
 }
@@ -255,7 +380,7 @@ export function canonicalCity(city: string | null | undefined, label?: string | 
   const hay = `${city ?? ''} ${label ?? ''}`.toLowerCase();
   if (!hay.trim()) return null;
   // NCR first (densest, most specific tokens), then the rest — mirrors the previous ordering.
-  for (const k of ['ncr', 'cavite', 'batangas', 'davao'] as RegionKey[]) {
+  for (const k of CITY_ORDER) {
     for (const c of REGISTRY[k].cities) {
       if (c.tokens.test(hay)) return { region: k, city: c.canonical };
     }
@@ -282,7 +407,7 @@ export function inferCorridor(city: string | null | undefined, label: string | n
   const hay = `${city ?? ''} ${label ?? ''}`.toLowerCase();
   // Put the site's own region first (if identifiable), then the historical order for the rest.
   const own = canonicalCity(city, label)?.region ?? null;
-  const base: RegionKey[] = ['ncr', 'cavite', 'batangas', 'davao'];
+  const base: RegionKey[] = CITY_ORDER;
   const order = own ? [own, ...base.filter((k) => k !== own)] : base;
   for (const k of order) {
     for (const corr of REGISTRY[k].corridors) {

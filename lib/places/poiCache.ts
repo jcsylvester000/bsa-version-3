@@ -24,6 +24,7 @@ import type { RealPlace } from './placesService';
 import { establishmentsNear, osmTagToPoiCategory, type OsmPlace } from './osmService';
 import { conceptFor, filterRelevantCompetitors } from './competitorRelevance';
 import { regionForPoint } from '@/lib/geo/regions';
+import { claimLegacyOsmSql } from '@/lib/ingest/poiKeySql';
 
 /** NCR centre grid — the busy corridors the deliberate warm pass sweeps per vertical.
  *  Mirrors the ingest NCR_GRID; kept here so the warm endpoint has no cross-import. */
@@ -73,7 +74,7 @@ function cellsForArea(lat: number, lon: number, radiusM: number): Array<{ key: s
   return [...out.values()];
 }
 
-/** Persist OSM places into the shared poi table (idempotent on osm_id), returning how many
+/** Persist OSM places into the shared poi table (idempotent on (osm_type, osm_id)), returning how many
  *  new rows were written. Geom is set from lat/lon (poi has a trigger, but we set it
  *  explicitly so a fresh row is queryable immediately in the same request). */
 async function persistPois(places: OsmPlace[]): Promise<number> {
@@ -95,12 +96,18 @@ async function persistPois(places: OsmPlace[]): Promise<number> {
     };
     let id: bigint | null = null;
     if (p.osmId != null) {
-      const existing = await prisma.poi.findFirst({ where: { osmId: BigInt(p.osmId) }, select: { id: true } });
+      // Natural key is (osm_type, osm_id) — node N and way N are different places. A typed element
+      // first claims its legacy typeless row (same id, within 150 m), then upserts by the full key.
+      const osmType = p.osmType ?? null;
+      if (osmType) await prisma.$executeRaw(claimLegacyOsmSql([{ osmType, osmId: p.osmId, lat: p.lat, lon: p.lon }]));
+      const existing = await prisma.poi.findFirst({ where: { osmId: BigInt(p.osmId), osmType }, select: { id: true } });
       if (existing) {
-        await prisma.poi.update({ where: { id: existing.id }, data });
+        // Keep the stored region (boundary-tagged rows are authoritative over the coarse bbox).
+        const { region: _coarse, ...rest } = data;
+        await prisma.poi.update({ where: { id: existing.id }, data: { ...rest, kind: p.osmTag ?? undefined } });
         id = existing.id;
       } else {
-        const created = await prisma.poi.create({ data: { ...data, osmId: BigInt(p.osmId), source: 'osm' } });
+        const created = await prisma.poi.create({ data: { ...data, osmId: BigInt(p.osmId), osmType, kind: p.osmTag, source: 'osm' } });
         id = created.id;
         written++;
       }

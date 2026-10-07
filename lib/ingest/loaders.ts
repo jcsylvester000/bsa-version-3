@@ -14,6 +14,7 @@ import {
   normalizeDemo, type RawDemo,
   normalizeLease, leaseNaturalKey, type RawLease,
 } from './normalize';
+import { claimLegacyOsmSql } from './poiKeySql';
 import { Prisma, PrismaClient } from '@prisma/client';
 
 export interface LoadReport {
@@ -41,7 +42,7 @@ function chunk<T>(arr: T[], size = BATCH_SIZE): T[][] {
 }
 
 /**
- * Load POI rows (OSM Overpass shape). Dedup in-batch, upsert on osm_id.
+ * Load POI rows (OSM Overpass shape). Dedup in-batch, upsert on (osm_type, osm_id).
  * F-18: `opts.source` / `opts.provenance` record where the rows came from. The default is the
  * OSM sweep; a row that carries no osmId AND no explicit source is treated as hand-loaded ('manual').
  */
@@ -60,10 +61,13 @@ export async function loadPoi(rows: RawPoi[], opts: LoadOpts = {}): Promise<Load
     norm.push(n);
   }
 
-  // Rows WITH an osm_id upsert on the (unique) osm_id in one multi-row statement per chunk (F-22).
-  // Rows WITHOUT one (rare — sample/manual data) can't be deduped by the DB, so they're inserted.
+  // Rows WITH an osm key upsert in one multi-row statement per chunk (F-22). The natural key is
+  // (osm_type, osm_id) — node 123 and way 123 are different places (fix 2026-10-07). Typeless rows
+  // (old data files) keep the legacy osm_id-only key via the partial index poi_osm_legacy_key.
+  // Rows WITHOUT an id (rare — sample/manual data) can't be deduped by the DB, so they're inserted.
   // geom is filled by the poi_geom_biu trigger on INSERT/UPDATE — no extra round trip.
-  const withId = norm.filter((n) => n!.osmId != null);
+  const typed = norm.filter((n) => n!.osmId != null && n!.osmType != null);
+  const legacy = norm.filter((n) => n!.osmId != null && n!.osmType == null);
   const noId = norm.filter((n) => n!.osmId == null);
   let loaded = 0;
 
@@ -71,23 +75,37 @@ export async function loadPoi(rows: RawPoi[], opts: LoadOpts = {}): Promise<Load
   const prov = (source: string) => opts.provenance ?? (source === 'osm' ? 'osm:overpass' : null);
   const valuesRow = (n: NonNullable<ReturnType<typeof normalizePoi>>) => {
     const source = src(n);
-    return Prisma.sql`(${n.name}, ${n.category}::"PoiCategory", ${n.lat}, ${n.lon}, ${n.city}, ${n.barangay}, ${n.region}, ${n.province}, ${source}::"PoiSource", ${prov(source)}, ${n.truthLayer}::"TruthLayer", ${n.osmId})`;
+    return Prisma.sql`(${n.name}, ${n.category}::"PoiCategory", ${n.lat}, ${n.lon}, ${n.city}, ${n.barangay}, ${n.region}, ${n.province}, ${source}::"PoiSource", ${prov(source)}, ${n.truthLayer}::"TruthLayer", ${n.osmId}, ${n.osmType}, ${n.kind})`;
   };
-
-  for (const batch of chunk(withId)) {
-    await db.$executeRaw(Prisma.sql`
-      INSERT INTO poi (name, category, lat, lon, city, barangay, region, province, source, provenance, truth_layer, osm_id)
-      VALUES ${Prisma.join(batch.map((n) => valuesRow(n!)))}
-      ON CONFLICT (osm_id) DO UPDATE SET
+  // Region is only filled when empty: boundary tagging (db:tag-boundaries) is authoritative, and a
+  // bbox sweep of one province must not re-stamp border POIs that belong to its neighbour.
+  const updateSet = Prisma.sql`
         name = EXCLUDED.name, category = EXCLUDED.category, lat = EXCLUDED.lat, lon = EXCLUDED.lon,
-        city = EXCLUDED.city, barangay = EXCLUDED.barangay, region = EXCLUDED.region,
-        province = EXCLUDED.province, source = EXCLUDED.source, provenance = EXCLUDED.provenance,
-        truth_layer = EXCLUDED.truth_layer`);
+        city = COALESCE(EXCLUDED.city, poi.city), barangay = COALESCE(EXCLUDED.barangay, poi.barangay),
+        region = COALESCE(poi.region, EXCLUDED.region), province = COALESCE(EXCLUDED.province, poi.province),
+        source = EXCLUDED.source, provenance = EXCLUDED.provenance,
+        truth_layer = EXCLUDED.truth_layer, kind = COALESCE(EXCLUDED.kind, poi.kind)`;
+
+  for (const batch of chunk(typed)) {
+    // Legacy rows (loaded before osm_type existed) are claimed by the element that is really there
+    // (same id, within 150 m) so the upsert updates them instead of inserting a duplicate.
+    await db.$executeRaw(claimLegacyOsmSql(batch.map((n) => ({ osmType: n!.osmType!, osmId: n!.osmId!, lat: n!.lat, lon: n!.lon }))));
+    await db.$executeRaw(Prisma.sql`
+      INSERT INTO poi (name, category, lat, lon, city, barangay, region, province, source, provenance, truth_layer, osm_id, osm_type, kind)
+      VALUES ${Prisma.join(batch.map((n) => valuesRow(n!)))}
+      ON CONFLICT (osm_type, osm_id) DO UPDATE SET ${updateSet}`);
+    loaded += batch.length;
+  }
+  for (const batch of chunk(legacy)) {
+    await db.$executeRaw(Prisma.sql`
+      INSERT INTO poi (name, category, lat, lon, city, barangay, region, province, source, provenance, truth_layer, osm_id, osm_type, kind)
+      VALUES ${Prisma.join(batch.map((n) => valuesRow(n!)))}
+      ON CONFLICT (osm_id) WHERE osm_type IS NULL DO UPDATE SET ${updateSet}`);
     loaded += batch.length;
   }
   for (const batch of chunk(noId)) {
     await db.$executeRaw(Prisma.sql`
-      INSERT INTO poi (name, category, lat, lon, city, barangay, region, province, source, provenance, truth_layer, osm_id)
+      INSERT INTO poi (name, category, lat, lon, city, barangay, region, province, source, provenance, truth_layer, osm_id, osm_type, kind)
       VALUES ${Prisma.join(batch.map((n) => valuesRow(n!)))}`);
     loaded += batch.length;
   }

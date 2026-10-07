@@ -47,8 +47,29 @@ Key columns: `id`, `pipeline_run_id` (fk), `label`, `address`, `barangay`, `city
 Points of interest — competitors, anchors, footfall proxies, healthcare. From OSM Overpass.
 *Truth Layer: coord Verified, barangay Assumed.*
 Key columns: `id` (bigint pk), `name`, `category` (enum), `lat/lon`, `geom`, `city`,
-`barangay`, `source` (osm/manual), `truth_layer`, `osm_id` (unique — idempotent upsert).
-Indexes: `GiST(geom)`, `btree(category)`, `GIN(name gin_trgm_ops)`.
+`barangay`, `province`, `region`, `psgc_code`, `source` (osm/google/manual), `provenance`, `truth_layer`,
+`osm_type` + `osm_id` (natural key, unique together — idempotent upsert), `kind` (matched OSM tag, e.g.
+`amenity=pharmacy`), `capture_batch_id` (admin capture batch that last wrote the row), `verified_at` /
+`verified_by` (field confirmation of a manual pin).
+**OSM key (2026-10-07):** nodes and ways are numbered independently, so the key is `(osm_type, osm_id)`.
+Rows loaded before that have `osm_type` NULL and stay unique on `osm_id` via the partial index
+`poi_osm_legacy_key`; the next ingest of the same element (same id, within 150 m) claims them.
+Indexes: `GiST(geom)`, `btree(category)`, `btree(region)`, `GIN(name gin_trgm_ops)`, unique
+`(osm_type, osm_id)`, unique partial `osm_id WHERE osm_type IS NULL`.
+
+### poi_capture_batch  _(admin Place Capture, 2026-10-07)_
+One capture action — a live OSM area pull, a Grid Navigator session import, or manual pins — staged for
+review. `id` (uuid), `label`, `source` (osm / navigator_import / manual), `area` (geography polygon; GiST),
+`area_spec` (the area as drawn), `layers`, `status` (draft / committed / discarded), `item_count`,
+`committed_count`, `notes` (reviewer warnings), `created_by`/`created_at`, `committed_by`/`committed_at`.
+Nothing reaches `poi` until an admin commits the batch.
+
+### poi_capture_item
+One staged place, already mapped to `poi` columns: `batch_id`, `osm_type`/`osm_id`, `name`, `kind`,
+`category`, `lat/lon`, `source`, `truth_layer`, `decision` (pending / accept / reject),
+`existing_poi_id` (same OSM element already stored), `duplicate_of_poi_id` (similar name within 50 m),
+`notes`, `committed_poi_id`. Truth Layer: live OSM = Verified; Grid Navigator imports and manual pins =
+Assumed (a manual pin becomes Verified only when an admin field-confirms it).
 
 ### zonal_value
 BIR RDO zonal schedules — **tax-reference floors ONLY, never market-price proxies.**

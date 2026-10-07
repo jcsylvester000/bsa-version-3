@@ -21,7 +21,7 @@ function mockDb() {
 beforeEach(() => vi.clearAllMocks());
 
 describe('loadPoi batching', () => {
-  it('writes osm_id rows in chunks of 500 with an ON CONFLICT upsert', async () => {
+  it('writes typeless (legacy) osm_id rows in chunks of 500 on the legacy partial key', async () => {
     const rows = Array.from({ length: 1200 }, (_, i) => ({
       osm_id: i + 1, name: `Stop ${i}`, category: 'transport', lat: 14.55, lon: 121.02, region: 'ncr',
     }));
@@ -30,9 +30,24 @@ describe('loadPoi batching', () => {
     expect(rep.loaded).toBe(1200);
     expect(calls.length).toBe(3); // ceil(1200/500)
     expect(calls[0].sql).toContain('INSERT INTO poi');
-    expect(calls[0].sql).toContain('ON CONFLICT (osm_id) DO UPDATE');
-    // 12 columns × 500 rows of parameters in the first chunk.
-    expect(calls[0].values.length).toBe(12 * 500);
+    expect(calls[0].sql).toContain('ON CONFLICT (osm_id) WHERE osm_type IS NULL DO UPDATE');
+    // 14 columns × 500 rows of parameters in the first chunk.
+    expect(calls[0].values.length).toBe(14 * 500);
+  });
+
+  it('typed rows claim legacy rows, then upsert on (osm_type, osm_id); node N and way N both kept', async () => {
+    const rows = [
+      { osm_id: 7, osm_type: 'node', name: 'Node seven', category: 'competitor', lat: 14.55, lon: 121.02 },
+      { osm_id: 7, osm_type: 'way', name: 'Way seven', category: 'mall', lat: 14.56, lon: 121.03 },
+    ];
+    const { db, calls } = mockDb();
+    const rep = await loadPoi(rows as never, { db, source: 'osm' });
+    expect(rep.loaded).toBe(2);
+    expect(rep.deduped).toBe(0);
+    expect(calls.length).toBe(2); // claim + upsert
+    expect(calls[0].sql).toContain('p.osm_type IS NULL');
+    expect(calls[1].sql).toContain('ON CONFLICT (osm_type, osm_id) DO UPDATE');
+    expect(calls[1].sql).toContain('region = COALESCE(poi.region, EXCLUDED.region)');
   });
 
   it('inserts id-less rows without an ON CONFLICT clause', async () => {

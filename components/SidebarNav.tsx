@@ -19,14 +19,21 @@ const GROUPS: Array<{ heading: string; items: Array<{ href: string; label: strin
   },
 ];
 
-export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
+/** Admin-only group (the API enforces the role too — this only hides the link). */
+const ADMIN_GROUP: (typeof GROUPS)[number] = {
+  heading: 'Admin',
+  items: [{ href: '/admin/capture', label: 'Place Capture', isNew: true }],
+};
+
+export function SidebarNav({ onNavigate, role }: { onNavigate?: () => void; role?: string }) {
   const pathname = usePathname();
   const params = useSearchParams();
   const runId = params.get('runId');
+  const groups = role === 'admin' ? [...GROUPS, ADMIN_GROUP] : GROUPS;
 
   return (
     <nav aria-label="Main" className="flex-1 space-y-5 overflow-y-auto px-3 py-3">
-      {GROUPS.map((g) => (
+      {groups.map((g) => (
         <div key={g.heading}>
           <p className="overline px-3 pb-2">{g.heading}</p>
           <div className="space-y-1">

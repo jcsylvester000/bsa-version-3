@@ -39,6 +39,46 @@ npm run db:enrich-age                                # age profiles (real PSA fi
 Then run a Cavite and a Batangas intake end-to-end and confirm confidence is no longer defaulting to Low.
 OSM/Overpass is rate-limited — the sweeps are resumable (`poi_coverage`), so re-run until clean.
 
+### Laguna & Pampanga (registered 2026-10-07)
+
+Same order with `--region=laguna` / `--region=pampanga` (scripts `db:ingest:osm:laguna`,
+`db:ingest:osm:pampanga`, `db:ingest:osm:transport:laguna|pampanga`). `db:fetch-boundaries --region=pampanga`
+also loads **Angeles City** (an independent city with its own PSGC code). Neither region has lease corridors
+yet — sites there show honest gaps on the lease module until comps are loaded (`prisma/data/lease/README.md`).
+
+### Gap-filling with the admin screen (Admin → Place Capture)
+
+For a district rather than a province: draw a rectangle/circle (≤ 25 km²), pick layers, **Capture this
+area**, review, **Save**. Grid Navigator field sessions are imported from the same screen (save the session
+*without* map tiles). Hand-placed pins are Assumed until an admin confirms them on the ground. Load the
+region's boundaries first so captured places get barangay/city tags.
+
+### Local-first path (recommended for big provinces — 2026-09-28)
+
+The OSM sweep waits minutes on Overpass between writes, and Neon's free tier suspends an idle database,
+which can drop the connection mid-load. Load into the local Docker Postgres first, then copy the region to
+Neon in one fast pass (`prisma/pushRegion.ts` — upserts `admin_boundary` by `psgc_code` and `poi` by
+`(osm_type, osm_id)` (legacy rows by `osm_id`); never copies local ids; safe to re-run). PowerShell, from `4 - Final Application`:
+
+```powershell
+docker compose up -d
+$env:DATABASE_URL = "postgresql://bsa:bsa_local_dev@localhost:5433/bsa_dev?schema=public"
+$env:DIRECT_URL   = "postgresql://bsa:bsa_local_dev@localhost:5433/bsa_dev?schema=public"
+npx prisma migrate deploy
+npm run db:fetch-boundaries -- --region=cavite
+npm run db:ingest:osm:cavite
+npm run db:ingest:osm:transport:cavite
+npm run db:tag-boundaries
+Remove-Item Env:DATABASE_URL
+Remove-Item Env:DIRECT_URL
+npm run db:push-region -- --region=cavite --dry-run
+npm run db:push-region -- --region=cavite
+npm run db:tag-boundaries
+```
+
+The two `$env:` lines point ONLY this PowerShell window at Docker; `Remove-Item` switches it back to Neon
+(from `.env`). The push refuses to run if source and target are the same database.
+
 ## F-17 — Fill the known NCR zonal gaps  (Data · Low)
 
 San Juan is missing and Valenzuela needs barangay-level grain. Download the current BIR zonal-value

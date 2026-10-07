@@ -15,6 +15,10 @@ export type TruthLayer = 'verified' | 'assumed' | 'projected';
 // ---- POI (OSM Overpass) ----------------------------------------------------
 export interface RawPoi {
   osm_id?: number | string | null;
+  /** 'node' | 'way' | 'relation'. Without it the row falls back to the legacy osm_id-only key. */
+  osm_type?: string | null;
+  /** Matched OSM tag, e.g. "amenity=pharmacy" (kept for audit / re-categorising). */
+  kind?: string | null;
   name?: string | null;
   category?: string | null;
   lat?: number | null;
@@ -24,8 +28,16 @@ export interface RawPoi {
   region?: string | null;
   province?: string | null;
 }
+export type OsmType = 'node' | 'way' | 'relation';
+export function parseOsmType(v: unknown): OsmType | null {
+  const t = typeof v === 'string' ? v.trim().toLowerCase() : '';
+  return t === 'node' || t === 'way' || t === 'relation' ? t : null;
+}
+
 export interface NormPoi {
   osmId: number | null;
+  osmType: OsmType | null;
+  kind: string | null;
   name: string;
   category: string;
   lat: number;
@@ -52,6 +64,8 @@ export function normalizePoi(raw: RawPoi): NormPoi | null {
   const osmId = raw.osm_id != null && `${raw.osm_id}`.trim() !== '' ? Number(raw.osm_id) : null;
   return {
     osmId: Number.isFinite(osmId as number) ? (osmId as number) : null,
+    osmType: Number.isFinite(osmId as number) ? parseOsmType(raw.osm_type) : null,
+    kind: raw.kind?.trim().slice(0, 120) || null,
     name,
     category,
     lat,
@@ -67,9 +81,10 @@ export function normalizePoi(raw: RawPoi): NormPoi | null {
   };
 }
 
-/** Dedup POI by osm_id when present, else by name + rounded coord. */
+/** Dedup POI by (osm_type, osm_id) when present, else by name + rounded coord. Node 123 and way 123
+ *  are different places, so the type is part of the key ('?' for legacy typeless rows). */
 export function poiDedupKey(p: NormPoi): string {
-  if (p.osmId != null) return `osm:${p.osmId}`;
+  if (p.osmId != null) return `osm:${p.osmType ?? '?'}/${p.osmId}`;
   return `nc:${p.name.toLowerCase()}:${p.lat.toFixed(4)}:${p.lon.toFixed(4)}`;
 }
 

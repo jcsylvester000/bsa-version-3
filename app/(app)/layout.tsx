@@ -32,7 +32,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <GridLogo className="h-11 w-auto self-start" />
           <p className="overline text-xs tracking-[0.16em]">Business Site Analysis</p>
         </div>
-        <SidebarNav />
+        <SidebarNav role={session.role} />
         {/* Account block — stacked so nothing wraps mid-word ("Log / out") in the 248px rail. */}
         <div className="mt-auto flex flex-col gap-3 border-t border-ink-border px-5 py-4">
           <div className="flex min-w-0 flex-col gap-1.5">

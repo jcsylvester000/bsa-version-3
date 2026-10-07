@@ -20,6 +20,9 @@ import { subdivide, quadrants, bboxHeightDeg, type BBox } from '@/lib/geo/tiling
 /** Same shape placesService returns, so loaders/normalizers don't care about the source. */
 export interface OsmPlace {
   osmId: number | null;
+  /** OSM element type. Nodes, ways and relations are numbered independently, so the natural key
+   *  of a place is (osmType, osmId) — never the bare id. */
+  osmType: 'node' | 'way' | 'relation' | null;
   name: string;
   lat: number;
   lon: number;
@@ -50,7 +53,7 @@ function sleep(ms: number): Promise<void> {
  * inside the [] of a query). We match nodes AND ways (a mall unit is often a way). The
  * selectors are deliberately broad on tag but the caller narrows by name for brand pulls.
  */
-const OSM_SELECTORS: Record<string, string[]> = {
+export const OSM_SELECTORS: Record<string, string[]> = {
   fnb_qsr: ['"amenity"="fast_food"', '"amenity"="restaurant"'],
   fnb_cafe: ['"amenity"="cafe"', '"shop"="coffee"', '"cuisine"="bubble_tea"'],
   fnb_bakery: ['"shop"="bakery"', '"shop"="pastry"'],
@@ -78,22 +81,11 @@ const OSM_SELECTORS: Record<string, string[]> = {
   other: ['"shop"'],
 };
 
-/** Map an OSM tag value to the app's PoiCategory. Competitors are the default for the
- *  business-establishment tags; anchors/transport/schools/health get their own bucket. */
-export function osmTagToPoiCategory(osmTag: string | null): string {
-  const t = (osmTag ?? '').toLowerCase();
-  if (/(school|educational_institution|prep_school)/.test(t)) return 'school';
-  if (/(hospital)/.test(t)) return 'hospital';
-  if (/(clinic|doctors)/.test(t)) return 'clinic';
-  if (/(laboratory)/.test(t)) return 'diagnostic';
-  if (/(mall|department_store)/.test(t)) return 'mall';
-  if (/(bus_station|subway|station|public_transport|halt)/.test(t)) return 'transport';
-  if (/(office)/.test(t)) return 'office';
-  // Everything else that's a shop/amenity business = a competitor establishment.
-  return 'competitor';
-}
+/** Category rule lives in the pure module so the admin capture + tests share it (re-exported). */
+export { osmTagToPoiCategory } from './osmCategory';
+import { transportLabel } from './osmCategory';
 
-interface OverpassElement {
+export interface OverpassElement {
   type: 'node' | 'way' | 'relation';
   id: number;
   lat?: number;
@@ -112,9 +104,9 @@ interface OverpassElement {
  *  - FAST (`fast:true`): few attempts, short timeout, minimal backoff. For the INTERACTIVE
  *    report warm, which must return quickly — a slow OSM just means "serve from the DB".
  */
-async function runOverpass(ql: string, fast = false): Promise<OverpassElement[]> {
-  const maxRetries = fast ? 2 : MAX_RETRIES;
-  const fetchTimeout = fast ? 4000 : FETCH_TIMEOUT_MS;
+async function runOverpass(ql: string, fast = false, overrides: { fetchTimeoutMs?: number; maxRetries?: number } = {}): Promise<OverpassElement[]> {
+  const maxRetries = overrides.maxRetries ?? (fast ? 2 : MAX_RETRIES);
+  const fetchTimeout = overrides.fetchTimeoutMs ?? (fast ? 4000 : FETCH_TIMEOUT_MS);
   let lastErr: unknown = null;
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     const endpoint = OVERPASS_ENDPOINTS[attempt % OVERPASS_ENDPOINTS.length];
@@ -162,6 +154,7 @@ function toPlaces(elements: OverpassElement[], matchedTag: string | null): OsmPl
     const tag = matchedTag ?? deriveTag(el.tags);
     out.push({
       osmId: el.id,
+      osmType: el.type,
       name,
       lat,
       lon,
@@ -209,7 +202,7 @@ export async function establishmentsInBbox(
  * unlike the establishment sweeps — a node with no name is kept and given a generic label, since
  * for accessibility the node's POSITION is what matters, not its name.
  */
-const TRANSPORT_SELECTORS = [
+export const TRANSPORT_SELECTORS = [
   '"highway"="bus_stop"',
   '"amenity"="bus_station"',
   '"public_transport"="station"',
@@ -243,6 +236,7 @@ export async function transportInBbox(
     const tag = deriveTransportTag(el.tags);
     out.push({
       osmId: el.id,
+      osmType: el.type,
       name: el.tags?.name?.trim() || transportLabel(tag),
       lat, lon,
       osmTag: tag,
@@ -262,15 +256,6 @@ function deriveTransportTag(tags?: Record<string, string>): string | null {
   return 'transport';
 }
 
-function transportLabel(tag: string | null): string {
-  const t = tag ?? '';
-  if (t.includes('railway=station') || t.includes('railway=halt')) return 'Rail station';
-  if (t.includes('tram_stop')) return 'Rail/LRT stop';
-  if (t.includes('bus_station')) return 'Bus/PUV terminal';
-  if (t.includes('ferry')) return 'Ferry terminal';
-  if (t.includes('bus_stop') || t.includes('platform') || t.includes('stop_position')) return 'Jeepney/bus stop';
-  return 'Transport stop';
-}
 
 /**
  * A named brand's branches across a bounding box (NCR). Matches the brand on OSM's
@@ -356,7 +341,7 @@ export async function establishmentsInTiles(
       return;
     }
     for (const p of places) {
-      const key = p.osmId != null ? `osm:${p.osmId}` : `nc:${p.name.toLowerCase()}:${p.lat.toFixed(4)}:${p.lon.toFixed(4)}`;
+      const key = p.osmId != null ? `osm:${p.osmType ?? '?'}/${p.osmId}` : `nc:${p.name.toLowerCase()}:${p.lat.toFixed(4)}:${p.lon.toFixed(4)}`;
       if (!seen.has(key)) seen.set(key, p);
     }
     if (places.length >= cap && bboxHeightDeg(tile) > minTileDeg) {
@@ -396,3 +381,25 @@ export async function establishmentsNear(
 
 /** NCR bounding box (generous — covers all 17 LGUs). [south, west, north, east]. */
 export const NCR_BBOX: [number, number, number, number] = [14.35, 120.90, 14.78, 121.15];
+
+/**
+ * Admin capture (2026-10-07): raw Overpass elements for an arbitrary selector set inside a bbox,
+ * with a hard time budget so a web request returns before the platform's function timeout. One
+ * query (node + way per selector), `out center` so buildings resolve to a point. The caller maps
+ * and filters (lib/capture/mapElement). `selectors` must be Overpass tag filters built from our own
+ * constant tables — never raw user text.
+ */
+export async function captureElementsInBbox(
+  selectors: string[],
+  bbox: [number, number, number, number],
+  opts: { max?: number; budgetMs?: number } = {},
+): Promise<OverpassElement[]> {
+  const [s, w, n, e] = bbox;
+  const budgetMs = Math.max(5_000, Math.min(opts.budgetMs ?? 18_000, 50_000));
+  const parts = selectors
+    .map((sel) => `  node[${sel}](${s},${w},${n},${e});\n  way[${sel}](${s},${w},${n},${e});`)
+    .join('\n');
+  const serverTimeout = Math.max(5, Math.floor(budgetMs / 1000) - 2);
+  const ql = `[out:json][timeout:${serverTimeout}];\n(\n${parts}\n);\nout center ${opts.max ?? 5000};`;
+  return runOverpass(ql, false, { fetchTimeoutMs: budgetMs, maxRetries: 1 });
+}

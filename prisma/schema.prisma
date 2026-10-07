@@ -350,11 +350,97 @@ model Poi {
   /// "osm:bulk-sweep", "google:places". NULL for legacy rows loaded before F-18.
   provenance String?
   truthLayer TruthLayer  @default(verified) @map("truth_layer")
-  osmId      BigInt?     @unique @map("osm_id")
+  osmId      BigInt?     @map("osm_id")
+  /// OSM element type ('node' | 'way' | 'relation'). Nodes and ways are numbered independently, so the
+  /// natural key is (osm_type, osm_id). NULL = legacy row loaded before 2026-10-07 (still unique on
+  /// osm_id alone via the partial index poi_osm_legacy_key; claimed by the real element on re-ingest).
+  osmType    String?     @map("osm_type")
+  /// Matched OSM tag, e.g. "amenity=pharmacy" — the evidence behind `category`.
+  kind       String?
+  /// PSGC barangay code from admin_boundary (column added in 20260923000005; now modelled).
+  psgcCode   String?     @map("psgc_code")
+  /// Admin capture batch that last wrote this row (NULL for CLI ingest / on-demand cache).
+  captureBatchId String? @map("capture_batch_id") @db.Uuid
+  /// Field confirmation of a manual pin (admin-only action; audit-logged).
+  verifiedAt DateTime?   @map("verified_at") @db.Timestamptz(6)
+  verifiedById String?   @map("verified_by") @db.Uuid
 
+  captureBatch PoiCaptureBatch? @relation(fields: [captureBatchId], references: [id], onDelete: SetNull)
+
+  @@unique([osmType, osmId], map: "poi_osm_type_osm_id_key")
   @@index([category])
   @@index([region])
+  @@index([captureBatchId])
   @@map("poi")
+}
+
+enum CaptureStatus {
+  draft
+  committed
+  discarded
+}
+
+enum CaptureDecision {
+  pending
+  accept
+  reject
+}
+
+/// Admin POI capture (2026-10-07): one capture action — an OSM area pull, a grid-navigator file
+/// import, or a set of manual pins — staged for review before anything touches `poi`.
+model PoiCaptureBatch {
+  id            String        @id @default(uuid()) @db.Uuid
+  label         String
+  /// 'osm' | 'navigator_import' | 'manual'.
+  source        String
+  /// Capture area (rect / circle polygon). NULL for imports and manual-only batches.
+  area          Unsupported("geography(Polygon, 4326)")?
+  /// The area as drawn ({kind:'rect', south, west, north, east} | {kind:'circle', lat, lon, radiusM}).
+  areaSpec      Json?         @map("area_spec")
+  layers        String[]      @default([])
+  status        CaptureStatus @default(draft)
+  itemCount     Int           @default(0) @map("item_count")
+  committedCount Int          @default(0) @map("committed_count")
+  /// Free-text warnings for the reviewer (e.g. "boundaries not loaded for this area").
+  notes         String?
+  createdById   String?       @map("created_by") @db.Uuid
+  createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  committedById String?       @map("committed_by") @db.Uuid
+  committedAt   DateTime?     @map("committed_at") @db.Timestamptz(6)
+
+  createdBy     AppUser?      @relation("CaptureCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  items         PoiCaptureItem[]
+  pois          Poi[]
+
+  @@index([status, createdAt])
+  @@map("poi_capture_batch")
+}
+
+/// One staged place inside a capture batch, already mapped to `poi` columns.
+model PoiCaptureItem {
+  id            BigInt          @id @default(autoincrement())
+  batchId       String          @map("batch_id") @db.Uuid
+  osmType       String?         @map("osm_type")
+  osmId         BigInt?         @map("osm_id")
+  name          String
+  kind          String?
+  category      PoiCategory
+  lat           Float           @db.DoublePrecision
+  lon           Float           @db.DoublePrecision
+  source        PoiSource
+  truthLayer    TruthLayer      @map("truth_layer")
+  decision      CaptureDecision @default(accept)
+  /// Same OSM element already in `poi` → committing refreshes that row.
+  existingPoiId BigInt?         @map("existing_poi_id")
+  /// Possible duplicate (similar name within 50 m) of this `poi` row — reviewer decides.
+  duplicateOfPoiId BigInt?      @map("duplicate_of_poi_id")
+  notes         String?
+  committedPoiId BigInt?        @map("committed_poi_id")
+
+  batch         PoiCaptureBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  @@index([batchId, decision])
+  @@map("poi_capture_item")
 }
 
 /// On-demand POI cache coverage log. Records which (grid cell, vertical) areas have been
@@ -657,6 +743,7 @@ model AppUser {
 
   franchisor   Franchisor? @relation(fields: [franchisorId], references: [id], onDelete: SetNull)
   auditLogs    AuditLog[]
+  captureBatches PoiCaptureBatch[] @relation("CaptureCreatedBy")
 
   @@map("app_user")
 }

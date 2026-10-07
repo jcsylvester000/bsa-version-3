@@ -34,6 +34,26 @@ capped at 5 accounts per IP per hour; new passwords need 10+ characters.
 `POST /api/admin/reconcile-composites` and `POST /api/admin/warm` require **role admin**;
 `GET /api/admin/data-stats` requires staff (admin/analyst). Others → `403 forbidden`.
 
+### Admin Place Capture (`/api/admin/capture/*`, 2026-10-07) — **admin only**, JSON bodies only
+| Method & path | Body / query | Returns |
+|---|---|---|
+| `POST /preview` | `{ area: {kind:'rect',south,west,north,east} \| {kind:'circle',lat,lon,radiusM 50–3000}, layers: string[1–12], label? }` | `{ batchId, staged, skipped, notes }` — live OSM pull (server-side, 18 s budget), staged as a draft. ≤ 25 km² per call; 40 pulls / admin / hour. |
+| `POST /import` | the `.gridnav.json` file as the JSON body; header `x-file-name` | `{ batchId, staged, stats }`. ≤ 10 MB; tiles/routes ignored. `413` too large, `422` not a Grid Navigator file. |
+| `POST /manual` | `{ batchId?, lat, lon, name, category, notes? }` | `{ batchId }` — one hand-placed pin (Assumed). |
+| `GET /batches` | — | 30 most recent batches. |
+| `GET /batches/:id` | — | `{ batch, counts, items[] }` for review. |
+| `PATCH /batches/:id` | `{ updates: [{ id, decision?, name?, category? }] }` (≤ 1000) | `{ changed }` — draft only. |
+| `DELETE /batches/:id` | — | discard a draft (kept for audit). |
+| `POST /batches/:id/commit` | — | `{ committed, psgcTagged, skippedExisting }` — the only capture write into `poi`; `409 pending_items` while any item is undecided. Re-runnable. |
+| `GET /coverage` | — | committed areas (GeoJSON) + POI totals per region. |
+| `GET /pois?bbox=s,w,n,e` | bbox ≤ ~55 km a side | places already in BSA (map context). |
+| `POST /pois/:id/verify` | — | field-confirm a manual pin → Verified. |
+
+Layers: `anchors` (grid-navigator's navigation set), `transport`, `health`, `education`, `malls`, `offices`,
+and `v:<vertical>` competitor sets (keys of `osmService.OSM_SELECTORS`). Overpass queries are built only from
+these constant selector tables — client text never reaches Overpass QL. Every preview/import/review/commit/
+discard/verify is written to `audit_log` (`poi.capture.*`, `poi.verify`).
+
 ## POST /api/auth/logout
 Clears the session cookie. Returns `{ loggedOut: true }`.
 

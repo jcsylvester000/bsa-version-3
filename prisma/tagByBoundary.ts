@@ -19,7 +19,8 @@ async function main() {
   const poi = await prisma.$executeRaw`
     UPDATE poi p SET
       psgc_code = sub.psgc, barangay = sub.bgy, city = sub.city, province = sub.prov,
-      region = COALESCE(p.region, sub.region)
+      -- POIs: the polygon is authoritative over the coarse bbox stamp from a province sweep.
+      region = COALESCE(sub.region, p.region)
     FROM (
       SELECT p2.id AS pid, b.psgc_code AS psgc, b.name AS bgy, b.region AS region,
              c.name AS city, pr.name AS prov

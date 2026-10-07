@@ -10,7 +10,7 @@
  *   npm run db:ingest:osm -- --region=cavite --force# ignore the resumable checkpoint, re-sweep
  *
  * Sources real establishments from OpenStreetMap via the public Overpass API — no key, no billing.
- * Writes into `poi` through loadPoi (idempotent upsert on osm_id); coordinates Verified, region
+ * Writes into `poi` through loadPoi (idempotent upsert on (osm_type, osm_id)); coordinates Verified, region
  * tagged. The DEFAULT competitor sweep tiles the region and splits any tile that hits the query
  * cap, so dense verticals are captured fully instead of cut off at `out center N`. Each start-tile
  * is checkpointed in poi_coverage (source='bulk'), so an interrupted run resumes; --force re-sweeps.
@@ -110,6 +110,8 @@ function parseArgs(argv: string[]): Args {
 function toRawPoi(p: OsmPlace, region: RegionKey, categoryOverride?: string): RawPoi {
   return {
     osm_id: p.osmId,
+    osm_type: p.osmType,
+    kind: p.osmTag,
     name: p.name,
     category: categoryOverride ?? osmTagToPoiCategory(p.osmTag),
     lat: p.lat,
@@ -153,6 +155,7 @@ async function main() {
       // (source='bulk'). No truncation — a dense tile splits until every establishment is captured.
       console.log(`[1] Competitor sweep (tiled, complete) — ${verticals.length} verticals across ${region.name}…`);
       for (const v of verticals) {
+        let tileNo = 0;
         try {
           const stats = await establishmentsInTiles(v, REGION_BBOX, {
             max: 400,
@@ -169,6 +172,9 @@ async function main() {
               // succeeded, so a tile with an Overpass failure inside is retried on the next run.
               const rep = await loadPoi(places.map((p) => toRawPoi(p, args.region, 'competitor')), { db, source: 'osm', provenance: 'osm:bulk-sweep' });
               totalLoaded += rep.loaded;
+              // Live progress — Overpass is slow, so without this a vertical looks frozen for minutes.
+              tileNo++;
+              process.stdout.write(`\r   ${v}: tile ${tileNo} done · ${places.length} here · ${totalLoaded} loaded so far${info.complete ? '' : ' (will retry)'}      `);
               if (!info.complete) return;
               const c = bboxCentre(tile as BBox);
               await prisma.poiCoverage.upsert({
@@ -179,6 +185,7 @@ async function main() {
             },
           });
           const warn = stats.failedTiles > 0 ? ` — ${stats.failedTiles} tile(s) hit Overpass errors and will retry on the next run` : '';
+          if (tileNo) process.stdout.write('\n');
           console.log(`   ${v}: ${stats.processed}/${stats.startTiles} tiles (${stats.skipped} skipped, ${stats.splits} splits) → ${stats.total} establishments${warn}`);
         } catch (e) { failed.push(`vertical:${v}`); console.log(`   ${v}: FAILED — ${e instanceof Error ? e.message : e}`); }
         await pause();
@@ -189,7 +196,7 @@ async function main() {
   // --- 2. Brand-branch pull, per brand, across the NCR bbox ------------------
   if (args.brands) {
     const brands = args.quick ? BRAND_PULL.slice(0, 5) : BRAND_PULL;
-    console.log(`\n[2] Brand-branch pull — ${brands.length} brands across NCR…`);
+    console.log(`\n[2] Brand-branch pull — ${brands.length} brands across ${region.name}…`);
     for (const b of brands) {
       try {
         const places = await brandBranchesInBbox(b, REGION_BBOX, { max: 200 });

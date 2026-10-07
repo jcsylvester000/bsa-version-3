@@ -5,7 +5,18 @@ always-current snapshot. `WORKLOG.md` is the full history (newest first). This f
 rewritten at the end of every work batch — if it disagrees with older notes (e.g.
 `2 - Data Intake/Migration Guide/PROJECT_MEMORY_EXPORT.md`, 2026-08-10), **this file wins**.
 
-_Last updated: 2026-09-28 — Design v2 batches 0–13 all pushed (HEAD `498db86`)._
+_Last updated: 2026-10-07 — Admin Place Capture built (awaiting push); Design v2 batches 0–13 pushed (HEAD `498db86`, hotfix `db36c53`)._
+
+**Latest batch (2026-10-07, ⏳ awaiting push):** Admin → Place Capture (`/admin/capture`, admins only) —
+grid-navigator's capture loop inside BSA: live OSM area pull (≤25 km²), `.gridnav.json` import, manual pins
+→ draft batch → review → commit to `poi` (PSGC-tagged, audited). New regions **laguna** + **pampanga**.
+OSM natural key is now `(osm_type, osm_id)` (node/way collision fixed). Migration
+`20261007000000_admin_poi_capture` must be deployed. Full notes: `docs/ADMIN_POI_CAPTURE_PLAN.md` §11 + WORKLOG.
+**Key decisions:** only admins commit; grid-navigator stays a separate offline tool (BSA imports its files);
+imported/manual places are Assumed and imports never overwrite stored places; ONE category rule
+(`lib/places/osmCategory.ts`) for every POI write path — business tags stay `competitor`.
+**Next:** owner deploys + smoke-tests; load Laguna/Pampanga boundaries + OSM sweeps; lease corridors for
+Laguna/Pampanga when comps exist; optional: show capture coverage to analysts read-only.
 
 ---
 
@@ -23,7 +34,7 @@ _Last updated: 2026-09-28 — Design v2 batches 0–13 all pushed (HEAD `498db86
 - Pipeline: `lib/modules/orchestrator.ts` — time-boxed 5.5s slices, client re-invokes until `complete`.
   Per-site modules isolated; site done = `candidate_site.analyzed_at`. AI write-up is a SEPARATE
   per-site request (`POST /api/analysis-report`), locked against double-billing.
-- Tests: 331/331 (vitest). Typecheck 0 errors. `next build` passes.
+- Tests: 531/531 (vitest, 2026-10-07). Typecheck 0 errors. `next build` passes.
 
 ## Design v2 (2026-09-25) — Claude Design bundle implemented
 Source: `2 -  Data Intake/BSA Design System Overview/implementation/` (README + PATCHES + mockups).
