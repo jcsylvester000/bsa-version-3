@@ -73,7 +73,13 @@ export const PreviewBody = z.object({
   withStored: z.boolean().optional(),
   /** Call OpenStreetMap even when the area was captured in the last 90 days. */
   refresh: z.boolean().optional(),
+  /** Label + setup, kept with a retry-queue entry if a layer fails. */
+  label,
+  context: SiteContextSchema.optional(),
 });
+
+/** POST /gaps/:id — dismiss or re-open a retry-queue entry. */
+export const GapActionBody = z.object({ action: z.enum(['dismiss', 'reopen']) });
 
 /** POST /save — the reviewed places the admin chose to keep. */
 export const SaveBody = z.object({
@@ -113,12 +119,12 @@ export const ReadinessQuery = z.object({
 });
 
 /** "south,west,north,east" with a size cap (map context reads). */
-export function parseBboxParam(v: string | null): [number, number, number, number] | null {
+export function parseBboxParam(v: string | null, maxDeg = 0.5): [number, number, number, number] | null {
   if (!v) return null;
   const parts = v.split(',').map(Number);
   if (parts.length !== 4 || parts.some((n) => !Number.isFinite(n))) return null;
   const [s, w, n, e] = parts;
   if (!(n > s && e > w) || s < 4 || n > 21 || w < 116 || e > 127) return null;
-  if (n - s > 0.5 || e - w > 0.5) return null; // ~55 km — zoom in for context markers
+  if (n - s > maxDeg || e - w > maxDeg) return null; // default ~55 km — zoom in for context markers
   return [s, w, n, e];
 }

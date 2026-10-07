@@ -61,8 +61,18 @@ Indexes: `GiST(geom)`, `btree(category)`, `btree(region)`, `GIN(name gin_trgm_op
 One capture action — a live OSM area pull, a Grid Navigator session import, or manual pins — staged for
 review. `id` (uuid), `label`, `source` (osm / navigator_import / manual), `area` (geography polygon; GiST),
 `area_spec` (the area as drawn), `layers`, `status` (draft / committed / discarded), `item_count`,
-`committed_count`, `notes` (reviewer warnings), `created_by`/`created_at`, `committed_by`/`committed_at`.
-Nothing reaches `poi` until an admin commits the batch.
+`committed_count`, `notes` (reviewer warnings), `created_by`/`created_at`, `committed_by`/`committed_at`,
+`fetched_layers` (2026-10-08: the layers this capture loaded **completely** and stamped as covered — a failed or
+truncated layer is in `layers` but not here). Since v2 every batch is written `committed` at Save.
+
+### poi_capture_gap  _(retry queue, 2026-10-08)_
+One area + layer OpenStreetMap did not return completely. `area_key` (rounded area spec) + `layer` — one **open**
+row per pair (partial unique index); repeats bump `attempts`/`last_attempt_at`. `label`, `area_spec`, `context`
+(site pin + business types, so a retry restores the setup), `area` (geography polygon; GiST), `lat/lon` (centre),
+`reason` (timeout / limit / error), `message`, `status` (open / resolved / dismissed), `created_by`, `created_at`,
+`resolved_at`, `resolved_batch_id`. Logged by `/preview`; closed automatically when saved captures of that layer
+from the last 90 days cover the area (union of rings counts), or dismissed by an admin. Bookkeeping only — never
+place data, no Truth Layer.
 
 ### poi_capture_item
 One staged place, already mapped to `poi` columns: `batch_id`, `osm_type`/`osm_id`, `name`, `kind`,

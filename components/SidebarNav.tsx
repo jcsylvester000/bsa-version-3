@@ -22,7 +22,10 @@ const GROUPS: Array<{ heading: string; items: Array<{ href: string; label: strin
 /** Admin-only group (the API enforces the role too — this only hides the link). */
 const ADMIN_GROUP: (typeof GROUPS)[number] = {
   heading: 'Admin',
-  items: [{ href: '/admin/capture', label: 'Place Capture', isNew: true }],
+  items: [
+    { href: '/admin/capture', label: 'Place Capture', isNew: true },
+    { href: '/admin/coverage', label: 'Capture Coverage', isNew: true },
+  ],
 };
 
 export function SidebarNav({ onNavigate, role }: { onNavigate?: () => void; role?: string }) {

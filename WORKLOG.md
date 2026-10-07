@@ -5,6 +5,27 @@ The cross-thread state record. Read this (with the Master Instruction and the cu
 
 ---
 
+## 2026-10-08 — Capture Coverage screen, retry queue, capture best practices
+
+**Owner ask:** track and display every captured area in a separate admin tab so admins know where to capture next
+and don't re-scan; log what was missed so it can be retried; best practices for complete captures.
+
+1) DATA: migration `20261008000000_capture_gaps` — `poi_capture_gap` (open/resolved/dismissed, one open row per
+   area_key+layer, attempts) + `poi_capture_batch.fetched_layers`. Idempotent; applied twice locally.
+2) SERVICE (`lib/services/capture.ts`): `recordGap` (from `/preview` on timeout/error and on the place limit; never
+   fails the preview), `resolveGapsByKey` (layer now covered), `resolveGapsForBatch` (after save: union of 90-day
+   saves of that layer covers the entry), `captureLog`, `listGaps`/`getGap`/`setGapStatus`, `coverageCells`,
+   `capturesAtPoint` (readiness `previousCaptures`). Truncated layers return `truncated` and are never stamped covered.
+3) API: `GET /log`, `GET /gaps`, `GET|POST /gaps/:id` (dismiss/reopen, JSON-only, audited), `GET /cells`.
+4) UI: new `/admin/coverage` (CoverageMonitor) + sidebar item; workbench auto-retry (3 attempts), `?retry=`,
+   `?batch=`, `?lat&lon=` deep links, "captured here before", incomplete chips, status-screen retry notes.
+5) DOCS: `docs/PLACE_CAPTURE_PLAYBOOK.md`, API reference, data dictionary, runbook.
+
+Verified: tsc clean · vitest 553/553 (+ new `captureCoverageRoutes.test.ts`) · next build OK · retry queue
+end-to-end through an emulated Neon HTTP endpoint on PG16/PostGIS (log once → attempts 2 → partial save leaves it
+open → retry + save resolves → dismiss/reopen → log/cells/readiness) · headless UI check of /admin/coverage and the
+`?retry=` flow (mocked APIs), no console errors.
+
 ## 2026-10-07 (late) — Place Capture v3, Neon save fix, Territory Guard deal-breaker
 
 **Owner reports:** Save → 500 `[reason: unexpected]`; preview 502 (Overpass timeout); React #418/#423;

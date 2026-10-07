@@ -171,7 +171,13 @@ async function boundaryNote(lat: number, lon: number): Promise<string | null> {
 }
 
 export interface SiteContext { site?: { lat: number; lon: number }; vertical?: string; verticals?: string[]; brand?: string; format?: string }
-export interface PreviewInput { area: CaptureArea; layers: LayerKey[]; withStored?: boolean; refresh?: boolean }
+export interface PreviewInput {
+  area: CaptureArea; layers: LayerKey[]; withStored?: boolean; refresh?: boolean;
+  /** Shown in the retry queue if a layer fails (e.g. "QSR / Fast food · Brgy San Juan I · Noveleta"). */
+  label?: string;
+  /** Site pin / business types, so a retry from the queue restores the same setup. */
+  context?: SiteContext;
+}
 
 /** poi_coverage key for a capture layer: verticals use Territory Guard's own key; others are namespaced. */
 export function coverageKeyForLayer(layer: string): string {
@@ -222,7 +228,11 @@ export async function storedInArea(area: CaptureArea, limit = 4_000): Promise<St
     }));
 }
 
-export interface LayerResult { layer: string; status: 'loaded' | 'covered' | 'failed'; found: number; newCount: number; inBsa: number; message?: string }
+export interface LayerResult {
+  layer: string; status: 'loaded' | 'covered' | 'failed'; found: number; newCount: number; inBsa: number; message?: string;
+  /** Loaded, but OpenStreetMap returned the place limit — the layer is incomplete (logged for retry, never stamped). */
+  truncated?: boolean;
+}
 
 /**
  * Load places for an area onto the map. READ-ONLY. Places BSA already holds come from the
@@ -250,6 +260,7 @@ export async function previewArea(user: SessionUser, input: PreviewInput) {
   for (const layer of input.layers) {
     if (!input.refresh && await layerCovered(input.area, layer)) {
       results.push({ layer, status: 'covered', found: 0, newCount: 0, inBsa: 0, message: 'Already captured here — showing saved places' });
+      await resolveGapsByKey(areaKeyOf(input.area), layer);
       continue;
     }
     const { selectors, matchers } = selectorsForLayers([layer]);
@@ -257,8 +268,11 @@ export async function previewArea(user: SessionUser, input: PreviewInput) {
     let elements;
     try {
       elements = await captureElementsInBbox(selectors, bboxOfArea(input.area), { max: MAX_ELEMENTS, budgetMs: PREVIEW_BUDGET_MS / Math.max(1, input.layers.length) });
-    } catch {
-      results.push({ layer, status: 'failed', found: 0, newCount: 0, inBsa: 0, message: 'OpenStreetMap did not answer in time' });
+    } catch (e) {
+      const timeout = /timeout|timed out|abort|did not answer|429|504|502/i.test(e instanceof Error ? e.message : String(e));
+      const message = timeout ? 'OpenStreetMap did not answer in time' : 'OpenStreetMap returned an error';
+      results.push({ layer, status: 'failed', found: 0, newCount: 0, inBsa: 0, message: `${message} — logged in the retry queue` });
+      await recordGap(user, input, layer, timeout ? 'timeout' : 'error', message);
       continue;
     }
     const mapped: CaptureCandidate[] = [];
@@ -271,9 +285,11 @@ export async function previewArea(user: SessionUser, input: PreviewInput) {
     if (known && !notes.includes(known)) notes.push(known);
     const fresh = list.filter((c) => !c.existingPoiId);
     candidates.push(...fresh);
+    const truncated = elements.length >= MAX_ELEMENTS;
+    if (truncated) await recordGap(user, input, layer, 'limit', `Hit the ${MAX_ELEMENTS.toLocaleString('en-US')}-place limit — capture this area in smaller rings`);
     results.push({
-      layer, status: 'loaded', found: list.length, newCount: fresh.length, inBsa: list.length - fresh.length,
-      message: elements.length >= MAX_ELEMENTS ? `Hit the ${MAX_ELEMENTS}-place limit — use a smaller ring` : undefined,
+      layer, status: 'loaded', found: list.length, newCount: fresh.length, inBsa: list.length - fresh.length, truncated: truncated || undefined,
+      message: truncated ? `Hit the ${MAX_ELEMENTS.toLocaleString('en-US')}-place limit — incomplete, logged for retry with smaller rings` : undefined,
     });
   }
 
@@ -388,6 +404,7 @@ export async function saveCapture(user: SessionUser, input: SaveInput) {
       source: input.source,
       areaSpec: input.area ? ({ ...input.area, context: input.context ?? null } as unknown as Prisma.InputJsonValue) : undefined,
       layers: input.layers ?? [],
+      fetchedLayers: input.source === 'osm' ? (input.fetchedLayers ?? []) : [],
       status: 'committed',
       itemCount: items.length,
       notes: verifiedN < items.length ? `${items.length - verifiedN} place(s) saved as Assumed (edited, imported or hand-placed).` : null,
@@ -471,11 +488,12 @@ export async function saveCapture(user: SessionUser, input: SaveInput) {
 
   // 5) Territory Guard coverage + batch totals + audit.
   const coverageStamped = input.source === 'osm' && input.area ? await stampCoverage(input.area, input.fetchedLayers ?? []) : 0;
+  const gapsResolved = input.source === 'osm' && input.area && input.fetchedLayers?.length ? await resolveGapsForBatch(batchId, input.fetchedLayers) : 0;
   const linked = await prisma.poiCaptureItem.count({ where: { batchId, committedPoiId: { not: null } } });
   await prisma.poiCaptureBatch.update({ where: { id: batchId }, data: { committedCount: linked } });
   const alreadyInBsa = items.length - written;
-  await audit({ actorId: actorId(user), action: 'poi.capture.save', entity: 'poi_capture_batch', entityId: batchId, meta: { items: items.length, written, verified: verifiedN, psgcTagged, alreadyInBsa, coverageStamped } });
-  return { batchId, saved: written, alreadyInBsa, linked, psgcTagged, coverageStamped };
+  await audit({ actorId: actorId(user), action: 'poi.capture.save', entity: 'poi_capture_batch', entityId: batchId, meta: { items: items.length, written, verified: verifiedN, psgcTagged, alreadyInBsa, coverageStamped, gapsResolved } });
+  return { batchId, saved: written, alreadyInBsa, linked, psgcTagged, coverageStamped, gapsResolved };
 }
 
 /**
@@ -627,7 +645,227 @@ export async function siteReadiness(input: ReadinessInput) {
     concept: first?.concept ?? null,
     summary: first?.summary ?? summariseForTerritory(places.map((p) => ({ tier: p.tier, distM: p.distM })), catchmentM),
     coverage,
+    previousCaptures: await capturesAtPoint(input.lat, input.lon),
     places: places.slice(0, 600),
     capped: rows.length >= 1500,
   };
+}
+
+/* ------------------------------------------------------------------ capture log & retry queue */
+
+/** Stable key for "the same area" (≈1 m rounding), so a repeated failure bumps one queue row. */
+export function areaKeyOf(area: CaptureArea): string {
+  const r = (v: number) => v.toFixed(5);
+  return area.kind === 'circle' ? `c:${r(area.lat)}:${r(area.lon)}:${Math.round(area.radiusM)}` : `r:${r(area.south)}:${r(area.west)}:${r(area.north)}:${r(area.east)}`;
+}
+
+export type GapReason = 'timeout' | 'limit' | 'error';
+
+/**
+ * Log an area + layer that OpenStreetMap did not return completely. This is bookkeeping, not place
+ * data — no `poi` row is touched — and it never fails the preview (a missing migration is ignored).
+ */
+async function recordGap(user: SessionUser, input: PreviewInput, layer: string, reason: GapReason, message: string): Promise<void> {
+  try {
+    const [s, w, n, e] = bboxOfArea(input.area);
+    const lat = (s + n) / 2, lon = (w + e) / 2;
+    const label = cleanText(input.label ?? '', 160) || describeArea(input.area);
+    const spec = JSON.stringify(input.area);
+    const ctx = input.context ? JSON.stringify(input.context) : null;
+    const gj = JSON.stringify(areaGeoJson(input.area));
+    await prisma.$executeRaw`
+      INSERT INTO poi_capture_gap (area_key, layer, label, area_spec, context, area, lat, lon, reason, message, created_by)
+      VALUES (${areaKeyOf(input.area)}, ${layer}, ${label}, ${spec}::jsonb, ${ctx}::jsonb,
+              ST_SetSRID(ST_GeomFromGeoJSON(${gj}), 4326)::geography, ${lat}, ${lon}, ${reason}, ${message}, ${actorId(user)}::uuid)
+      ON CONFLICT (area_key, layer) WHERE status = 'open'
+      DO UPDATE SET attempts = poi_capture_gap.attempts + 1, last_attempt_at = now(), reason = EXCLUDED.reason, message = EXCLUDED.message`;
+  } catch (e) {
+    console.error('[capture] could not log the retry-queue entry', e);
+  }
+}
+
+/** The exact area is already covered for this layer (captured since) → close its open entry. */
+async function resolveGapsByKey(areaKey: string, layer: string): Promise<void> {
+  try {
+    await prisma.$executeRaw`
+      UPDATE poi_capture_gap SET status = 'resolved', resolved_at = now()
+      WHERE status = 'open' AND area_key = ${areaKey} AND layer = ${layer} AND reason <> 'limit'`;
+  } catch { /* bookkeeping only */ }
+}
+
+/**
+ * After a save: close every open entry, for a layer this capture loaded completely, whose area is now
+ * fully covered by saved captures of that layer from the last 90 days (Territory Guard's freshness
+ * window) — one big save or several smaller rings, the union counts. ~30 m tolerance for ring vertices.
+ * Only `fetched_layers` count, so a failed or truncated layer never closes its own entry.
+ */
+async function resolveGapsForBatch(batchId: string, fetchedLayers: string[]): Promise<number> {
+  try {
+    return await prisma.$executeRaw(Prisma.sql`
+      UPDATE poi_capture_gap g SET status = 'resolved', resolved_at = now(), resolved_batch_id = ${batchId}::uuid
+      FROM poi_capture_batch nb
+      WHERE nb.id = ${batchId}::uuid AND nb.area IS NOT NULL
+        AND g.status = 'open' AND g.area IS NOT NULL
+        AND g.layer IN (${Prisma.join(fetchedLayers)})
+        AND ST_Intersects(nb.area::geometry, g.area::geometry)
+        AND ST_Covers(
+          ST_Buffer((
+            SELECT ST_Union(b.area::geometry) FROM poi_capture_batch b
+            WHERE b.status = 'committed' AND b.area IS NOT NULL AND g.layer = ANY(b.fetched_layers)
+              AND b.created_at >= now() - interval '90 days' AND ST_Intersects(b.area::geometry, g.area::geometry)
+          ), 0.0003),
+          g.area::geometry)`);
+  } catch (e) {
+    console.error('[capture] could not resolve retry-queue entries', e);
+    return 0;
+  }
+}
+
+export interface CaptureLogArea {
+  id: string; label: string; source: string; layers: string[]; fetchedLayers: string[];
+  itemCount: number; savedCount: number; createdAt: Date; createdBy: string | null;
+  lat: number; lon: number; km2: number;
+  barangay: string | null; city: string | null; province: string | null; region: string | null;
+  geometry: GeoJSON.Geometry | null;
+}
+export interface CaptureGapRow {
+  id: string; layer: string; label: string; reason: GapReason; message: string | null; attempts: number;
+  status: 'open' | 'resolved' | 'dismissed'; createdAt: Date; lastAttemptAt: Date; resolvedAt: Date | null; createdBy: string | null;
+  lat: number; lon: number; areaSpec: CaptureArea; context: SiteContext | null;
+  barangay: string | null; city: string | null; province: string | null; region: string | null;
+  geometry: GeoJSON.Geometry | null;
+}
+
+/** Barangay / city / province / region of a point, from the loaded PSGC boundaries (SQL fragment). */
+const placeOfPoint = (lonSql: Prisma.Sql, latSql: Prisma.Sql) => Prisma.sql`
+  LEFT JOIN LATERAL (
+    SELECT bg.name AS barangay, c.name AS city, pr.name AS province, bg.region AS region
+    FROM admin_boundary bg
+    LEFT JOIN admin_boundary c  ON c.psgc_code  = bg.parent_psgc
+    LEFT JOIN admin_boundary pr ON pr.psgc_code = c.parent_psgc
+    WHERE bg.level = 'barangay' AND bg.geom IS NOT NULL
+      AND ST_Intersects(bg.geom, ST_SetSRID(ST_MakePoint(${lonSql}, ${latSql}), 4326)::geography)
+    LIMIT 1
+  ) loc ON true`;
+
+/**
+ * The capture log: every saved capture area (where, when, who, what was loaded, how many places
+ * were new) plus the retry queue, for the admin Coverage screen. Read-only.
+ */
+export async function captureLog(opts: { days?: number; limit?: number } = {}) {
+  const since = opts.days ? new Date(Date.now() - opts.days * 86_400_000) : new Date(0);
+  const limit = Math.min(2_000, Math.max(1, opts.limit ?? 1_000));
+  const areas = await prisma.$queryRaw<Array<{
+    id: string; label: string; source: string; layers: string[]; fetched_layers: string[]; item_count: number; committed_count: number;
+    created_at: Date; email: string | null; lat: number; lon: number; km2: number; geojson: string | null;
+    barangay: string | null; city: string | null; province: string | null; region: string | null;
+  }>>(Prisma.sql`
+    SELECT b.id::text, b.label, b.source, b.layers, b.fetched_layers, b.item_count, b.committed_count, b.created_at, u.email,
+           ST_Y(ST_Centroid(b.area::geometry)) AS lat, ST_X(ST_Centroid(b.area::geometry)) AS lon,
+           (ST_Area(b.area) / 1e6)::float8 AS km2, ST_AsGeoJSON(b.area, 6)::text AS geojson,
+           loc.barangay, loc.city, loc.province, loc.region
+    FROM poi_capture_batch b
+    LEFT JOIN app_user u ON u.id = b.created_by
+    ${placeOfPoint(Prisma.sql`ST_X(ST_Centroid(b.area::geometry))`, Prisma.sql`ST_Y(ST_Centroid(b.area::geometry))`)}
+    WHERE b.status = 'committed' AND b.area IS NOT NULL AND b.created_at >= ${since}
+    ORDER BY b.created_at DESC
+    LIMIT ${limit}`);
+  const gaps = await listGaps({ status: 'all', limit: 500 });
+  const totals = await prisma.$queryRaw<Array<{ batches: number; places: number; areas_km2: number; last_at: Date | null }>>`
+    SELECT COUNT(*)::int AS batches, COALESCE(SUM(committed_count), 0)::int AS places,
+           COALESCE((ST_Area(ST_Union(area::geometry)::geography) / 1e6), 0)::float8 AS areas_km2, MAX(created_at) AS last_at
+    FROM poi_capture_batch WHERE status = 'committed'`;
+  const regions = await prisma.$queryRaw<Array<{ region: string | null; total: number; tagged: number }>>`
+    SELECT region, COUNT(*)::int AS total, COUNT(*) FILTER (WHERE psgc_code IS NOT NULL)::int AS tagged
+    FROM poi GROUP BY region ORDER BY total DESC`;
+  const layersSeen = await prisma.$queryRaw<Array<{ vertical: string; cells: number }>>`
+    SELECT vertical, COUNT(*)::int AS cells FROM poi_coverage GROUP BY vertical ORDER BY cells DESC LIMIT 80`;
+  return {
+    totals: { ...totals[0], openGaps: gaps.filter((g) => g.status === 'open').length },
+    areas: areas.map((a): CaptureLogArea => ({
+      id: a.id, label: a.label, source: a.source, layers: a.layers, fetchedLayers: a.fetched_layers, itemCount: a.item_count, savedCount: a.committed_count,
+      createdAt: a.created_at, createdBy: a.email, lat: a.lat, lon: a.lon, km2: Number(a.km2.toFixed(2)),
+      barangay: a.barangay, city: a.city, province: a.province, region: a.region ?? regionForPoint(a.lat, a.lon),
+      geometry: a.geojson ? JSON.parse(a.geojson) : null,
+    })),
+    gaps,
+    regions,
+    coverageKeys: layersSeen,
+  };
+}
+
+/** The retry queue (open by default), newest attempt first. */
+export async function listGaps(opts: { status?: 'open' | 'resolved' | 'dismissed' | 'all'; limit?: number } = {}): Promise<CaptureGapRow[]> {
+  const status = opts.status ?? 'open';
+  const where = status === 'all' ? Prisma.sql`TRUE` : Prisma.sql`g.status = ${status}::"CaptureGapStatus"`;
+  const rows = await prisma.$queryRaw<Array<{
+    id: string; layer: string; label: string; reason: GapReason; message: string | null; attempts: number; status: CaptureGapRow['status'];
+    created_at: Date; last_attempt_at: Date; resolved_at: Date | null; email: string | null; lat: number; lon: number;
+    area_spec: string; context: string | null; geojson: string | null; barangay: string | null; city: string | null; province: string | null; region: string | null;
+  }>>(Prisma.sql`
+    SELECT g.id::text, g.layer, g.label, g.reason, g.message, g.attempts, g.status::text AS status, g.created_at, g.last_attempt_at, g.resolved_at,
+           u.email, g.lat, g.lon, g.area_spec::text AS area_spec, g.context::text AS context, ST_AsGeoJSON(g.area, 6)::text AS geojson,
+           loc.barangay, loc.city, loc.province, loc.region
+    FROM poi_capture_gap g
+    LEFT JOIN app_user u ON u.id = g.created_by
+    ${placeOfPoint(Prisma.sql`g.lon`, Prisma.sql`g.lat`)}
+    WHERE ${where}
+    ORDER BY (g.status = 'open') DESC, g.last_attempt_at DESC
+    LIMIT ${Math.min(1_000, Math.max(1, opts.limit ?? 300))}`);
+  return rows.map((r) => ({
+    id: r.id, layer: r.layer, label: r.label, reason: r.reason, message: r.message, attempts: r.attempts, status: r.status,
+    createdAt: r.created_at, lastAttemptAt: r.last_attempt_at, resolvedAt: r.resolved_at, createdBy: r.email, lat: r.lat, lon: r.lon,
+    areaSpec: JSON.parse(r.area_spec) as CaptureArea, context: r.context ? (JSON.parse(r.context) as SiteContext) : null,
+    barangay: r.barangay, city: r.city, province: r.province, region: r.region ?? regionForPoint(r.lat, r.lon),
+    geometry: r.geojson ? JSON.parse(r.geojson) : null,
+  }));
+}
+
+export async function getGap(id: string): Promise<CaptureGapRow | null> {
+  if (!isUuid(id)) return null;
+  const rows = await listGaps({ status: 'all', limit: 1_000 });
+  return rows.find((g) => g.id === id) ?? null;
+}
+
+/** Dismiss (nothing to capture there) or re-open a queue entry. Admin-only (route), audit-logged. */
+export async function setGapStatus(user: SessionUser, id: string, action: 'dismiss' | 'reopen') {
+  if (!isUuid(id)) throw new CaptureError('not_found', 'Retry entry not found.', 404);
+  const n = action === 'dismiss'
+    ? await prisma.$executeRaw`UPDATE poi_capture_gap SET status = 'dismissed', resolved_at = now() WHERE id = ${id}::uuid AND status = 'open'`
+    : await prisma.$executeRaw`
+        UPDATE poi_capture_gap g SET status = 'open', resolved_at = NULL, resolved_batch_id = NULL
+        WHERE g.id = ${id}::uuid AND g.status = 'dismissed'
+          AND NOT EXISTS (SELECT 1 FROM poi_capture_gap o WHERE o.status = 'open' AND o.area_key = g.area_key AND o.layer = g.layer)`;
+  if (!n) throw new CaptureError('conflict', action === 'dismiss' ? 'Only open entries can be dismissed.' : 'Only dismissed entries can be re-opened (and not when the same area is already open).', 409);
+  await audit({ actorId: actorId(user), action: `poi.capture.gap.${action}`, entity: 'poi_capture_gap', entityId: id, meta: {} });
+  return { id, status: action === 'dismiss' ? 'dismissed' : 'open' };
+}
+
+/** Territory Guard coverage cells (~1.1 km) in a bbox for one coverage key — freshness map. Read-only. */
+export async function coverageCells(bbox: [number, number, number, number], vertical: string, limit = 6_000) {
+  const [s, w, n, e] = bbox;
+  const rows = await prisma.poiCoverage.findMany({
+    where: { vertical, lat: { gte: s - 0.01, lte: n + 0.01 }, lon: { gte: w - 0.01, lte: e + 0.01 } },
+    select: { cellKey: true, lat: true, lon: true, poiCount: true, fetchedAt: true, source: true },
+    take: limit,
+  });
+  return rows.map((r) => {
+    const [la, lo] = r.cellKey.split(':').map(Number);
+    return { key: r.cellKey, lat: Number.isFinite(la) ? la : r.lat, lon: Number.isFinite(lo) ? lo : r.lon, poiCount: r.poiCount, fetchedAt: r.fetchedAt, source: r.source };
+  });
+}
+
+/** Saved captures whose area contains a point — "this spot was captured before" on the capture screen. */
+export async function capturesAtPoint(lat: number, lon: number, limit = 5) {
+  try {
+    const rows = await prisma.$queryRaw<Array<{ id: string; label: string; created_at: Date; fetched_layers: string[]; layers: string[]; committed_count: number }>>`
+      SELECT id::text, label, created_at, fetched_layers, layers, committed_count
+      FROM poi_capture_batch
+      WHERE status = 'committed' AND area IS NOT NULL
+        AND ST_Covers(area, ST_SetSRID(ST_MakePoint(${lon}, ${lat}), 4326)::geography)
+      ORDER BY created_at DESC LIMIT ${limit}`;
+    return rows.map((r) => ({ id: r.id, label: r.label, createdAt: r.created_at, layers: r.fetched_layers.length ? r.fetched_layers : r.layers, savedCount: r.committed_count }));
+  } catch {
+    return [];
+  }
 }

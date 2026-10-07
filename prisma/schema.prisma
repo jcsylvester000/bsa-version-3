@@ -380,6 +380,12 @@ enum CaptureStatus {
   discarded
 }
 
+enum CaptureGapStatus {
+  open
+  resolved
+  dismissed
+}
+
 enum CaptureDecision {
   pending
   accept
@@ -398,6 +404,8 @@ model PoiCaptureBatch {
   /// The area as drawn ({kind:'rect', south, west, north, east} | {kind:'circle', lat, lon, radiusM}).
   areaSpec      Json?         @map("area_spec")
   layers        String[]      @default([])
+  /// Layers this capture loaded completely (stamped as covered). Failed / truncated layers are not here.
+  fetchedLayers String[]      @default([]) @map("fetched_layers")
   status        CaptureStatus @default(draft)
   itemCount     Int           @default(0) @map("item_count")
   committedCount Int          @default(0) @map("committed_count")
@@ -411,9 +419,41 @@ model PoiCaptureBatch {
   createdBy     AppUser?      @relation("CaptureCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   items         PoiCaptureItem[]
   pois          Poi[]
+  resolvedGaps  PoiCaptureGap[]
 
   @@index([status, createdAt])
   @@map("poi_capture_batch")
+}
+
+/// Retry queue: an area + layer OpenStreetMap did not return completely (timeout, error, or the
+/// place limit). Logged by /preview; resolved automatically when a saved capture covers the area for
+/// that layer, or dismissed by an admin. One OPEN row per (area_key, layer) — repeats bump `attempts`.
+model PoiCaptureGap {
+  id              String           @id @default(uuid()) @db.Uuid
+  areaKey         String           @map("area_key")
+  layer           String
+  label           String
+  areaSpec        Json             @map("area_spec")
+  context         Json?
+  area            Unsupported("geography(Polygon, 4326)")?
+  lat             Float            @db.DoublePrecision
+  lon             Float            @db.DoublePrecision
+  /// 'timeout' | 'limit' | 'error'
+  reason          String
+  message         String?
+  attempts        Int              @default(1)
+  status          CaptureGapStatus @default(open)
+  createdById     String?          @map("created_by") @db.Uuid
+  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  lastAttemptAt   DateTime         @default(now()) @map("last_attempt_at") @db.Timestamptz(6)
+  resolvedAt      DateTime?        @map("resolved_at") @db.Timestamptz(6)
+  resolvedBatchId String?          @map("resolved_batch_id") @db.Uuid
+
+  createdBy       AppUser?         @relation("CaptureGapCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  resolvedBatch   PoiCaptureBatch? @relation(fields: [resolvedBatchId], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@map("poi_capture_gap")
 }
 
 /// One staged place inside a capture batch, already mapped to `poi` columns.
@@ -744,6 +784,7 @@ model AppUser {
   franchisor   Franchisor? @relation(fields: [franchisorId], references: [id], onDelete: SetNull)
   auditLogs    AuditLog[]
   captureBatches PoiCaptureBatch[] @relation("CaptureCreatedBy")
+  captureGaps    PoiCaptureGap[]   @relation("CaptureGapCreatedBy")
 
   @@map("app_user")
 }

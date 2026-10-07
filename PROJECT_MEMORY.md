@@ -5,9 +5,16 @@ always-current snapshot. `WORKLOG.md` is the full history (newest first). This f
 rewritten at the end of every work batch — if it disagrees with older notes (e.g.
 `2 - Data Intake/Migration Guide/PROJECT_MEMORY_EXPORT.md`, 2026-08-10), **this file wins**.
 
-_Last updated: 2026-10-07 (late) — Place Capture v3 + Neon save fix + Territory Guard deal-breaker in scoring (awaiting push); Design v2 batches 0–13 pushed (HEAD `498db86`, hotfix `db36c53`)._
+_Last updated: 2026-10-08 — Capture Coverage screen + retry queue (awaiting push; v3/Neon fix/scoring pushed by owner); Design v2 batches 0–13 pushed (HEAD `498db86`, hotfix `db36c53`)._
 
-**Latest batch (2026-10-07 late, ⏳ awaiting push):** (1) **Save fixed on Neon** — `createMany` ran inside an implicit
+**Latest batch (2026-10-08, ⏳ awaiting push):** Admin → **Capture Coverage** (`/admin/coverage`): map of saved capture
+areas by freshness (90 d), Territory Guard coverage cells per layer, capture log (where/when/who/layers/new places),
+by-region table, playbook; **retry queue** `poi_capture_gap` (migration `20261008000000_capture_gaps`, also
+`poi_capture_batch.fetched_layers`) — `/preview` logs failed / place-limit layers, `/save` auto-resolves covered
+entries, `?retry=<id>` deep link re-runs one; workbench auto-retries a busy layer twice (4 s, 10 s), marks
+place-limit layers incomplete (never stamped covered), shows "captured here before". Playbook:
+`docs/PLACE_CAPTURE_PLAYBOOK.md`.
+**Batch before (2026-10-07 late):** (1) **Save fixed on Neon** — `createMany` ran inside an implicit
 Prisma transaction, which the Neon HTTP adapter refuses → 500 `[reason: unexpected]`; now a plain multi-row INSERT
 (verified through an emulated Neon HTTP endpoint). Rule: no `createMany`/nested writes/`$transaction` on Neon paths.
 (2) **Capture v3**: all 18 PH regions in the jump list, tick up to 6 business types, one `/preview` per layer

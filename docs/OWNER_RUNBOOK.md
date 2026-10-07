@@ -54,6 +54,13 @@ like, review the Captured areas table, **Save**, and read the status screen. Gri
 *without* map tiles). Hand-placed pins are Assumed until an admin confirms them on the ground. Load the
 region's boundaries first so captured places get barangay/city tags.
 
+### Capture Coverage & the retry queue (2026-10-08)
+
+Admin → **Capture Coverage** shows every saved capture on a map (green = fresh, grey = re-capture due), the capture
+log, and the **retry queue** of areas/layers OpenStreetMap did not return completely. Needs migration
+`20261008000000_capture_gaps` (Netlify runs `prisma migrate deploy` on build; locally `npx prisma migrate deploy`).
+Best practices: `docs/PLACE_CAPTURE_PLAYBOOK.md`.
+
 ### After the 2026-10-07 scoring fix — refresh stored composites
 
 Territory Guard is now a deal-breaker in the Final Report: own-branch overlap ≥ 40 % ("Redistributes") caps the

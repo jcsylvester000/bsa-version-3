@@ -42,12 +42,21 @@ Workflow (v3, 2026-10-07): **preview/import are read-only → the admin reviews 
 | `GET /readiness?lat&lon[&radiusM&format&verticals&brand]` | format inline/mall/kiosk; `verticals` = comma-separated intake keys (≤ 6; `vertical` still accepted) | PSGC boundary of the pin + `byVertical[]` (what Territory Guard sees per business type: tiers, catchment, saturation) + `coverage[]` per type + stored places in the ring. Read-only. |
 | `POST /preview` | `{ area: {kind:'rect',south,west,north,east} \| {kind:'circle',lat,lon,radiusM 50–3000}, layers: string[1–12], withStored?: bool, refresh?: bool }` | `{ layers: [{layer, status: loaded\|covered\|failed, found, newCount, inBsa, message?}], candidates[] (NEW places only), stored?[] (places BSA already holds in the area, when `withStored`), notes }` — **writes nothing**. Layers captured ≤ 90 days ago are `covered` (no Overpass call) unless `refresh`. Overpass: 20 s budget split over two endpoints, results cached in memory 30 min. Each OSM candidate carries an HMAC `receipt`. ≤ 25 km²; 240 calls / admin / hour. |
 | `POST /import` | the `.gridnav.json` file as the JSON body; header `x-file-name` | `{ candidates[], stats, notes }` — **writes nothing**. ≤ 10 MB; tiles/routes ignored. `413` too large, `422` not a Grid Navigator file. |
-| `POST /save` | `{ source: osm\|navigator_import\|manual, label?, area?, layers?, fetchedLayers?, context?: { site, verticals[], brand, format }, items: [{ osmRef?, receipt?, name, kind?, category, lat, lon, origin: osm\|file\|manual, notes? }] (0–5000; 0 allowed when `area`+`fetchedLayers` so the area is still marked captured) }` | `{ batchId, saved, alreadyInBsa, linked, psgcTagged, coverageStamped }` — the only write: batch record, **new places only** (`INSERT … ON CONFLICT DO NOTHING`; a stored place is never re-written), PSGC tags, Territory Guard `poi_coverage` stamps for `fetchedLayers`, audit. Idempotent. Plain statements only — no Prisma `createMany`/interactive transactions (the Neon HTTP adapter refuses them). |
+| `POST /save` | `{ source: osm\|navigator_import\|manual, label?, area?, layers?, fetchedLayers?, context?: { site, verticals[], brand, format }, items: [{ osmRef?, receipt?, name, kind?, category, lat, lon, origin: osm\|file\|manual, notes? }] (0–5000; 0 allowed when `area`+`fetchedLayers` so the area is still marked captured) }` | `{ batchId, saved, alreadyInBsa, linked, psgcTagged, coverageStamped, gapsResolved }` — the only write: batch record, **new places only** (`INSERT … ON CONFLICT DO NOTHING`; a stored place is never re-written), PSGC tags, Territory Guard `poi_coverage` stamps for `fetchedLayers`, audit. Idempotent. Plain statements only — no Prisma `createMany`/interactive transactions (the Neon HTTP adapter refuses them). |
 | `GET /batches` | — | the 30 most recent saved captures. |
 | `GET /batches/:id` | — | a saved capture and the places it saved (view on the map). |
 | `GET /coverage` | — | saved areas (GeoJSON) + POI totals per region. |
 | `GET /pois?bbox=s,w,n,e` | bbox ≤ ~55 km a side | places already in BSA (map context). |
 | `POST /pois/:id/verify` | — | field-confirm a manual pin → Verified. |
+| `GET /log[?days=N]` | — | Capture Coverage screen: `{ totals, areas[] (where/when/who, layers vs fetchedLayers, savedCount, barangay/city/province/region, GeoJSON), gaps[], regions[], coverageKeys[] }`. Read-only. |
+| `GET /gaps[?status=open\|resolved\|dismissed\|all]` | — | the retry queue (default open). |
+| `GET /gaps/:id` | — | one entry (area spec, layer, setup) — Place Capture's `?retry=<id>` re-runs it. |
+| `POST /gaps/:id` | `{ action: 'dismiss' \| 'reopen' }` (JSON only) | close an entry by hand / re-open a dismissed one. Audited (`poi.capture.gap.*`). |
+| `GET /cells?bbox=s,w,n,e&layer=KEY` | bbox ≤ 2° a side; KEY = vertical (`fnb_qsr`) or `layer:<base>` | Territory Guard coverage cells (~1.1 km) with `fetchedAt` — the freshness map. |
+
+Retry queue: `/preview` logs a layer that failed (`timeout`/`error`) or hit the place limit (`limit`, returned as
+`truncated: true` and never stamped as covered) in `poi_capture_gap`; `/save` returns `gapsResolved` (entries now
+covered). `/readiness` also returns `previousCaptures[]` (saved captures whose area contains the pin).
 
 Errors carry a reason code instead of a bare 500, e.g. `[reason: db_migration_pending]` (run `npx prisma migrate deploy`),
 `db_pg_trgm_missing`, `db_postgis`, `timeout`, `db_unreachable`, `db_http_transaction` (a write path used a transaction under Neon HTTP — a code bug).

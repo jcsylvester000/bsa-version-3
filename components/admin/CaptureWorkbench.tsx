@@ -31,6 +31,7 @@ import {
 import { BSA_POI_CATEGORIES, CATEGORY_LABEL, type BsaPoiCategory } from '@/lib/places/osmCategory';
 import { markerElement } from '@/components/MapMarkers';
 import { TruthChip } from '@/components/ui/Chips';
+import { manilaShortStampYear } from '@/lib/util/manilaTime';
 
 type Decision = 'accept' | 'reject' | 'pending';
 type MapMode = 'site' | 'rect' | 'add' | 'none';
@@ -46,8 +47,8 @@ interface Candidate {
 }
 interface ReviewItem extends Candidate { decision: Decision; originalName: string; areaId: string }
 interface StoredPlace { id: string; name: string; category: string; lat: number; lon: number; source: string; truthLayer: string; osmRef: string | null }
-interface LayerRun { layer: LayerKey; status: 'waiting' | 'loading' | 'loaded' | 'covered' | 'failed'; found: number; newCount: number; inBsa: number; message?: string }
-interface SaveResult { batchId: string; saved: number; alreadyInBsa: number; psgcTagged: number; coverageStamped: number }
+interface LayerRun { layer: LayerKey; status: 'waiting' | 'loading' | 'loaded' | 'covered' | 'failed'; found: number; newCount: number; inBsa: number; message?: string; truncated?: boolean; attempts?: number }
+interface SaveResult { batchId: string; saved: number; alreadyInBsa: number; psgcTagged: number; coverageStamped: number; gapsResolved?: number }
 interface VerticalRead { vertical: string; concept: { key: string; label: string } | null; summary: TerritorySummary }
 /** One captured area (a ring around a pin, a rectangle, a file, or hand-placed pins). */
 interface AreaRun {
@@ -73,7 +74,9 @@ interface Readiness {
   byVertical: VerticalRead[];
   coverage: Array<{ vertical: string; cells: number; fresh: number }>;
   places: Array<{ id: string; name: string; category: string; lat: number; lon: number; distM: number; tier: PlaceTier }>;
+  previousCaptures?: Array<{ id: string; label: string; createdAt: string; layers: string[]; savedCount: number }>;
 }
+interface GapEntry { id: string; layer: string; label: string; areaSpec: CaptureArea; context: SiteContext | null; reason: string; attempts: number }
 interface SavedBatch {
   batch: BatchSummary & { notes: string | null; areaSpec: (CaptureArea & { context?: SiteContext | null }) | null; layers: string[] };
   items: Array<{ key: string; osmRef: string | null; name: string; kind: string | null; category: BsaPoiCategory; lat: number; lon: number; truthLayer: 'verified' | 'assumed' | 'projected'; committedPoiId: string | null; notes: string | null }>;
@@ -104,6 +107,10 @@ function initialDecision(c: Candidate): Decision {
 
 const LAYER_LABEL: Record<string, string> = Object.fromEntries(ALL_LAYERS.map((l) => [l.key, l.label]));
 let areaSeq = 0;
+/** Automatic attempts per layer and the waits between them (Overpass is often only briefly busy). */
+const AUTO_ATTEMPTS = 3;
+const RETRY_WAIT_S = [4, 10];
+const RETRYABLE = /^(network|http_5\d\d|http_429|upstream|timeout|server_error)$/;
 const newAreaId = () => `a${Date.now().toString(36)}${(areaSeq++).toString(36)}`;
 
 /** Theme colour from the CSS tokens ("R G B" triplets) so the map follows dark/light. */
@@ -427,6 +434,20 @@ export function CaptureWorkbench() {
   }, [showCoverage, mapReady]);
 
   useEffect(() => { if (mapReady) { void loadBatches(); void loadCoverage(); void loadViewport(); } }, [mapReady, loadBatches, loadCoverage, loadViewport]);
+  /** Deep links from Admin → Capture Coverage: ?retry=<queue id>, ?batch=<saved capture id>, ?lat=&lon= (capture here). */
+  const deepLinked = useRef(false);
+  useEffect(() => {
+    if (!mapReady || deepLinked.current) return;
+    deepLinked.current = true;
+    const q = new URLSearchParams(window.location.search);
+    const retry = q.get('retry'), batch = q.get('batch');
+    const lat = Number(q.get('lat')), lon = Number(q.get('lon'));
+    if (retry) void runGap(retry);
+    else if (batch) { setTab('history'); void openBatch(batch); }
+    else if (Number.isFinite(lat) && Number.isFinite(lon) && lat > 4 && lat < 21 && lon > 116 && lon < 127) { placeSite(lat, lon, true); setMode('none'); }
+    if (retry || batch || q.get('lat')) window.history.replaceState(null, '', window.location.pathname);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mapReady]);
   useEffect(() => { if (selected) document.getElementById(`cap-row-${cssId(selected)}`)?.scrollIntoView({ block: 'nearest' }); }, [selected]);
 
   /* ---------------------------------------------------------------- capture */
@@ -455,52 +476,93 @@ export function CaptureWorkbench() {
     return [...cur, ...add];
   });
 
-  /** Load one layer for an area (DB places on the first call). Never writes. */
-  async function runLayer(areaId: string, a: CaptureArea, layer: LayerKey, withStored: boolean, force: boolean) {
-    patchArea(areaId, (x) => ({ ...x, layers: x.layers.map((l) => (l.layer === layer ? { ...l, status: 'loading', message: undefined } : l)) }));
-    const r = await api<{ layers: Array<Omit<LayerRun, 'layer'> & { layer: string }>; candidates: Candidate[]; stored?: StoredPlace[]; notes: string[] }>(
-      '/api/admin/capture/preview', jsonInit('POST', { area: a, layers: [layer], withStored, refresh: force }),
-    );
-    if (!r.ok) {
-      patchArea(areaId, (x) => ({ ...x, layers: x.layers.map((l) => (l.layer === layer ? { ...l, status: 'failed', message: r.error.message } : l)) }));
+  /**
+   * Load one layer for an area (DB places on the first call). Never writes. A layer OpenStreetMap does
+   * not answer is retried automatically (after 4 s, then 10 s — Overpass is usually just busy); if it
+   * still fails the server has logged it in the retry queue (Admin → Capture Coverage).
+   */
+  async function runLayer(areaId: string, a: CaptureArea, layer: LayerKey, withStored: boolean, force: boolean, meta: { label: string; context?: SiteContext }) {
+    const label = LAYER_LABEL[layer] ?? layer;
+    for (let attempt = 1; attempt <= AUTO_ATTEMPTS; attempt++) {
+      patchArea(areaId, (x) => ({ ...x, layers: x.layers.map((l) => (l.layer === layer ? { ...l, status: 'loading', message: attempt > 1 ? `Retry ${attempt - 1} of ${AUTO_ATTEMPTS - 1}…` : undefined, attempts: attempt } : l)) }));
+      const r = await api<{ layers: Array<Omit<LayerRun, 'layer'> & { layer: string }>; candidates: Candidate[]; stored?: StoredPlace[]; notes: string[] }>(
+        '/api/admin/capture/preview', jsonInit('POST', { area: a, layers: [layer], withStored: withStored && attempt === 1, refresh: force, label: meta.label.slice(0, 120), context: meta.context }),
+      );
+      const lr = r.ok ? r.data.layers[0] : undefined;
+      const retryable = !r.ok ? RETRYABLE.test(r.error.code) : lr?.status === 'failed' && !/Unknown layer/.test(lr.message ?? '');
+      if ((!r.ok || lr?.status === 'failed') && retryable && attempt < AUTO_ATTEMPTS) {
+        setBusy(`OpenStreetMap is busy — retrying ${label} in ${RETRY_WAIT_S[attempt - 1]} s…`);
+        await new Promise((res) => setTimeout(res, RETRY_WAIT_S[attempt - 1] * 1000));
+        continue;
+      }
+      if (!r.ok) {
+        patchArea(areaId, (x) => ({ ...x, layers: x.layers.map((l) => (l.layer === layer ? { ...l, status: 'failed', message: r.error.message } : l)) }));
+        return;
+      }
+      patchArea(areaId, (x) => ({
+        ...x,
+        stored: r.data.stored ?? x.stored,
+        notes: [...new Set([...x.notes, ...r.data.notes])],
+        layers: x.layers.map((l) => (l.layer === layer ? { ...l, ...lr!, layer, attempts: attempt } : l)),
+      }));
+      addItems(areaId, r.data.candidates);
       return;
     }
-    const lr = r.data.layers[0];
-    patchArea(areaId, (x) => ({
-      ...x,
-      stored: r.data.stored ?? x.stored,
-      notes: [...new Set([...x.notes, ...r.data.notes])],
-      layers: x.layers.map((l) => (l.layer === layer ? { ...l, ...lr, layer } : l)),
-    }));
-    addItems(areaId, r.data.candidates);
+  }
+
+  /** Put an area on the map and load its layers one by one (shared by "Show places", retries and deep links). */
+  async function loadArea(a: CaptureArea, lyrs: LayerKey[], label: string, context: SiteContext | undefined, force: boolean, before?: VerticalRead[]) {
+    const id = newAreaId();
+    const run: AreaRun = {
+      id, label, source: 'osm', area: a, layers: lyrs.map((l) => ({ layer: l, status: 'waiting', found: 0, newCount: 0, inBsa: 0 })),
+      context, stored: [], notes: [], before,
+    };
+    setStatus(null); setMsg(null); setConfirmSave(false);
+    setAreas((as) => [...as, run]);
+    for (let i = 0; i < lyrs.length; i++) {
+      setBusy(`Loading ${LAYER_LABEL[lyrs[i]] ?? lyrs[i]} (${i + 1} of ${lyrs.length})…`);
+      await runLayer(id, a, lyrs[i], i === 0, force, { label, context });
+    }
+    setBusy(null);
+    return id;
   }
 
   async function showOnMap() {
     if (!area || tooBig || !layers.length) return;
-    const id = newAreaId();
     const label = [verticals.map((v) => CAPTURE_VERTICALS.find((x) => x.key === v)?.label).filter(Boolean).join(' + '), brand.trim(), readiness?.boundary?.barangay ? `Brgy ${readiness.boundary.barangay}` : null, readiness?.boundary?.city]
       .filter(Boolean).join(' · ') || 'Capture area';
-    const run: AreaRun = {
-      id, label, source: 'osm', area, layers: layers.map((l) => ({ layer: l, status: 'waiting', found: 0, newCount: 0, inBsa: 0 })),
-      context: { site: site ?? undefined, verticals, brand: brand.trim() || undefined, format },
-      stored: [], notes: [], before: readiness?.byVertical,
-    };
-    setStatus(null); setMsg(null); setConfirmSave(false);
-    setAreas((as) => [...as, run]);
-    setBusy('Loading places…');
-    for (let i = 0; i < layers.length; i++) {
-      setBusy(`Loading ${LAYER_LABEL[layers[i]] ?? layers[i]} (${i + 1} of ${layers.length})…`);
-      await runLayer(id, area, layers[i], i === 0, refresh);
-    }
-    setBusy(null);
+    await loadArea(area, layers, label, { site: site ?? undefined, verticals, brand: brand.trim() || undefined, format }, refresh, readiness?.byVertical);
     setMsg({ tone: 'ok', text: 'Places are on the map. Places BSA already has are shown faded and will not be saved again. Review the new ones, then press Save.' });
+    setTimeout(() => document.getElementById('cap-results')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+  }
+
+  /** Re-run one retry-queue entry: same area, same setup, only the layer that was missed. */
+  async function runGap(id: string) {
+    const r = await api<GapEntry>(`/api/admin/capture/gaps/${encodeURIComponent(id)}`);
+    if (!r.ok) { setMsg({ tone: 'err', text: r.error.message }); return; }
+    const g = r.data;
+    const ctx = g.context ?? undefined;
+    if (ctx?.verticals?.length) setVerticals(ctx.verticals.filter((v) => CAPTURE_VERTICALS.some((x) => x.key === v)));
+    if (ctx?.format) setFormat(ctx.format);
+    if (ctx?.brand) setBrand(ctx.brand);
+    const centre = g.areaSpec.kind === 'circle' ? { lat: g.areaSpec.lat, lon: g.areaSpec.lon } : { lat: (g.areaSpec.south + g.areaSpec.north) / 2, lon: (g.areaSpec.west + g.areaSpec.east) / 2 };
+    const pinAt = ctx?.site ?? centre;
+    placeSite(pinAt.lat, pinAt.lon, true);
+    setMode('none');
+    if (g.areaSpec.kind === 'circle') setRadiusM(g.areaSpec.radiusM); else setRect(g.areaSpec);
+    if (g.reason === 'limit') {
+      setMsg({ tone: 'err', text: `“${g.label}” hit the place limit for ${LAYER_LABEL[g.layer] ?? g.layer}. Capture it again in smaller rings (≤ 1 km) — the entry closes when the saved rings cover the whole area.` });
+      return;
+    }
+    await loadArea(g.areaSpec, [g.layer as LayerKey], `${g.label} (retry)`, ctx, true);
+    setMsg({ tone: 'ok', text: `Retried ${LAYER_LABEL[g.layer] ?? g.layer} for “${g.label}”. Review, then Save — the queue entry closes when it is saved.` });
     setTimeout(() => document.getElementById('cap-results')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
   }
 
   async function retryLayer(a: AreaRun, layer: LayerKey) {
     if (!a.area) return;
     setBusy(`Retrying ${LAYER_LABEL[layer] ?? layer}…`);
-    await runLayer(a.id, a.area, layer, a.stored.length === 0, true);
+    await runLayer(a.id, a.area, layer, a.stored.length === 0, true, { label: a.label, context: a.context });
     setBusy(null);
   }
 
@@ -564,7 +626,7 @@ export function CaptureWorkbench() {
       const its = items.filter((x) => x.areaId === a.id && x.decision === 'accept');
       const r = await api<SaveResult>('/api/admin/capture/save', jsonInit('POST', {
         source: a.source, label: a.label, area: a.area, layers: a.layers.map((l) => l.layer),
-        fetchedLayers: a.layers.filter((l) => l.status === 'loaded').map((l) => l.layer), context: a.context,
+        fetchedLayers: a.layers.filter((l) => l.status === 'loaded' && !l.truncated).map((l) => l.layer), context: a.context,
         items: its.map((x) => ({ osmRef: x.osmRef, receipt: x.receipt ?? null, name: x.name, kind: x.kind, category: x.category, lat: x.lat, lon: x.lon, origin: x.origin, notes: x.notes ?? null })),
       }));
       let after: VerticalRead[] | undefined;
@@ -691,6 +753,17 @@ export function CaptureWorkbench() {
                       : readiness?.boundary
                         ? <p className="text-ink-muted">Brgy {readiness.boundary.barangay ?? '—'}, {readiness.boundary.city ?? '—'}{readiness.boundary.province ? `, ${readiness.boundary.province}` : ''} <span className="opacity-70">· PSGC {readiness.boundary.psgcCode}</span></p>
                         : readiness && <p className="text-caution">▲ No barangay boundary loaded here. Places still save with exact coordinates; load the region&apos;s boundaries to tag barangays.</p>}
+                    {!!readiness?.previousCaptures?.length && (
+                      <div className="mt-2 border-t border-ink-border pt-2">
+                        <p className="text-ink-text">↺ Captured here before ({readiness.previousCaptures.length}{readiness.previousCaptures.length >= 5 ? '+' : ''})</p>
+                        <ul className="mt-1 space-y-0.5 text-ink-muted">
+                          {readiness.previousCaptures.slice(0, 3).map((c) => (
+                            <li key={c.id}>{manilaShortStampYear(new Date(c.createdAt))} · {c.label} · {c.layers.length} layer{c.layers.length === 1 ? '' : 's'}</li>
+                          ))}
+                        </ul>
+                        <p className="mt-1 text-ink-muted">Layers captured in the last 90 days are skipped automatically — only missing layers are fetched.</p>
+                      </div>
+                    )}
                   </div>
                 )}
               </Step>
@@ -776,7 +849,10 @@ export function CaptureWorkbench() {
           {tab === 'history' && (
             <section className="card p-5">
               <div className="flex items-center justify-between">
-                <h2 className="font-body text-title">Saved captures</h2>
+                <div>
+                  <h2 className="font-body text-title">Saved captures</h2>
+                  <a href="/admin/coverage" className="link text-label">Full log, coverage map &amp; retry queue →</a>
+                </div>
                 <label className="flex items-center gap-2 text-label text-ink-muted">
                   <input type="checkbox" checked={showCoverage} onChange={(e) => setShowCoverage(e.target.checked)} /> Show saved areas
                 </label>
@@ -881,9 +957,10 @@ export function CaptureWorkbench() {
                       <td className="pr-2">
                         <ul className="flex flex-wrap gap-1">
                           {a.layers.map((l) => (
-                            <li key={l.layer} title={l.message} className={`rounded-full border px-2 py-0.5 text-[12px] ${l.status === 'failed' ? 'border-nogo text-nogo' : l.status === 'loaded' ? 'border-go text-go' : l.status === 'covered' ? 'border-ink-border text-ink-muted' : 'border-ink-border text-ink-muted'}`}>
-                              {l.status === 'loading' ? '… ' : l.status === 'waiting' ? '· ' : l.status === 'failed' ? '✕ ' : '✓ '}{LAYER_LABEL[l.layer] ?? l.layer}
-                              {l.status === 'loaded' && ` ${l.newCount} new`}{l.status === 'covered' && ' (saved)'}
+                            <li key={l.layer} title={l.message} className={`rounded-full border px-2 py-0.5 text-[12px] ${l.status === 'failed' ? 'border-nogo text-nogo' : l.truncated ? 'border-caution text-caution' : l.status === 'loaded' ? 'border-go text-go' : l.status === 'covered' ? 'border-ink-border text-ink-muted' : 'border-ink-border text-ink-muted'}`}>
+                              {l.status === 'loading' ? '… ' : l.status === 'waiting' ? '· ' : l.status === 'failed' ? '✕ ' : l.truncated ? '▲ ' : '✓ '}{LAYER_LABEL[l.layer] ?? l.layer}
+                              {l.status === 'loaded' && ` ${l.newCount} new`}{l.truncated && ' · incomplete'}{l.status === 'covered' && ' (saved)'}
+                              {l.status === 'loading' && l.message && ` · ${l.message}`}
                               {l.status === 'failed' && !a.saved && <button type="button" className="link ml-1" onClick={() => retryLayer(a, l.layer)} disabled={!!busy}>retry</button>}
                             </li>
                           ))}
@@ -1010,6 +1087,17 @@ function SaveStatus({ status, onNew, onHistory }: { status: { at: string; areas:
         <div><dt className="stat-label">Tagged with barangay</dt><dd className="text-h3">{tot.tagged.toLocaleString('en-US')}</dd></div>
         <div><dt className="stat-label">Map cells marked captured</dt><dd className="text-h3">{tot.cells.toLocaleString('en-US')}</dd></div>
       </dl>
+      {(() => {
+        const missed = ok.flatMap((a) => a.layers.filter((l) => l.status === 'failed' || l.truncated).map((l) => `${LAYER_LABEL[l.layer] ?? l.layer} (${a.label})`));
+        const closed = ok.reduce((n, a) => n + (a.saved?.gapsResolved ?? 0), 0);
+        if (!missed.length && !closed) return null;
+        return (
+          <div className="border-t border-ink-border px-5 py-3 text-label font-normal">
+            {missed.length > 0 && <p className="text-caution">▲ Not captured, logged in the retry queue: {missed.join(' · ')}. <a className="link" href="/admin/coverage#retry">Open Capture Coverage → Retry queue</a></p>}
+            {closed > 0 && <p className="text-go">✓ This save closed {closed} retry-queue entr{closed === 1 ? 'y' : 'ies'}.</p>}
+          </div>
+        );
+      })()}
       <table className="w-full border-t border-ink-border text-label">
         <caption className="sr-only">Save result per area</caption>
         <thead className="text-ink-muted"><tr><th className="px-5 py-2 text-left font-normal">Area</th><th className="text-right font-normal">Saved</th><th className="text-right font-normal">Already in BSA</th><th className="px-5 text-left font-normal">Territory Guard — direct competitors in catchment</th></tr></thead>
