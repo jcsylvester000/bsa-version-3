@@ -145,6 +145,7 @@ export function LocationPicker({ title, initial, onPick, onClose }: Props) {
           <button type="button" onClick={doSearch} disabled={searching} className="btn-secondary">{searching ? 'Searching…' : 'Search'}</button>
         </div>
         {searchMsg && <p role="status" className="mb-2 text-label font-normal text-caution">{searchMsg}</p>}
+        <p className="mb-2 text-[12px] font-normal text-ink-muted">Searches and pinned sites are logged (visible to Grid admins only) so BSA can collect place data where it has none — kept 12 months.</p>
         <div className="relative h-[360px] w-full overflow-hidden rounded-xl border border-ink-border">
           <div ref={ref} className="absolute inset-0 h-full w-full" />
           {picked && <MapLegend items={[{ kind: 'site', text: 'Your pin — drag to fine-tune' }]} />}

@@ -380,6 +380,15 @@ enum CaptureStatus {
   discarded
 }
 
+enum FillJobStatus {
+  queued
+  running
+  done
+  partial
+  failed
+  cancelled
+}
+
 enum CaptureGapStatus {
   open
   resolved
@@ -454,6 +463,72 @@ model PoiCaptureGap {
 
   @@index([status, createdAt])
   @@map("poi_capture_gap")
+}
+
+/// What users look for (address searches, intake sites) and what BSA held there at that moment.
+/// Admin-only view (Capture Coverage → User demand). Personal data under RA 10173: minimal fields,
+/// no IP / device, purge after 12 months (`npm run db:purge-demand`).
+model LocationDemand {
+  id             String   @id @default(uuid()) @db.Uuid
+  /// 'search' | 'intake_site'
+  kind           String
+  userId         String?  @map("user_id") @db.Uuid
+  franchisorId   String?  @map("franchisor_id") @db.Uuid
+  query          String?
+  label          String?
+  lat            Float    @db.DoublePrecision
+  lon            Float    @db.DoublePrecision
+  cellKey        String   @map("cell_key")
+  barangay       String?
+  city           String?
+  province       String?
+  region         String?
+  vertical       String?
+  runId          String?  @map("run_id") @db.Uuid
+  siteId         String?  @map("site_id") @db.Uuid
+  placesNearby   Int      @default(0) @map("places_nearby")
+  /// 'covered' | 'partial' | 'gap' — BSA's place data around the point at that moment.
+  coverageStatus String   @map("coverage_status")
+  fillJobId      String?  @map("fill_job_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user           AppUser? @relation("DemandUser", fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([cellKey])
+  @@map("location_demand")
+}
+
+/// Automated POI back-fill: one job per ~1 km area users need but BSA had no places for. Worked by
+/// the scheduled runner (lib/services/autofill.ts) — same capture pipeline, same Truth Layer rules.
+model PoiFillJob {
+  id            String        @id @default(uuid()) @db.Uuid
+  areaKey       String        @map("area_key")
+  label         String
+  lat           Float         @db.DoublePrecision
+  lon           Float         @db.DoublePrecision
+  radiusM       Int           @map("radius_m")
+  layers        String[]      @default([])
+  layersDone    String[]      @default([]) @map("layers_done")
+  layersFailed  String[]      @default([]) @map("layers_failed")
+  status        FillJobStatus @default(queued)
+  /// 'intake' | 'search' | 'admin'
+  reason        String
+  demandCount   Int           @default(1) @map("demand_count")
+  runIds        String[]      @default([]) @map("run_ids") @db.Uuid
+  attempts      Int           @default(0)
+  nextAttemptAt DateTime      @default(now()) @map("next_attempt_at") @db.Timestamptz(6)
+  placesSaved   Int           @default(0) @map("places_saved")
+  lastError     String?       @map("last_error")
+  createdById   String?       @map("created_by") @db.Uuid
+  createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  startedAt     DateTime?     @map("started_at") @db.Timestamptz(6)
+  finishedAt    DateTime?     @map("finished_at") @db.Timestamptz(6)
+
+  createdBy     AppUser?      @relation("FillJobCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([status, nextAttemptAt])
+  @@map("poi_fill_job")
 }
 
 /// One staged place inside a capture batch, already mapped to `poi` columns.
@@ -640,6 +715,13 @@ model PipelineRun {
   name               String?       @map("name")
   /// Denormalised owner for fast "My Runs" scoping (mirrors intake.createdByUserId).
   createdByUserId    String?       @map("created_by_user_id") @db.Uuid
+  /// Set when a site of this run sits where BSA had little/no place data at intake; an automated
+  /// back-fill (poi_fill_job) is gathering it and the run is refreshed when it lands.
+  dataPendingAt      DateTime?     @map("data_pending_at") @db.Timestamptz(6)
+  /// null | 'waiting' (jobs open) | 'due' (data in, refresh next) | 'running' | 'done'.
+  dataRefreshState   String?       @map("data_refresh_state")
+  /// When the run was last recomputed automatically with newly gathered place data.
+  dataRefreshedAt    DateTime?     @map("data_refreshed_at") @db.Timestamptz(6)
 
   intake             IntakeSubmission @relation(fields: [intakeSubmissionId], references: [id], onDelete: Cascade)
   franchisor         Franchisor       @relation(fields: [franchisorId], references: [id], onDelete: Cascade)
@@ -785,6 +867,8 @@ model AppUser {
   auditLogs    AuditLog[]
   captureBatches PoiCaptureBatch[] @relation("CaptureCreatedBy")
   captureGaps    PoiCaptureGap[]   @relation("CaptureGapCreatedBy")
+  demand         LocationDemand[]  @relation("DemandUser")
+  fillJobs       PoiFillJob[]      @relation("FillJobCreatedBy")
 
   @@map("app_user")
 }

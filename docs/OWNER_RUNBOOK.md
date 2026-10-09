@@ -54,6 +54,19 @@ like, review the Captured areas table, **Save**, and read the status screen. Gri
 *without* map tiles). Hand-placed pins are Assumed until an admin confirms them on the ground. Load the
 region's boundaries first so captured places get barangay/city tags.
 
+### Automated POI back-fill & user demand (2026-10-09)
+
+When a broker submits an intake site (or an admin queues a user's search) where BSA has little or no place data, a
+**back-fill job** collects it from OpenStreetMap and the waiting analysis recomputes itself; the dashboard shows
+"Gathering place data" until then. Admins watch it on **Capture Coverage → User demand / Automatic back-fill**.
+
+Set up once (Netlify → Site configuration → Environment variables), then redeploy:
+1. `CRON_SECRET` = a random string of 32+ characters (e.g. PowerShell: `[Convert]::ToBase64String((1..48 | % { Get-Random -Max 256 }))`).
+2. Optional: `AUTOFILL_DAILY_JOBS` (default 30), `AUTOFILL_ENABLED=0` to pause.
+The schedule (`netlify/functions/autofill-cron.mjs`, every 10 min) then runs on its own. Without `CRON_SECRET`, use
+**Run now** on Capture Coverage, or locally `npm run autofill:run -- --passes=6`. Migration `20261009000000_demand_autofill`
+is applied by the Netlify build. Privacy: run `npm run db:purge-demand` monthly (keeps 12 months).
+
 ### Capture Coverage & the retry queue (2026-10-08)
 
 Admin → **Capture Coverage** shows every saved capture on a map (green = fresh, grey = re-capture due), the capture

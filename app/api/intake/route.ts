@@ -12,6 +12,7 @@ import { ok, fail, failValidation, errors } from '@/lib/api/respond';
 import { manilaShortStamp } from '@/lib/util/manilaTime';
 import { audit } from '@/lib/audit/audit';
 import { captureException, errorRef } from '@/lib/monitoring/report';
+import { recordDemand, markRunPending } from '@/lib/services/demand';
 
 /**
  * POST /api/intake — validate + write an intake, its outlet master, and its
@@ -200,10 +201,11 @@ export async function POST(req: NextRequest) {
     // 4) candidate sites — geom via trigger. Tag the region (LGU name first, else pinned
     // coordinate). When boundary polygons are loaded (R-02), also stamp the real barangay/city/
     // province/PSGC from a point-in-polygon lookup; otherwise keep the user's values + coarse region.
+    const createdSites: Array<{ id: string; label: string; lat: number; lon: number }> = [];
     for (const c of input.candidateSites) {
       const bnd = await resolveAdminBoundary(c.lat, c.lon);
       const region = bnd?.region ?? regionForSite({ city: c.city, label: c.label, lat: c.lat, lon: c.lon });
-      await prisma.candidateSite.create({
+      const created = await prisma.candidateSite.create({
         data: {
           pipelineRunId: run.id,
           label: c.label,
@@ -217,18 +219,30 @@ export async function POST(req: NextRequest) {
           province: bnd?.province ?? undefined,
           psgcCode: bnd?.psgcCode ?? undefined,
         },
+        select: { id: true, label: true, lat: true, lon: true },
       });
+      createdSites.push(created);
     }
+
+    // 5) Demand tracking + automated back-fill: every site is logged with the place data BSA has
+    //    there; where it has little or none, a back-fill job is queued and the run is flagged so the
+    //    report says "gathering place data" and refreshes itself when it lands. Never fails the intake.
+    const demand = await Promise.all(createdSites.map((site) => recordDemand({
+      kind: 'intake_site', userId: session.id, franchisorId, label: site.label, lat: site.lat, lon: site.lon,
+      vertical: input.vertical, runId: run.id, siteId: site.id,
+    })));
+    const pending = demand.some((d) => !!d.jobId);
+    if (pending) await markRunPending(run.id);
 
     await audit({
       actorId: session.id,
       action: 'submit_intake',
       entity: 'intake_submission',
       entityId: intake.id,
-      meta: { runId: run.id, outlets: input.outlets.length, sites: input.candidateSites.length },
+      meta: { runId: run.id, outlets: input.outlets.length, sites: input.candidateSites.length, dataPending: pending },
     });
 
-    return ok({ intakeId: intake.id, runId: run.id, completenessPct: completeness.pct }, { status: 201 });
+    return ok({ intakeId: intake.id, runId: run.id, completenessPct: completeness.pct, dataPending: pending }, { status: 201 });
   } catch (err) {
     // F-24: never echo raw DB/driver messages to the browser (they leak table/column names and
     // internals). F-51: report through the monitoring seam with a short reference the user can quote.

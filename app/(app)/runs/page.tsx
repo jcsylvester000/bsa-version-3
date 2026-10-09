@@ -9,6 +9,7 @@ import { DEMO_RUN_ID, mockTerritoryGuard, mockLeaseBenchmark } from '@/lib/mock/
 import { buildDashboard, type ModuleResultLite } from '@/lib/modules/dashboard';
 import { siteCompositeFromModules, type ModuleScore } from '@/lib/modules/scorecard';
 import { RunDashboard } from '@/components/RunDashboard';
+import { dataStateOf, isGathering } from '@/components/DataGatheringNote';
 import { humanizeVertical } from '@/lib/modules/verticalConfig';
 
 export const dynamic = 'force-dynamic';
@@ -54,6 +55,7 @@ export default async function RunsPage({ searchParams }: { searchParams: { runId
             version={run.intake?.version ?? 1}
             status={run.status}
             analysedSites={analysedSites}
+            dataState={dataStateOf(run)}
           />
         </>
       );
@@ -65,8 +67,8 @@ export default async function RunsPage({ searchParams }: { searchParams: { runId
   const dbRuns = await listRunsForUser(session!);
   const usingMock = isMockUser(session) && dbRuns.length === 0;
   const allRuns = usingMock
-    ? DEMO_RUNS.map((r) => ({ id: r.id, name: null as string | null, franchisor: { brandName: r.brandName }, vertical: r.vertical, status: r.status as string, _count: { sites: r.siteCount }, createdAt: null as Date | null, intake: null as { version: number } | null }))
-    : dbRuns.map((r) => ({ id: r.id, name: r.name as string | null, franchisor: r.franchisor ?? { brandName: 'Unknown brand' }, vertical: r.vertical, status: r.status as string, _count: r._count, createdAt: r.createdAt as Date | null, intake: r.intake ? { version: r.intake.version } : null }));
+    ? DEMO_RUNS.map((r) => ({ id: r.id, name: null as string | null, franchisor: { brandName: r.brandName }, vertical: r.vertical, status: r.status as string, _count: { sites: r.siteCount }, createdAt: null as Date | null, intake: null as { version: number } | null, dataRefreshState: null as string | null, dataPendingAt: null as Date | null, dataRefreshedAt: null as Date | null }))
+    : dbRuns.map((r) => ({ id: r.id, name: r.name as string | null, franchisor: r.franchisor ?? { brandName: 'Unknown brand' }, vertical: r.vertical, status: r.status as string, _count: r._count, createdAt: r.createdAt as Date | null, intake: r.intake ? { version: r.intake.version } : null, dataRefreshState: r.dataRefreshState ?? null, dataPendingAt: r.dataPendingAt ?? null, dataRefreshedAt: r.dataRefreshedAt ?? null }));
 
   // Per-run result counts + area (design v2 · B3). One flat read of the listed runs' sites via the
   // service (≤ 50 runs × 5 sites) — no include/transaction, safe under the Neon HTTP adapter.
@@ -144,6 +146,7 @@ export default async function RunsPage({ searchParams }: { searchParams: { runId
                 {runs.map((r) => {
                   const sm = summary.get(r.id);
                   const status = r.status === 'ready' ? null : r.status === 'failed' ? 'Failed' : 'Analysing…';
+                  const ds = dataStateOf(r);
                   return (
                     <li key={r.id}>
                       <Link
@@ -158,6 +161,8 @@ export default async function RunsPage({ searchParams }: { searchParams: { runId
                           <span className="truncate text-label font-normal text-ink-muted">
                             {[humanizeVertical(r.vertical), ...(sm?.cities.slice(0, 3) ?? [])].join(' · ')}
                           </span>
+                          {isGathering(ds) && <span className="text-label font-semibold text-caution">◌ Gathering place data — updates automatically</span>}
+                          {ds.state === 'done' && ds.refreshedAt && <span className="text-label font-semibold text-go">✓ Updated with new place data</span>}
                         </span>
                         <span className="hidden truncate text-body text-ink-text md:block">{r.franchisor.brandName}</span>
                         <span className="hidden text-body tabular-nums md:block">{r._count.sites}</span>

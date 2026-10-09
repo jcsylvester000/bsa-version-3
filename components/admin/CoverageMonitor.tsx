@@ -21,6 +21,7 @@ import { listRegions } from '@/lib/geo/regions';
 import { PH_REGIONS } from '@/lib/geo/phRegions';
 import { manilaShortStampYear } from '@/lib/util/manilaTime';
 import { FRESH_DAYS, osmWindow, type OsmWindow } from '@/lib/capture/capturePolicy';
+import { DemandPanel, type DemandItem } from '@/components/admin/DemandPanel';
 
 type ApiResult<T> = { ok: true; data: T } | { ok: false; error: { code: string; message: string } };
 async function api<T>(url: string, init?: RequestInit): Promise<ApiResult<T>> {
@@ -185,6 +186,27 @@ export function CoverageMonitor() {
 
   /* ---------------------------------------------------------------- map */
 
+  // User-demand points from the DemandPanel, drawn once the map is ready.
+  const demandRef = useRef<DemandItem[]>([]);
+  const drawDemand = useCallback(() => {
+    const src = mapRef.current?.getSource('demand') as maplibregl.GeoJSONSource | undefined;
+    if (!src) return;
+    src.setData({
+      type: 'FeatureCollection',
+      features: demandRef.current.map((d) => ({
+        type: 'Feature' as const,
+        properties: { status: d.coverageStatus, what: d.kind === 'search' ? `Search “${d.query ?? ''}”` : `Intake site ${d.label ?? ''}`, statusText: d.coverageStatus === 'gap' ? 'no place data then' : d.coverageStatus === 'partial' ? 'partial data then' : 'covered' },
+        geometry: { type: 'Point' as const, coordinates: [d.lon, d.lat] },
+      })),
+    });
+  }, []);
+  const showDemand = useCallback((items: DemandItem[]) => { demandRef.current = items; drawDemand(); }, [drawDemand]);
+  const focusPoint = useCallback((lat: number, lon: number) => {
+    mapRef.current?.flyTo({ center: [lon, lat], zoom: 14, duration: 600 });
+    document.getElementById('cov-map')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, []);
+  useEffect(() => { if (mapReady) drawDemand(); }, [mapReady, drawDemand]);
+
   useEffect(() => {
     if (!mapEl.current || mapRef.current) return;
     let cancelled = false;
@@ -205,7 +227,7 @@ export function CoverageMonitor() {
       map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
       map.on('load', () => {
         const go = token('--go', '#5CCB98'), nogo = token('--nogo', '#F28C86'), muted = token('--text-muted', '#9AA7BD'), text = token('--text', '#EDF2FB');
-        for (const id of ['cells', 'areas', 'gaps', 'selected', 'pts']) map.addSource(id, { type: 'geojson', data: EMPTY_FC });
+        for (const id of ['cells', 'areas', 'gaps', 'selected', 'pts', 'demand']) map.addSource(id, { type: 'geojson', data: EMPTY_FC });
         map.addLayer({ id: 'cells-fill', type: 'fill', source: 'cells', paint: { 'fill-color': ['case', ['==', ['get', 'fresh'], 1], go, muted], 'fill-opacity': 0.22 } });
         map.addLayer({ id: 'cells-line', type: 'line', source: 'cells', paint: { 'line-color': ['case', ['==', ['get', 'fresh'], 1], go, muted], 'line-width': 0.5, 'line-opacity': 0.6 } });
         map.addLayer({ id: 'areas-fill', type: 'fill', source: 'areas', paint: { 'fill-color': ['case', ['==', ['get', 'fresh'], 1], go, muted], 'fill-opacity': 0.18 } });
@@ -218,6 +240,15 @@ export function CoverageMonitor() {
         map.addLayer({ id: 'gaps-fill', type: 'fill', source: 'gaps', paint: { 'fill-color': nogo, 'fill-opacity': 0.12 } });
         map.addLayer({ id: 'gaps-line', type: 'line', source: 'gaps', paint: { 'line-color': nogo, 'line-width': 2, 'line-dasharray': [2, 1.5] } });
         map.addLayer({ id: 'selected-line', type: 'line', source: 'selected', paint: { 'line-color': text, 'line-width': 3 } });
+        // User demand: where users searched / placed intake sites (ringed by the data BSA had there).
+        map.addLayer({ id: 'demand-dot', type: 'circle', source: 'demand', paint: {
+          'circle-radius': ['interpolate', ['linear'], ['zoom'], 6, 3, 13, 6], 'circle-color': token('--projected', '#B39AE8'),
+          'circle-stroke-width': 2, 'circle-stroke-color': ['match', ['get', 'status'], 'gap', nogo, 'partial', token('--caution', '#E8B64C'), go],
+        } });
+        map.on('click', 'demand-dot', (e) => {
+          const p = e.features?.[0]?.properties;
+          if (p) new maplibregl.Popup({ offset: 8 }).setLngLat(e.lngLat).setText(`${p.what} — ${p.statusText}`).addTo(map);
+        });
         setMapReady(true);
       });
       map.on('click', 'areas-fill', (e) => { if (!pickRef.current) { const id = e.features?.[0]?.properties?.id; if (id) setSelected(`a:${id}`); } });
@@ -386,17 +417,20 @@ export function CoverageMonitor() {
           </button>
           <button type="button" className="btn-secondary" onClick={() => void load()} disabled={loading}>{loading ? 'Loading…' : 'Refresh'}</button>
         </div>
-        <div className="relative h-[56vh] min-h-[400px]">
+        <div id="cov-map" className="relative h-[56vh] min-h-[400px] scroll-mt-4">
           <div ref={mapEl} className="absolute inset-0 h-full w-full" aria-label="Capture coverage map" role="application" />
           <div className="absolute bottom-3 left-3 z-10 max-w-[280px] rounded-card border border-ink-border bg-ink-panel/95 p-3 text-[12px] text-ink-muted">
             <p className="font-semibold text-ink-text">Legend</p>
             <p><span className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-go/60 align-middle" />Captured in the last 90 days — skipped by Place Capture</p>
             <p><span className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-ink-muted/60 align-middle" />Captured &gt; 90 days ago — re-capture due</p>
             <p><span className="mr-1 inline-block h-2.5 w-2.5 rounded-sm border border-dashed border-nogo align-middle" />Retry queue — not captured completely</p>
+            <p><span className="mr-1 inline-block h-2.5 w-2.5 rounded-full border-2 border-nogo bg-projected align-middle" />User request (ring: red = no data, amber = partial, green = covered)</p>
             <p className="mt-1">No colour = never captured. {cellNote && <span className="block text-ink-text">{cellNote}</span>}</p>
           </div>
         </div>
       </section>
+
+      <DemandPanel onPoints={showDemand} onFocus={focusPoint} />
 
       <section id="retry" className="card scroll-mt-4 overflow-hidden">
         <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
@@ -455,7 +489,7 @@ export function CoverageMonitor() {
                 const missed = a.layers.filter((l) => !a.fetchedLayers.includes(l));
                 return (
                   <tr key={a.id} id={`cov-a-${a.id}`} className={`border-t border-ink-border align-top ${selected === `a:${a.id}` ? 'bg-ink-hover' : ''}`}>
-                    <td className="whitespace-nowrap px-5 py-2">{stamp(a.createdAt)}<span className="block text-ink-muted">{a.createdBy ?? '—'}</span></td>
+                    <td className="whitespace-nowrap px-5 py-2">{stamp(a.createdAt)}<span className="block text-ink-muted">{a.createdBy ?? (a.label.startsWith('Auto-fill') ? 'Automatic back-fill' : '—')}</span></td>
                     <td className="py-2 pr-3"><button type="button" className="text-left" onClick={() => setSelected(`a:${a.id}`)}><span className="text-ink-text">{a.label}</span><span className="block text-ink-muted">{place(a)} · {regionName(a.region)} · {a.km2} km²</span></button></td>
                     <td className="py-2 pr-3">
                       <ul className="flex flex-wrap gap-1">

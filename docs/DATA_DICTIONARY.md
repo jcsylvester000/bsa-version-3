@@ -65,6 +65,23 @@ review. `id` (uuid), `label`, `source` (osm / navigator_import / manual), `area`
 `fetched_layers` (2026-10-08: the layers this capture loaded **completely** and stamped as covered — a failed or
 truncated layer is in `layers` but not here). Since v2 every batch is written `committed` at Save.
 
+### location_demand  _(user demand, 2026-10-09)_
+What users look for: `kind` (search / intake_site), `user_id`, `franchisor_id`, `query` (search text ≤ 200), `label`,
+`lat/lon`, `cell_key` (~1.1 km), barangay/city/province/region at that point, `vertical`, `run_id`/`site_id` (intake),
+`places_nearby` (poi within 1.5 km at that moment), `coverage_status` (covered / partial / gap), `fill_job_id`.
+**Personal data (RA 10173):** admin-only view, no IP/device, purge after 12 months (`npm run db:purge-demand`).
+
+### poi_fill_job  _(automated back-fill queue, 2026-10-09)_
+One job per ~1 km area (`area_key` = `f:<lat 2dp>:<lon 2dp>`, one OPEN job per key — partial unique index): `label`,
+`lat/lon`, `radius_m` (1,500; 1,000 in dense centres), `layers` / `layers_done` / `layers_failed`, `status`
+(queued / running / done / partial / failed / cancelled), `reason` (intake / search / admin), `demand_count`, `run_ids`
+(analyses waiting), `attempts` (≤ 3, back-off 20 → 40 min), `next_attempt_at`, `places_saved`, `last_error`. Places it
+saves are ordinary capture batches ("Auto-fill · …"), Verified via OSM receipts; misses go to `poi_capture_gap`.
+
+### pipeline_run — back-fill columns (2026-10-09)
+`data_pending_at` (a site had little/no place data at intake), `data_refresh_state` (null | waiting | due | running |
+done | unavailable), `data_refreshed_at` (recomputed automatically with the new data).
+
 ### poi_capture_gap  _(retry queue, 2026-10-08)_
 One area + layer OpenStreetMap did not return completely. `area_key` (rounded area spec) + `layer` — one **open**
 row per pair (partial unique index); repeats bump `attempts`/`last_attempt_at`. `label`, `area_spec`, `context`

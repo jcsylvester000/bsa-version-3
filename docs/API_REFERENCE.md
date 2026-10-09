@@ -54,6 +54,9 @@ Workflow (v3, 2026-10-07): **preview/import are read-only → the admin reviews 
 | `POST /gaps/:id` | `{ action: 'dismiss' \| 'reopen' }` (JSON only) | close an entry by hand / re-open a dismissed one. Audited (`poi.capture.gap.*`). |
 | `POST /plan` | `{ area, layers[] }` (JSON only) | the pre-flight: `{ layers[] (covered, cells, freshCells, lastCapturedAt), toFetch[], openGaps[], ring {ok, message, dense, reason, maxM, defaultM}, storedPlaces, boundary, previousCaptures[] }`. Read-only. |
 | `POST /boundaries` | `{ area }` (JSON only) | loads the PSA barangay boundaries for the cities/municipalities the area touches (≤ 4; `lib/geo/psgcIndex.json` → faeldon/philippines-json-maps medres) and tags untagged places there: `{ cities[] (loaded/already/failed), barangaysLoaded, placesTagged }`. 60 / admin / hour, audited (`admin_boundary.load`). `422 outside_ph`, `502 boundary_source_unavailable`. |
+| `GET /demand[?days=30]` | — | user demand: `{ days, totals {searches, sites, gaps, partial, users}, items[] (kind, user email, query/label, where, places then, coverage status, back-fill job + status) }`. Admin only (personal data). |
+| `GET /autofill` | — | back-fill queue: `{ enabled, dailyCap, scheduled, usage {today, queued, waiting_runs, saved_30d}, jobs[] }`. |
+| `POST /autofill` | `{ action: 'run' }` \| `{ action: 'queue', demandId }` \| `{ action: 'cancel' \| 'retry', jobId }` (JSON only) | run one pass now (rate-limited 30/h; same guard rails as the schedule) / queue a back-fill for a request / cancel / retry. Audited. |
 | `GET /osm-status` | — | `{ reachable, slotsNow, waitSeconds, window {offPeak, hour, label, advice} }` — Overpass slots for this server (cached 20 s) + the PHT off-peak window. |
 | `GET /cells?bbox=s,w,n,e&layer=KEY` | bbox ≤ 2° a side; KEY = vertical (`fnb_qsr`) or `layer:<base>` | Territory Guard coverage cells (~1.1 km) with `fetchedAt` — the freshness map. |
 
@@ -265,3 +268,12 @@ answers `200 { enabled:false, tileUrlTemplate:null }` and the client uses the OS
 - The long pipeline run is designed to kick off server-side and expose status via the run
   record rather than blocking the request. Territory Guard is fast enough to run inline
   today; heavier modules should follow the queued pattern (`pipeline_run.status`).
+
+
+### Machine endpoint
+| Method & path | Auth | Purpose |
+|---|---|---|
+| `POST /api/internal/autofill` | `Authorization: Bearer $CRON_SECRET` (≥ 32 chars, constant-time; **no session**; `503` when unset, `401` when wrong) | one time-boxed pass of the back-fill queue + refresh of waiting runs. Called every 10 min by `netlify/functions/autofill-cron.mjs`. |
+
+Demand is recorded by `POST /api/geocode` (searches) and `POST /api/intake` (each candidate site; the response adds
+`dataPending: true` when a back-fill was queued for the run).

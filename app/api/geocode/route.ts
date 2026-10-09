@@ -4,6 +4,7 @@ import { getSession } from '@/lib/auth/session';
 import { consumeGoogleQuota } from '@/lib/auth/apiQuota';
 import { ok, fail, failValidation, errors } from '@/lib/api/respond';
 import { geocodeAddress, hasGoogleKey } from '@/lib/geo/geocode';
+import { recordDemand } from '@/lib/services/demand';
 
 // F-25: cap the address length so the paid Geocoding proxy can't be fed oversized input.
 const schema = z.object({ address: z.string().min(2).max(200) });
@@ -26,6 +27,10 @@ export async function POST(req: NextRequest) {
 
   const result = await geocodeAddress(parsed.data.address);
   if (!result) return fail({ code: 'not_found', message: 'No match found for that address in the Philippines.' }, 404);
+
+  // Demand tracking (admin → Capture Coverage → User demand): what was searched, where, and whether
+  // BSA has place data there. Searches never queue a back-fill by themselves (an admin can).
+  await recordDemand({ kind: 'search', userId: session.id, franchisorId: session.franchisorId, query: parsed.data.address, label: result.formattedAddress ?? null, lat: result.lat, lon: result.lon });
 
   return ok(result);
 }

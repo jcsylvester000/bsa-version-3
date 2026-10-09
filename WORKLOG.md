@@ -5,6 +5,35 @@ The cross-thread state record. Read this (with the Master Instruction and the cu
 
 ---
 
+## 2026-10-09 (b) — User demand tracking + automated POI back-fill (+ journey & QA pass)
+
+**Owner ask:** (1) track what users search for and where they place intake sites, on the admin side, especially where
+BSA has no place data; (2) automatically and safely gather POI data for those areas on the backend and update the
+user's report once it is in.
+
+- DATA: migration `20261009000000_demand_autofill` — `location_demand`, `poi_fill_job` (+ `FillJobStatus`),
+  `pipeline_run.data_pending_at / data_refresh_state / data_refreshed_at`. Idempotent; applied twice locally.
+- `lib/services/demand.ts`: `recordDemand` (from `/api/geocode` searches and every intake site — never fails the
+  request) classifies covered / partial / gap (≥ 60 places within 1.5 km = covered; else per-layer 90-day freshness);
+  intake sites in a gap/partial area queue a job (one open job per ~1 km key, demand merges); run flagged "waiting".
+- `lib/services/autofill.ts`: time-boxed runner — guard rails (AUTOFILL_ENABLED / OSM_LIVE, daily cap, Overpass slot
+  status), claims ONE job (FOR UPDATE SKIP LOCKED), loads boundaries, fetches missing layers one at a time through the
+  Place Capture pipeline (Verified via receipts, new only, retry list), back-off 20 → 40 min, done/partial/failed;
+  then recomputes waiting runs (time-sliced `runPipeline`). Honest outcomes: no data → run `unavailable`, never "updated".
+- Scheduling: `netlify/functions/autofill-cron.mjs` (every 10 min) → `POST /api/internal/autofill` (Bearer CRON_SECRET,
+  constant-time, fails closed; only session-exempt API path). Admin: `GET /demand`, `GET|POST /autofill`
+  (run / queue / cancel / retry). Scripts: `npm run autofill:run`, `npm run db:purge-demand` (RA 10173, 12 months).
+- UI: Capture Coverage → **User demand** + **Automatic back-fill** panels, demand points on the map; dashboard + site
+  page "Gathering place data" / "Updated with new place data" / "still limited" note with 60 s auto-refresh; runs list
+  badge; wizard + location-picker notices.
+- QA/journey pass: `docs/qa-history/QA_JOURNEY_DEMAND_AUTOFILL.md` — 7 issues found and fixed (false "updated" after a
+  failed job, cancel leaving runs waiting, intake latency, 'other' vertical over-fetch, author label, route export,
+  privacy notice).
+
+Verified: tsc clean · vitest 574/574 (new demandAutofill + dataGatheringNote tests) · real PG16+PostGIS via the Neon
+HTTP emulator: search → intake ×2 (one merged job) → pass 1 (health timeout → retry) → pass 3 done → run refreshed →
+area now covered; failing area → 3 rounds → `unavailable` → retry → waiting · next build OK · headless admin panels.
+
 ## 2026-10-09 — Barangay boundaries load automatically in Place Capture
 
 **Owner report:** capturing in Baguio was blocked — "No barangay boundaries here — load them first, or tick

@@ -178,6 +178,8 @@ export interface PreviewInput {
   label?: string;
   /** Site pin / business types, so a retry from the queue restores the same setup. */
   context?: SiteContext;
+  /** Server-internal (automated back-fill): Overpass time budget for this call. Never from the API body. */
+  budgetMs?: number;
 }
 
 /** poi_coverage key for a capture layer: verticals use Territory Guard's own key; others are namespaced. */
@@ -271,7 +273,7 @@ export async function previewArea(user: SessionUser, input: PreviewInput) {
     if (!selectors.length) { results.push({ layer, status: 'failed', found: 0, newCount: 0, inBsa: 0, message: 'Unknown layer' }); continue; }
     let elements;
     try {
-      elements = await captureElementsInBbox(selectors, bboxOfArea(input.area), { max: MAX_ELEMENTS, budgetMs: PREVIEW_BUDGET_MS / Math.max(1, input.layers.length) });
+      elements = await captureElementsInBbox(selectors, bboxOfArea(input.area), { max: MAX_ELEMENTS, budgetMs: (input.budgetMs ?? PREVIEW_BUDGET_MS) / Math.max(1, input.layers.length) });
     } catch (e) {
       const timeout = /timeout|timed out|abort|did not answer|429|504|502/i.test(e instanceof Error ? e.message : String(e));
       const message = timeout ? 'OpenStreetMap did not answer in time' : 'OpenStreetMap returned an error';
@@ -891,6 +893,24 @@ export async function capturesAtPoint(lat: number, lon: number, limit = 5) {
 
 /* ------------------------------------------------------------------ capture plan (pre-flight) */
 
+/** Per layer: how many of the area's coverage cells were captured in the last 90 days. Read-only. */
+export async function layerFreshness(area: CaptureArea, layerKeys: string[]): Promise<CapturePlanLayer[]> {
+  const cells = cellsInside(area);
+  const keys = cells.map((c) => c.key);
+  const since = new Date(Date.now() - COVERAGE_FRESH_MS);
+  const out: CapturePlanLayer[] = [];
+  for (const layer of layerKeys) {
+    const rows = await prisma.poiCoverage.findMany({
+      where: { vertical: coverageKeyForLayer(layer), cellKey: { in: keys } },
+      select: { fetchedAt: true },
+    });
+    const fresh = rows.filter((r) => r.fetchedAt >= since).length;
+    const last = rows.reduce<Date | null>((m, r) => (!m || r.fetchedAt > m ? r.fetchedAt : m), null);
+    out.push({ layer, covered: fresh >= cells.length, cells: cells.length, freshCells: fresh, lastCapturedAt: last });
+  }
+  return out;
+}
+
 export interface CapturePlanLayer { layer: string; covered: boolean; cells: number; freshCells: number; lastCapturedAt: Date | null }
 
 /**
@@ -901,19 +921,7 @@ export interface CapturePlanLayer { layer: string; covered: boolean; cells: numb
 export async function planCapture(input: { area: CaptureArea; layers: LayerKey[] }) {
   const [s, w, n, e] = bboxOfArea(input.area);
   const lat = (s + n) / 2, lon = (w + e) / 2;
-  const cells = cellsInside(input.area);
-  const keys = cells.map((c) => c.key);
-  const since = new Date(Date.now() - COVERAGE_FRESH_MS);
-  const layers: CapturePlanLayer[] = [];
-  for (const layer of input.layers) {
-    const rows = await prisma.poiCoverage.findMany({
-      where: { vertical: coverageKeyForLayer(layer), cellKey: { in: keys } },
-      select: { fetchedAt: true },
-    });
-    const fresh = rows.filter((r) => r.fetchedAt >= since).length;
-    const last = rows.reduce<Date | null>((m, r) => (!m || r.fetchedAt > m ? r.fetchedAt : m), null);
-    layers.push({ layer, covered: fresh >= cells.length, cells: cells.length, freshCells: fresh, lastCapturedAt: last });
-  }
+  const layers = await layerFreshness(input.area, input.layers);
   const gj = JSON.stringify(areaGeoJson(input.area));
   let openGaps: Array<{ id: string; layer: string; reason: string; label: string; attempts: number }> = [];
   try {

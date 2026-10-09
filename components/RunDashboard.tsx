@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { Panel, ScoreBar, TruthMixBar } from '@/components/ui/Panel';
 import { VerdictPill, TruthChip } from '@/components/ui/Chips';
+import { DataGatheringNote, type DataState } from '@/components/DataGatheringNote';
 import { StatTile } from '@/components/ui/StatTile';
 import { RunPipelineButton } from '@/components/RunPipelineButton';
 import { VersionHistory } from '@/components/VersionHistory';
@@ -29,6 +30,7 @@ export function RunDashboard({
   version = 1,
   status = 'ready',
   analysedSites = null,
+  dataState = null,
 }: {
   runId: string;
   runName?: string | null;
@@ -44,6 +46,8 @@ export function RunDashboard({
   status?: string;
   /** Sites with analyzed_at set (progress for the in-progress card). */
   analysedSites?: number | null;
+  /** Automated place-data back-fill state for this run (gathering / updated). */
+  dataState?: DataState | null;
 }) {
   const inProgress = !mock && status !== 'ready' && status !== 'failed';
   const conf = data.confidence ?? 'med';
@@ -95,6 +99,7 @@ export function RunDashboard({
           <RunPipelineButton runId={runId} resume className="btn-primary btn-lg" />
         </section>
       )}
+      {!mock && <DataGatheringNote data={dataState} />}
       {!mock && status === 'failed' && (
         <div role="alert" className="error-state flex-row items-center justify-between gap-4 p-4">
           <p className="text-body"><span className="font-bold text-nogo">✕</span> The last analysis did not finish. Your inputs are safe.</p>

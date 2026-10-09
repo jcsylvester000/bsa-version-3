@@ -6,6 +6,7 @@ import { SiteIntelligenceTabs, type SiteModulePayloads } from '@/components/Site
 // this Server Component — they arrive as client-reference proxies and throw on use (the #329 crash).
 import { isSiteTabKey, type SiteTabKey } from '@/lib/ui/siteTabs';
 import { RunPipelineButton } from '@/components/RunPipelineButton';
+import { DataGatheringNote, dataStateOf } from '@/components/DataGatheringNote';
 import { siteReportMeta, payloadsFromRows } from '@/lib/modules/siteReportModel';
 
 export const dynamic = 'force-dynamic';
@@ -58,6 +59,7 @@ export default async function SiteReportPage({ searchParams }: { searchParams: {
           <a href={pdfHref} target="_blank" rel="noopener noreferrer" className="btn-primary btn-lg">Export site PDF</a>
         </div>
       </div>
+      <DataGatheringNote data={dataStateOf(run)} />
       <SiteIntelligenceTabs
         site={{ id: site.id, label: site.label, lat: site.lat, lon: site.lon, siteType: site.siteType }}
         outlets={outlets.map((o) => ({ id: o.id, name: o.outletName, lat: o.lat, lon: o.lon, format: o.format }))}

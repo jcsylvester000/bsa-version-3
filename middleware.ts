@@ -20,7 +20,8 @@ const SESSION_COOKIE = 'bsa_session';
 
 /** Paths that never require a session (the login page and the endpoints used to get one). */
 const PUBLIC_PATHS = new Set<string>(['/login']);
-const PUBLIC_API_PREFIXES = ['/api/auth/login', '/api/auth/register', '/api/client-error'];
+// /api/internal/autofill: machine-to-machine (scheduled function); the route itself requires the CRON_SECRET bearer.
+const PUBLIC_API_PREFIXES = ['/api/auth/login', '/api/auth/register', '/api/client-error', '/api/internal/autofill'];
 
 function isPublic(pathname: string): boolean {
   if (PUBLIC_PATHS.has(pathname)) return true;

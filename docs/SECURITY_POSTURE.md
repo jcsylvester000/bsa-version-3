@@ -50,6 +50,16 @@ listed explicitly.
 - **Repo hygiene** — `bsa_dev.dump` (contained password hashes) removed from git history; `*.dump`
   ignored.
 
+## Demand tracking & automated back-fill (2026-10-09)
+
+- `/api/internal/autofill` is the only API path exempt from the session check (middleware allow-list). It requires
+  `Authorization: Bearer $CRON_SECRET` (constant-time compare, ≥ 32 chars) and fails closed (`503` unset, `401` wrong).
+- The runner calls only fixed OpenStreetMap selector tables (no user text reaches Overpass QL), one job at a time,
+  respects Overpass slot status, a daily cap (`AUTOFILL_DAILY_JOBS`) and a kill switch (`AUTOFILL_ENABLED=0` / `OSM_LIVE=0`).
+- Writes go through the same capture save path (new places only, Verified by HMAC receipt, PSGC tags, audit `poi.autofill.*`).
+- `location_demand` holds personal data (who searched what, where) — admin-only API, no IP/device data, users are told
+  in the location picker, retention 12 months via `npm run db:purge-demand` (RA 10173). Schedule the purge monthly.
+
 ## Open items for the dev team (flagged, not hidden)
 
 1. **Rotate the Google API key** that shipped in the intake `keys.docx` — treat as compromised; issue a

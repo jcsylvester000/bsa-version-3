@@ -813,6 +813,12 @@ export function SteppedIntakeWizard({ franchisors, mockMode = false, mockRunId, 
         />
       )}
 
+      {step === 3 && (
+        <p className="text-label font-normal text-ink-muted">
+          New area for BSA? If there are few mapped places around a site, BSA collects them automatically after you submit and updates your
+          analysis when they arrive — you&apos;ll see “Gathering place data” on the dashboard until then.
+        </p>
+      )}
       {/* nav */}
       <div className="flex items-center gap-3">
         <button type="button" onClick={() => setStep((s) => Math.max(0, s - 1))} disabled={step === 0} className="btn-secondary btn-lg flex-1">‹ Back</button>

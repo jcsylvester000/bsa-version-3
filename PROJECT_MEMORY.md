@@ -5,31 +5,31 @@ always-current snapshot. `WORKLOG.md` is the full history (newest first). This f
 rewritten at the end of every work batch — if it disagrees with older notes (e.g.
 `2 - Data Intake/Migration Guide/PROJECT_MEMORY_EXPORT.md`, 2026-08-10), **this file wins**.
 
-_Last updated: 2026-10-09 — barangay boundaries load automatically in Place Capture (awaiting push); playbook enforced pushed `33ef548`; Design v2 batches 0–13 pushed (HEAD `498db86`, hotfix `db36c53`)._
+_Last updated: 2026-10-09 (b) — user demand tracking + automated POI back-fill (awaiting push); boundaries-on-demand pushed `af5bee8`._
 
-## ⏸ Resume here (updated 2026-10-09)
+## ⏸ Resume here (updated 2026-10-09 b)
 
-**State:** git HEAD `33ef548` (capture playbook enforced). Working tree holds the tested, uncommitted
-**boundaries-on-demand** batch (`lib/geo/psgcIndex.json`, `lib/geo/boundaryOnDemand.ts`, `POST /api/admin/capture/boundaries`,
-workbench auto-load; tsc clean · vitest 564/564 · next build OK). No migration.
+**State:** git HEAD `af5bee8` (boundaries load automatically). Working tree holds the tested, uncommitted
+**demand + automated back-fill** batch (migration `20261009000000_demand_autofill`; tsc clean · vitest 574/574 · build OK).
 
-**Owner to-do before/at next session**
-1. Push the boundaries batch: `git add -A` → `git commit -m "Place Capture: barangay boundaries load automatically for any capture area"` → `git push` (no migration).
-2. Confirm Netlify applied migration `20261008000000_capture_gaps` (Capture Coverage loads without a `db_migration_pending` reason).
-3. If not done yet: `npm run db:recompute-composites` once (Territory Guard deal-breaker for runs saved before 2026-10-07).
-4. Security: the seeded admin `admin@grid.test` uses the public demo password `bsa-demo-1234` — change it
-   (Settings → Change password) or create a real admin and retire the demo one (runbook F-31).
-5. Boundaries now load by themselves where you capture (any region, HUCs included); bulk province loads via `db:fetch-boundaries` remain optional.
+**Owner to-do**
+1. Push: `git add -A` → `git commit -m "User demand tracking + automated POI back-fill; journey & QA pass"` → `git push`
+   (Netlify applies the migration on build).
+2. Netlify env: `CRON_SECRET` = 32+ random chars (turns on the 10-minute schedule); optional `AUTOFILL_DAILY_JOBS`
+   (default 30), `AUTOFILL_ENABLED=0` to pause. Redeploy after setting it.
+3. Smoke test: intake a site in an uncaptured town → dashboard shows "Gathering place data" → Capture Coverage →
+   Automatic back-fill → Run now → dashboard shows "Updated with new place data".
+4. Monthly: `npm run db:purge-demand` (RA 10173 retention, 12 months).
+5. Still open from before: change the demo admin password (`admin@grid.test` / `bsa-demo-1234`, F-31).
 
-**Suggested next work (not started)**
-- Owner smoke test of the enforced playbook on the live site (dense pin, no-boundary pin, failed layer → retry list → retry → save closes it).
-- Optional hardening for the dev team: self-hosted/paid Overpass instance; overnight job that works the retry queue.
-- Read-only capture coverage view for analysts; Laguna/Pampanga lease corridors when comps exist.
+**Suggested next work (not started):** "provisional" marker on PDF verdicts while data is gathering; e-mail notice when
+an analysis updates; read-only coverage/demand view for analysts.
 
 **Dev notes for the next thread**
-- Neon HTTP adapter refuses transactions: no `createMany`, nested writes or `$transaction` on request paths — plain statements only.
-- Local real-DB checks used a Neon `/sql` emulator over PG16+PostGIS (real `@neondatabase/serverless` + `PrismaNeonHTTP`); not shipped — rebuild if needed.
-- Capture rules live in `lib/capture/capturePolicy.ts` (shared by screen and API); playbook text in `docs/PLACE_CAPTURE_PLAYBOOK.md` (also saved to the claude.ai project).
+- Neon HTTP adapter refuses transactions: no `createMany`, nested writes or `$transaction` on request paths.
+- Local real-DB checks: PG16+PostGIS + a Neon `/sql` emulator (real `@neondatabase/serverless` + `PrismaNeonHTTP`); not shipped.
+- Capture rules: `lib/capture/capturePolicy.ts`; boundaries on demand: `lib/geo/boundaryOnDemand.ts` + `psgcIndex.json`;
+  demand/back-fill: `lib/services/demand.ts`, `lib/services/autofill.ts`.
 
 **Latest batch (2026-10-08 b, ⏳ awaiting push):** the capture playbook is enforced, not advisory —
 `lib/capture/capturePolicy.ts` (ring ≤ 1,000 m dense / 1,500 m, ≤ 3 types, off-peak 05–12 PHT, 90-day freshness),
