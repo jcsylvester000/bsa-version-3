@@ -5,6 +5,49 @@ The cross-thread state record. Read this (with the Master Instruction and the cu
 
 ---
 
+## 2026-10-10 — Data check + enhancements (follow-on to the 2026-10-09 audit)
+
+**Owner:** lease scoring stays (lower rent scores higher — brokers want the lowest, then decide budget); do a data
+check; enhance. Report: `docs/qa-history/QA_AUDIT_2026-10-09.md` → Part 2 (D1–D9).
+
+- Data check: reference JSON files + live DB through admin read APIs (47 runs / 104 sites; Neon not reachable from
+  the sandbox or the linked machine's shell).
+- D1 FIXED: zonal bands > 6× wide are reference-only (no cross-check / zonal-derived rent — BGC showed ₱10,845/sqm);
+  latest BIR schedule only; barangay from the pin's boundary. D3 FIXED: `candidate_site.asking_rent_php_sqm`
+  (migration `20261010000000_candidate_asking_rent`), intake field, Lease-tab save, re-runs keep rent + corridor.
+  D2 FIXED in code: back-fill fills missing transport/health/education in rich areas. D5: NCR + Davao PSGC mappings.
+  D6: zonal file deduped (2,317 → 2,171); validator warns on repeated keys.
+- Enhancements: rent-vs-location line (Lease summary + PDF), provisional marker (F1), explainer copy.
+- Checks: tsc clean · vitest 595/595 · build OK · local real-DB zonal/lease test.
+- **Owner after push:** `npm run db:seed-cannibalization`; `npm run db:ingest -- malls`; `npm run db:ingest:osm:transport`;
+  `npm run db:fetch-boundaries -- --region=ncr` then `npm run db:tag-boundaries`; set `CRON_SECRET`; confirm Taguig
+  ₱2,160,000 against RDO 44; fix two demographic centroids (D7).
+
+---
+
+## 2026-10-09 (c) — Application audit: code + live Chrome pass, tagged findings, fixes
+
+**Owner ask:** audit the app, test it live in Chrome, tag what isn't working, fix it, re-test + journey QA.
+Report: `docs/qa-history/QA_AUDIT_2026-10-09.md` (IDs below).
+
+- FIXED High: H1 `persistPois` no longer wipes location tags or re-stamps Assumed/manual places as Verified;
+  H2 Territory Guard re-run uses pipeline inputs and recomputes the composite.
+- FIXED Medium: M1 `/api/explore` outlets scoped to the author's intakes; M2 neutral rent-to-land wording (no
+  "rich/cheap", zonal = tax-reference floor; AI prompt forbids price-verdict words); M4 Overpass: 2nd instance →
+  overpass.private.coffee, fallback network errors no longer mask the primary 429/timeout, 429 waits ≥30 s;
+  M5 back-fill recomputes waiting runs as soon as some places land ("Partly updated…"); M6 offline address search
+  (`lib/geo/localGeocode.ts`: "lat, lon" exact, city/province centre flagged approximate — never used as coordinates).
+- FIXED Low: L1 demo sessions revoked when mock auth is off; L2 `crossSiteBlock` on bodyless POSTs; L3 raw-SQL intake
+  rollback; L4 Aquabest/Crystal Clear → water set (+ filter); L5 site page overflow at 1366 px; L6 stale "Retry…" chip;
+  L7 neutral chips for pre-tracking captures; L8 "≈ City" PSGC fallback label; L9 intro spacing.
+- FLAGGED: M3 lease pillar = 100 − rent percentile (broker decision); O1 set `CRON_SECRET` on Netlify; O2 Taguig zonal
+  band range; O3 old Quicklean run outlets. Follow-up F1: "provisional" marker in the PDF while data is gathering.
+- Checks: tsc clean · vitest 588/588 (new `auditFixes.test.ts`) · next build OK · local real-DB e2e pass.
+- **Owner after push:** `npm run db:seed-cannibalization` against Neon (competitor-set fix L4). Then live re-test:
+  Place Capture transport/anchors, Coverage labels, intake address search, Baguio QA run refresh.
+
+---
+
 ## 2026-10-09 (b) — User demand tracking + automated POI back-fill (+ journey & QA pass)
 
 **Owner ask:** (1) track what users search for and where they place intake sites, on the admin side, especially where

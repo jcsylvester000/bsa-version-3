@@ -33,7 +33,9 @@ export function leasePositionLabel(v: string | null | undefined): string {
 /** One-line explainer for the rent-percentile read (tooltip / report). */
 export const LEASE_POSITION_EXPLAINER =
   'The percentile shows where the asking rent sits among comparable leases in the same corridor. ' +
-  'It is a negotiating reference, not a price verdict — the broker and client judge the deal.';
+  'In the composite, lower rent against the corridor scores higher (brokers look for the lowest rent first); ' +
+  'a higher-rent site can still be the stronger option when its location reads better. ' +
+  'It is a negotiating reference, not a price verdict — the broker and client judge the deal and the budget.';
 
 /** BIR zonal framing, shown wherever a zonal figure appears. */
 export const ZONAL_FLOOR_NOTE =

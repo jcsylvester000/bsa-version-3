@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db/prisma';
 import { getSession } from '@/lib/auth/session';
 import { isUuid } from '@/lib/util/uuid';
-import { ok, errors } from '@/lib/api/respond';
+import { ok, errors, crossSiteBlock } from '@/lib/api/respond';
 
 /**
  * POST /api/auth/onboarding — mark the signed-in user as having finished the first-run
@@ -13,7 +13,9 @@ import { ok, errors } from '@/lib/api/respond';
  * demo user has no matching row, so the update simply no-ops — but a real registered
  * account gets its flag persisted even while mock logins are also enabled.
  */
-export async function POST(_req: NextRequest) {
+export async function POST(req: NextRequest) {
+  const blocked = crossSiteBlock(req);
+  if (blocked) return blocked;
   const session = await getSession();
   if (!session) return errors.unauthorized();
 

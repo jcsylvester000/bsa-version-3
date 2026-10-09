@@ -22,6 +22,7 @@ import type { SessionUser } from '@/lib/auth/auth';
 import { isUuid } from '@/lib/util/uuid';
 import { audit } from '@/lib/audit/audit';
 import { regionForPoint } from '@/lib/geo/regions';
+import { approxPlaceOf } from '@/lib/geo/boundaryOnDemand';
 import { resolveAdminBoundary } from '@/lib/geo/adminBoundary';
 import { captureElementsInBbox, OSM_SELECTORS } from '@/lib/places/osmService';
 import { claimLegacyOsmSql } from '@/lib/ingest/poiKeySql';
@@ -275,8 +276,10 @@ export async function previewArea(user: SessionUser, input: PreviewInput) {
     try {
       elements = await captureElementsInBbox(selectors, bboxOfArea(input.area), { max: MAX_ELEMENTS, budgetMs: (input.budgetMs ?? PREVIEW_BUDGET_MS) / Math.max(1, input.layers.length) });
     } catch (e) {
-      const timeout = /timeout|timed out|abort|did not answer|429|504|502/i.test(e instanceof Error ? e.message : String(e));
-      const message = timeout ? 'OpenStreetMap did not answer in time' : 'OpenStreetMap returned an error';
+      const msg = e instanceof Error ? e.message : String(e);
+      const timeout = /timeout|timed out|abort|did not answer|429|503|504|502|fetch failed|ECONNRESET|ENOTFOUND/i.test(msg);
+      const message = /429/.test(msg) ? 'OpenStreetMap is rate-limiting this server — wait a minute'
+        : timeout ? 'OpenStreetMap did not answer in time' : 'OpenStreetMap returned an error';
       results.push({ layer, status: 'failed', found: 0, newCount: 0, inBsa: 0, message: `${message} — logged in the retry queue` });
       await recordGap(user, input, layer, timeout ? 'timeout' : 'error', message);
       continue;
@@ -805,13 +808,22 @@ export async function captureLog(opts: { days?: number; limit?: number } = {}) {
     areas: areas.map((a): CaptureLogArea => ({
       id: a.id, label: a.label, source: a.source, layers: a.layers, fetchedLayers: a.fetched_layers, itemCount: a.item_count, savedCount: a.committed_count,
       createdAt: a.created_at, createdBy: a.email, lat: a.lat, lon: a.lon, km2: Number(a.km2.toFixed(2)),
-      barangay: a.barangay, city: a.city, province: a.province, region: a.region ?? regionForPoint(a.lat, a.lon),
+      ...withPlaceFallback(a),
       geometry: a.geojson ? JSON.parse(a.geojson) : null,
     })),
     gaps,
     regions,
     boundaries,
     coverageKeys: layersSeen,
+  };
+}
+
+/** Boundary-tagged place, or — before the boundaries are loaded — the approximate PSGC city ("≈ Cebu City"). */
+function withPlaceFallback(x: { lat: number; lon: number; barangay: string | null; city: string | null; province: string | null; region: string | null }) {
+  const approx = !x.city && !x.barangay ? approxPlaceOf(x.lat, x.lon) : null;
+  return {
+    barangay: x.barangay, city: x.city ?? (approx ? `≈ ${approx.city}` : null), province: x.province,
+    region: x.region ?? regionForPoint(x.lat, x.lon) ?? approx?.region ?? null,
   };
 }
 
@@ -837,7 +849,7 @@ export async function listGaps(opts: { status?: 'open' | 'resolved' | 'dismissed
     id: r.id, layer: r.layer, label: r.label, reason: r.reason, message: r.message, attempts: r.attempts, status: r.status,
     createdAt: r.created_at, lastAttemptAt: r.last_attempt_at, resolvedAt: r.resolved_at, createdBy: r.email, lat: r.lat, lon: r.lon,
     areaSpec: JSON.parse(r.area_spec) as CaptureArea, context: r.context ? (JSON.parse(r.context) as SiteContext) : null,
-    barangay: r.barangay, city: r.city, province: r.province, region: r.region ?? regionForPoint(r.lat, r.lon),
+    ...withPlaceFallback(r),
     geometry: r.geojson ? JSON.parse(r.geojson) : null,
   }));
 }

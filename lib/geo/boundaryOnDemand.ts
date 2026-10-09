@@ -61,6 +61,15 @@ export function regionKeyFor(city: CityRef): string {
   return regionForPoint(lat, lon) ?? `ph-${(PH_REGION_BY_PSGC[city.regionPsgc] ?? city.regionPsgc).toLowerCase()}`;
 }
 
+/**
+ * Best-effort place label for a point when no boundary polygons are loaded yet: the PSGC city whose
+ * bounding box contains it (nearest centre). Approximate near city borders — labelled as such by callers.
+ */
+export function approxPlaceOf(lat: number, lon: number): { city: string; region: string } | null {
+  const c = citiesTouching([lat, lon, lat, lon], 1)[0];
+  return c ? { city: c.name, region: regionKeyFor(c) } : null;
+}
+
 async function getJson(url: string): Promise<{ features?: Array<{ properties?: Record<string, unknown>; geometry?: unknown }> } | null> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);

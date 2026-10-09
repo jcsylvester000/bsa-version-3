@@ -187,10 +187,12 @@ export async function lookupCompetitorSet(
     const key = conceptFor(vertical, brandOrConcept).key;
 
     // Load all rows for the resolved concept once, then rank in code.
-    const rows = await prisma.competitorSet.findMany({
+    const rows = (await prisma.competitorSet.findMany({
       where: { conceptKey: key },
-      select: { anchorBrand: true, competitors: true, truthLayer: true, category: true, conceptKey: true },
-    });
+      select: { anchorBrand: true, competitors: true, truthLayer: true, category: true, conceptKey: true, subSegment: true },
+    // A water-refilling row seeded under the laundry key (shared "Laundry - Home Services" category)
+    // must never name water stations as a laundromat's rivals — the sub-segment decides.
+    })).filter((r) => key === 'water' || !/water refilling|refilling station/i.test(r.subSegment ?? ''));
     if (rows.length === 0) return null;
 
     // 2) Peer match — an anchor whose competitor list names this brand.

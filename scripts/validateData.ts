@@ -126,6 +126,14 @@ try {
       err('zonal', id, 'range', `low (${r.low_php_sqm}) > high (${r.high_php_sqm})`);
     }
   }
+  // Data check 2026-10-09: the loader upserts on (region, city, barangay, rdo, class) — a repeated key
+  // silently overwrites the earlier row, so flag it.
+  const seenKey = new Map<string, number>();
+  rows.forEach((r: any, i: number) => {
+    const k = [r.region, r.city_municipality, r.barangay ?? '', r.rdo ?? '', r.classification_code].join('|');
+    if (seenKey.has(k)) warn('zonal', `#${i}`, 'natural_key', `duplicates row #${seenKey.get(k)} (${k}) — the later row overwrites it on load`);
+    else seenKey.set(k, i);
+  });
   console.log(`zonal: ${rows.length} rows checked`);
 } catch (e) { console.log('zonal: skipped', (e as Error).message); }
 

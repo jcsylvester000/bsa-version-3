@@ -175,6 +175,9 @@ async function workJob(job: JobRow, deadline: number): Promise<NonNullable<Autof
       UPDATE poi_fill_job SET status = 'queued', attempts = attempts + 1, layers_done = ${layersDone}::text[], layers_failed = ${failed}::text[],
         places_saved = places_saved + ${saved}, last_error = ${lastError}, next_attempt_at = ${next}
       WHERE id = ${job.id}::uuid`;
+    // Some layers landed but others wait 20–40 min for their back-off round: don't keep the broker
+    // waiting for the whole job — recompute now with what arrived; the final round recomputes again.
+    if (saved > 0) await markPartialData(job.run_ids);
   } else {
     status = finalStatus(layersDone.length, failed.length);
     await prisma.$executeRaw`
@@ -209,6 +212,14 @@ async function releaseRuns(jobId: string, runIds: string[], outcome: 'data' | 'n
   }
 }
 
+/** Runs still 'waiting' on a job that has already saved some places → recompute them now. */
+async function markPartialData(runIds: string[]): Promise<void> {
+  if (!runIds.length) return;
+  await prisma.$executeRaw`
+    UPDATE pipeline_run SET data_refresh_state = 'due'
+    WHERE id = ANY(${runIds}::uuid[]) AND data_refresh_state = 'waiting'`;
+}
+
 /** Recompute runs whose area data has arrived (time-sliced, resumable). */
 async function refreshWaitingRuns(deadline: number): Promise<AutofillSummary['refreshed']> {
   const out: AutofillSummary['refreshed'] = [];
@@ -228,8 +239,13 @@ async function refreshWaitingRuns(deadline: number): Promise<AutofillSummary['re
         complete = r.complete || r.status === 'failed';
       }
       if (complete) {
-        await prisma.$executeRaw`UPDATE pipeline_run SET data_refresh_state = 'done', data_refreshed_at = now() WHERE id = ${run.id}::uuid`;
-        out.push({ runId: run.id, state: 'done' });
+        // A partial refresh (a job still has layers in back-off) goes back to 'waiting' — the note then
+        // says "partly updated" and the final round recomputes again.
+        const st = await prisma.$queryRaw<Array<{ state: string }>>`
+          UPDATE pipeline_run r SET data_refreshed_at = now(), data_refresh_state =
+            CASE WHEN EXISTS (SELECT 1 FROM poi_fill_job j WHERE j.status IN ('queued', 'running') AND r.id = ANY(j.run_ids)) THEN 'waiting' ELSE 'done' END
+          WHERE r.id = ${run.id}::uuid RETURNING r.data_refresh_state AS state`;
+        out.push({ runId: run.id, state: st[0]?.state ?? 'done' });
       } else {
         out.push({ runId: run.id, state: 'running' });
         break;

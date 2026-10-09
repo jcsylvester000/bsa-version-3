@@ -14,9 +14,10 @@ import 'server-only';
 import { prisma } from '@/lib/db/prisma';
 import type { TruthLayer } from '@/lib/truth/truthLayer';
 import { canonicalCity, getRegion } from '@/lib/geo/regions';
+import { resolveAdminBoundary } from '@/lib/geo/adminBoundary';
 import {
   benchmarkLease, type Comp, type SiteTerms, type LeaseBenchmarkOutput,
-  bandMid, zonalRentCrossCheck, indicativeRentFromZonal, leaseFreshness, type LeaseFreshness,
+  bandMid, zonalRentCrossCheck, indicativeRentFromZonal, leaseFreshness, type LeaseFreshness, zonalBandComparable, zonalScheduleYear,
   type ZonalBand, type ZonalCrossCheck, type IndicativeRent,
 } from './leaseMath';
 
@@ -39,6 +40,10 @@ export interface LeaseBenchmarkResult extends LeaseBenchmarkOutput {
   corridor: string;
   format: string;
   mallName: string | null;
+  /** Set when the user chose the corridor/format on the Lease tab — re-runs keep that choice. */
+  corridorUserSet?: boolean;
+  /** The asking base rent benchmarked (₱/sqm/mo), or null when none was given. */
+  askingRentPhpSqm?: number | null;
   /** The comps used, so the UI can plot the distribution honestly. */
   comps: Array<{ baseRentPhpSqm: number | null; truthLayer: TruthLayer; sampleSource: string | null }>;
   /** BIR zonal-value context (Verified band + Projected cross-check + fallback anchor). */
@@ -55,7 +60,7 @@ export interface LeaseBenchmarkResult extends LeaseBenchmarkOutput {
  * Prefers Commercial Regular (CR); uses Commercial Condominium (CC) when CR is absent.
  * Returns null for an unmapped LGU. Verified from the BIR schedule. Region-aware (R-05).
  */
-async function resolveZonalBand(site: { city: string | null; barangay: string | null; label: string | null }): Promise<ZonalBand | null> {
+async function resolveZonalBand(site: { city: string | null; barangay: string | null; label: string | null; lat?: number | null; lon?: number | null }): Promise<ZonalBand | null> {
   // Region-aware (R-05): resolve the LGU + its region, then query that region's zonal rows.
   // NCR behaviour is unchanged (canon.region 'ncr' → psaRegion 'NCR', same city strings).
   const canon = canonicalCity(site.city, site.label);
@@ -63,12 +68,17 @@ async function resolveZonalBand(site: { city: string | null; barangay: string | 
   const city = canon.city;
   const zregion = getRegion(canon.region)?.psaRegion ?? 'NCR';
 
-  type Row = { classificationCode: string; lowPhpSqm: unknown; highPhpSqm: unknown; truthLayer: TruthLayer; barangay: string };
+  type Row = { classificationCode: string; lowPhpSqm: unknown; highPhpSqm: unknown; truthLayer: TruthLayer; barangay: string; notes: string | null };
   const num = (v: unknown): number | null => (v == null ? null : Number(v));
   const pickBand = (rows: Row[], grain: 'barangay' | 'city'): ZonalBand | null => {
     for (const code of ['CR', 'CC'] as const) {
-      const r = rows.filter((x) => x.classificationCode === code && (x.lowPhpSqm != null || x.highPhpSqm != null));
-      if (!r.length) continue;
+      const all = rows.filter((x) => x.classificationCode === code && (x.lowPhpSqm != null || x.highPhpSqm != null));
+      if (!all.length) continue;
+      // Data check 2026-10-09: cities carry rows from several schedules (2021 … 2025). Use the latest
+      // schedule only, so an old schedule's min/max doesn't widen the band.
+      const years = all.map((x) => zonalScheduleYear(x.notes)).filter((y): y is number => y != null);
+      const latest = years.length ? Math.max(...years) : null;
+      const r = latest != null ? all.filter((x) => zonalScheduleYear(x.notes) === latest) : all;
       const lows = r.map((x) => num(x.lowPhpSqm)).filter((n): n is number => n != null);
       const highs = r.map((x) => num(x.highPhpSqm)).filter((n): n is number => n != null);
       const low = lows.length ? Math.min(...lows) : null;
@@ -79,6 +89,7 @@ async function resolveZonalBand(site: { city: string | null; barangay: string | 
         lowPhpSqm: low,
         highPhpSqm: high,
         midPhpSqm: bandMid(low, high),
+        ...zonalBandComparable(low, high),
         grain,
         cityMunicipality: city,
         barangay: grain === 'barangay' ? r[0].barangay : null,
@@ -88,10 +99,16 @@ async function resolveZonalBand(site: { city: string | null; barangay: string | 
     return null;
   };
 
-  const select = { classificationCode: true, lowPhpSqm: true, highPhpSqm: true, truthLayer: true, barangay: true } as const;
+  const select = { classificationCode: true, lowPhpSqm: true, highPhpSqm: true, truthLayer: true, barangay: true, notes: true } as const;
 
   // 1) Barangay grain (most precise) when the site carries a barangay.
-  const brgy = site.barangay?.trim();
+  // Data check 2026-10-09: no live site carried a barangay, so every band was the (very wide)
+  // city-wide range. Fall back to the boundary polygon under the pin when one is loaded.
+  let brgy = site.barangay?.trim();
+  if (!brgy && site.lat != null && site.lon != null) {
+    const b = await resolveAdminBoundary(site.lat, site.lon).catch(() => null);
+    if (b?.barangay && (!b.city || canonicalCity(b.city, null)?.city === city)) brgy = b.barangay;
+  }
   if (brgy) {
     const brows = await prisma.zonalValue.findMany({
       where: { region: zregion, cityMunicipality: city, barangay: { equals: brgy, mode: 'insensitive' }, classificationCode: { in: ['CR', 'CC'] } },
@@ -178,7 +195,7 @@ export async function runLeaseBenchmark(input: LeaseBenchmarkInput): Promise<Lea
   // overrides the comp verdict — BIR zonal is a tax-reference floor, not a price verdict.
   const site = await prisma.candidateSite.findUnique({
     where: { id: input.candidateSiteId },
-    select: { city: true, barangay: true, label: true },
+    select: { city: true, barangay: true, label: true, lat: true, lon: true },
   });
   let zonal: LeaseZonalContext | null = null;
   let zonalBandTruth: TruthLayer = 'projected';
@@ -188,9 +205,16 @@ export async function runLeaseBenchmark(input: LeaseBenchmarkInput): Promise<Lea
       // Rent-to-land calibration is per region (F-08): NCR has one; other regions withhold the
       // cross-check/indicative until calibrated, rather than judging provincial rent by NCR's band.
       const rentBand = getRegion(canonicalCity(site.city, site.label)?.region)?.zonalRentBand ?? null;
+      // A band spanning many streets (city-wide, or a barangay like Fort Bonifacio at ₱130,000–₱2,160,000)
+      // has no meaningful midpoint: show it for reference, but don't compare rent to it or derive rent from it.
+      const usable = band.comparable !== false;
+      const tooBroad: ZonalCrossCheck = {
+        rentPer1000: null, position: 'unknown',
+        note: `The ${band.grain === 'city' ? 'city-wide' : 'barangay'} commercial zonal range here spans many streets (about ${band.spread}× from low to high), so rent is not compared to it. A street-level zonal value would sharpen this.`,
+      };
       const crossCheck: ZonalCrossCheck | null =
-        input.siteTerms.baseRentPhpSqm != null ? zonalRentCrossCheck(input.siteTerms.baseRentPhpSqm, band.midPhpSqm, rentBand) : null;
-      const indicativeRent: IndicativeRent = indicativeRentFromZonal(band.midPhpSqm, rentBand);
+        input.siteTerms.baseRentPhpSqm == null ? null : usable ? zonalRentCrossCheck(input.siteTerms.baseRentPhpSqm, band.midPhpSqm, rentBand) : tooBroad;
+      const indicativeRent: IndicativeRent = usable ? indicativeRentFromZonal(band.midPhpSqm, rentBand) : { lowPhpSqm: null, highPhpSqm: null, midPhpSqm: null };
       const usedAsFallback = output.verdict === 'insufficient_data' && indicativeRent.midPhpSqm != null;
       zonal = { band, crossCheck, indicativeRent, usedAsFallback };
       zonalBandTruth = band.truthLayer; // the BAND is Verified; cross-check/indicative are Projected
@@ -215,6 +239,7 @@ export async function runLeaseBenchmark(input: LeaseBenchmarkInput): Promise<Lea
     corridor: input.corridor,
     format: input.format,
     mallName: input.mallName ?? null,
+    askingRentPhpSqm: input.siteTerms.baseRentPhpSqm ?? null,
     comps: compRows.map((c) => ({
       baseRentPhpSqm: c.baseRentPhpSqm != null ? Number(c.baseRentPhpSqm) : null,
       truthLayer: c.truthLayer,

@@ -39,7 +39,9 @@ A location evaluated in a run. *Truth Layer: geom Verified, scores Projected.*
 Key columns: `id`, `pipeline_run_id` (fk), `label`, `address`, `barangay`, `city`,
 `lat`, `lon`, `geom`, `site_type`, `composite_score`, `verdict` (go/caution/nogo),
 `analyzed_at` (set when the pipeline finished the site — resume key), `pipeline_error`
-(modules that failed on the last pass; NULL = clean). Indexes: `fk`, `GiST(geom)`.
+(modules that failed on the last pass; NULL = clean), `asking_rent_php_sqm` (monthly asking base
+rent the broker was quoted — intake or Lease tab; every re-run benchmarks it; NULL = not given, 2026-10-10).
+Indexes: `fk`, `GiST(geom)`.
 
 ## Group 2 — Reference data (all carry a Truth Layer column)
 

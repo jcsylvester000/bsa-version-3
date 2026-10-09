@@ -106,7 +106,14 @@ export function LocationPicker({ title, initial, onPick, onClose }: Props) {
     setSearching(false);
     if (!r?.ok || !r.data?.lat) {
       // Address geocoding is off (no live Google calls) — guide the user to pin manually.
-      setSearchMsg('Address search is off in database-only mode. Click the map to drop the pin, then drag to fine-tune.');
+      setSearchMsg(r?.error?.code === 'not_found' ? 'No match in the Philippines. Try a city name or "lat, lon", or click the map to drop the pin.'
+        : 'Street-address search is off in database-only mode. Type a city or "lat, lon", or click the map to drop the pin, then drag to fine-tune.');
+      return;
+    }
+    if (r.data.approximate) {
+      // Only a city/province centre — move the map there, but the user places the pin on the actual site.
+      setSearchMsg(`Showing ${r.data.formattedAddress}. Click the map on the exact site to drop the pin.`);
+      mapRef.current?.flyTo({ center: [r.data.lon, r.data.lat], zoom: 13 });
       return;
     }
     if (r?.ok && r.data?.lat) {

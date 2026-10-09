@@ -487,6 +487,8 @@ export function CoverageMonitor() {
               {areas.slice(0, shown).map((a) => {
                 const age = ageDays(a.createdAt);
                 const missed = a.layers.filter((l) => !a.fetchedLayers.includes(l));
+                // Captures saved before per-layer tracking have no fetchedLayers — don't paint them all red.
+                const legacy = !a.fetchedLayers.length && a.savedCount > 0;
                 return (
                   <tr key={a.id} id={`cov-a-${a.id}`} className={`border-t border-ink-border align-top ${selected === `a:${a.id}` ? 'bg-ink-hover' : ''}`}>
                     <td className="whitespace-nowrap px-5 py-2">{stamp(a.createdAt)}<span className="block text-ink-muted">{a.createdBy ?? (a.label.startsWith('Auto-fill') ? 'Automatic back-fill' : '—')}</span></td>
@@ -494,7 +496,8 @@ export function CoverageMonitor() {
                     <td className="py-2 pr-3">
                       <ul className="flex flex-wrap gap-1">
                         {a.fetchedLayers.map((l) => <li key={l} className="rounded-full border border-go px-2 py-0.5 text-[12px] text-go">✓ {layerName(l)}</li>)}
-                        {missed.map((l) => <li key={l} className="rounded-full border border-nogo px-2 py-0.5 text-[12px] text-nogo" title="Asked for but not loaded completely">✕ {layerName(l)}</li>)}
+                        {legacy && a.layers.map((l) => <li key={l} className="rounded-full border border-ink-border px-2 py-0.5 text-[12px] text-ink-muted" title="Saved before BSA tracked which layers loaded completely">{layerName(l)}</li>)}
+                        {!legacy && missed.map((l) => <li key={l} className="rounded-full border border-nogo px-2 py-0.5 text-[12px] text-nogo" title="Asked for but not loaded completely">✕ {layerName(l)}</li>)}
                         {!a.layers.length && <li className="text-ink-muted">{a.source === 'navigator_import' ? 'Field session file' : 'Hand-placed pins'}</li>}
                       </ul>
                     </td>
@@ -502,7 +505,7 @@ export function CoverageMonitor() {
                     <td className={`px-3 py-2 ${age <= FRESH_DAYS ? 'text-go' : 'text-caution'}`}>{age <= FRESH_DAYS ? `Fresh · ${FRESH_DAYS - age} d left` : `Re-capture due (${age} d)`}</td>
                     <td className="whitespace-nowrap px-5 py-2 text-right">
                       <a className="link" href={`/admin/capture?batch=${a.id}`}>Open</a>
-                      <a className="link ml-3" href={`/admin/capture?lat=${a.lat.toFixed(6)}&lon=${a.lon.toFixed(6)}`}>{age > FRESH_DAYS || missed.length ? 'Re-capture' : 'Capture here'}</a>
+                      <a className="link ml-3" href={`/admin/capture?lat=${a.lat.toFixed(6)}&lon=${a.lon.toFixed(6)}`}>{age > FRESH_DAYS || (!legacy && missed.length) ? 'Re-capture' : 'Capture here'}</a>
                     </td>
                   </tr>
                 );

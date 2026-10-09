@@ -96,7 +96,7 @@ async function runPipelineSlice(runId: string, opts: { refresh?: boolean }): Pro
   if (!run) throw new Error(`Run ${runId} not found`);
   const sites = await prisma.candidateSite.findMany({
     where: { pipelineRunId: runId },
-    select: { id: true, label: true, siteType: true, city: true, lat: true, lon: true, analyzedAt: true },
+    select: { id: true, label: true, siteType: true, city: true, lat: true, lon: true, analyzedAt: true, askingRentPhpSqm: true },
   });
   const franchisor = run.franchisorId
     ? await prisma.franchisor.findUnique({ where: { id: run.franchisorId }, select: { brandName: true, subCategory: true } })
@@ -204,9 +204,9 @@ async function runPipelineSlice(runId: string, opts: { refresh?: boolean }): Pro
       });
     }
     // Lease is a core module: every intake yields a Lease Benchmark. Corridor inferred from
-    // the site city/label, else a central NCR corridor with comps. With no asking rent at
-    // pipeline time the result is a corridor read (unscored → it doesn't move the composite
-    // until the user enters an asking rent on the Lease tab).
+    // the site city/label, else a central NCR corridor with comps. The asking rent (intake or Lease
+    // tab, stored on the site) is benchmarked when present; without it the result is a corridor read
+    // (unscored → it doesn't move the composite).
     if (modules.includes('lease')) {
       await attempt('lease', async () => {
         const inferred = inferCorridor(site.city, site.label);
@@ -214,13 +214,28 @@ async function runPipelineSlice(runId: string, opts: { refresh?: boolean }): Pro
         // default corridor so a province is never scored against Metro Manila rent comps. Only an
         // NCR/unknown site falls back to the NCR proxy corridor. A province with no comps loaded
         // then returns insufficient_data honestly rather than borrowing NCR numbers.
-        let corridor = inferred;
+        // A corridor / format the user picked on the Lease tab survives re-runs (incl. the automatic
+        // refresh after a place-data back-fill); so does the asking rent, kept on the site row.
+        const prev = await prisma.moduleResult.findUnique({
+          where: { site_module_key: { candidateSiteId: site.id, module: 'lease' } }, select: { payload: true },
+        });
+        const prevP = (prev?.payload ?? null) as { corridor?: string; format?: string; mallName?: string | null; corridorUserSet?: boolean } | null;
+        const userCorridor = prevP?.corridorUserSet && prevP.corridor ? prevP.corridor : null;
+        let corridor = userCorridor ?? inferred;
         if (!corridor) {
           const region = regionForSite({ city: site.city, label: site.label, lat: site.lat, lon: site.lon });
           corridor = (region && region !== 'ncr' ? corridorsForRegion(region)[0] : null) ?? DEFAULT_LEASE_CORRIDOR;
         }
-        const lease = await runLeaseBenchmark({ candidateSiteId: site.id, format: site.siteType ?? 'inline', corridor, siteTerms: {} });
-        if (!inferred) {
+        const rent = site.askingRentPhpSqm != null ? Number(site.askingRentPhpSqm) : null;
+        const lease = await runLeaseBenchmark({
+          candidateSiteId: site.id,
+          format: (userCorridor && prevP?.format) || site.siteType || 'inline',
+          corridor,
+          mallName: userCorridor ? prevP?.mallName ?? null : null,
+          siteTerms: rent != null && rent > 0 ? { baseRentPhpSqm: rent } : {},
+        });
+        if (userCorridor) lease.corridorUserSet = true;
+        if (!inferred && !userCorridor) {
           // Never silent: the comps come from a DIFFERENT area than the site (or none exist), so the
           // read is a proxy (Projected) and the UI/AI say so.
           lease.flags.push('corridor_default_fallback');

@@ -47,6 +47,8 @@ export const candidateSiteInputSchema = z.object({
   lat: phLat,
   lon: phLon,
   siteType: z.string().optional(),
+  /** Optional monthly asking base rent (₱/sqm) — benchmarked against the corridor's comps. */
+  askingRentPhpSqm: z.number().positive().max(50_000).optional(),
 });
 
 // Accept a real UUID or the mock demo run/site ids (mock-* ) so the app is usable

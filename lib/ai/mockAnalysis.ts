@@ -68,7 +68,7 @@ export function composeMockAnalysis(ctx: AnalysisContext): string {
     const parts: string[] = [];
     parts.push(
       lv === 'above_market' ? `On cost, the asking rent reads above the ${corridor ?? 'corridor'} market` :
-      lv === 'below_market' ? `On cost, the asking rent reads below the ${corridor ?? 'corridor'} market — favourable` :
+      lv === 'below_market' ? `On cost, the asking rent reads below the ${corridor ?? 'corridor'} market` :
       lv === 'corridor_benchmark' ? `On cost, the ${corridor ?? 'corridor'} benchmark is in place; enter an asking rent to see where it lands` :
       lv === 'at_market' ? `On cost, the asking rent sits at the ${corridor ?? 'corridor'} market` :
       `On cost, comparable leases in ${corridor ?? 'the corridor'} are thin, so treat any range as indicative`,

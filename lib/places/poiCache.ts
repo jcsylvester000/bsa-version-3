@@ -100,11 +100,17 @@ async function persistPois(places: OsmPlace[]): Promise<number> {
       // first claims its legacy typeless row (same id, within 150 m), then upserts by the full key.
       const osmType = p.osmType ?? null;
       if (osmType) await prisma.$executeRaw(claimLegacyOsmSql([{ osmType, osmId: p.osmId, lat: p.lat, lon: p.lon }]));
-      const existing = await prisma.poi.findFirst({ where: { osmId: BigInt(p.osmId), osmType }, select: { id: true } });
+      const existing = await prisma.poi.findFirst({ where: { osmId: BigInt(p.osmId), osmType }, select: { id: true, truthLayer: true, source: true } });
       if (existing) {
-        // Keep the stored region (boundary-tagged rows are authoritative over the coarse bbox).
-        const { region: _coarse, ...rest } = data;
-        await prisma.poi.update({ where: { id: existing.id }, data: { ...rest, kind: p.osmTag ?? undefined } });
+        // Refresh ONLY what OpenStreetMap is authoritative for. Never wipe the barangay / city /
+        // province / region tags (set from boundary polygons), and never overwrite a row an admin
+        // edited (Assumed) or placed by hand — the capture rule "assumed rows are never overwritten".
+        if (existing.truthLayer !== 'assumed' && existing.source !== 'manual') {
+          await prisma.poi.update({
+            where: { id: existing.id },
+            data: { name: data.name, category: data.category, lat: data.lat, lon: data.lon, truthLayer: 'verified', kind: p.osmTag ?? undefined },
+          });
+        }
         id = existing.id;
       } else {
         const created = await prisma.poi.create({ data: { ...data, osmId: BigInt(p.osmId), osmType, kind: p.osmTag, source: 'osm' } });

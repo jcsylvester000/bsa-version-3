@@ -215,6 +215,7 @@ export async function POST(req: NextRequest) {
           lat: c.lat,
           lon: c.lon,
           siteType: c.siteType,
+          askingRentPhpSqm: c.askingRentPhpSqm ?? undefined,
           region: region ?? undefined,
           province: bnd?.province ?? undefined,
           psgcCode: bnd?.psgcCode ?? undefined,
@@ -254,14 +255,14 @@ export async function POST(req: NextRequest) {
     // the brand — but ONLY if we created it here (never a pre-existing shared catalog brand).
     // Each delete is best-effort so one failure can't mask the original error.
     try {
-      if (cleanup.runId) await prisma.pipelineRun.delete({ where: { id: cleanup.runId } }).catch(() => undefined);
+      if (cleanup.runId) await prisma.$executeRaw`DELETE FROM pipeline_run WHERE id = ${cleanup.runId}::uuid`.catch(() => undefined);
       if (cleanup.intakeId) {
         // Raw single DELETE (deleteMany may open an implicit transaction on the Neon HTTP adapter).
         await prisma.$executeRaw`DELETE FROM outlet WHERE intake_submission_id = ${cleanup.intakeId}::uuid`.catch(() => undefined);
-        await prisma.intakeSubmission.delete({ where: { id: cleanup.intakeId } }).catch(() => undefined);
+        await prisma.$executeRaw`DELETE FROM intake_submission WHERE id = ${cleanup.intakeId}::uuid`.catch(() => undefined);
       }
       if (cleanup.createdFranchisorId) {
-        await prisma.franchisor.delete({ where: { id: cleanup.createdFranchisorId } }).catch(() => undefined);
+        await prisma.$executeRaw`DELETE FROM franchisor WHERE id = ${cleanup.createdFranchisorId}::uuid`.catch(() => undefined);
       }
     } catch (cleanupErr) {
       console.error(`[POST /api/intake] cleanup after ref=${ref} failed`, cleanupErr);

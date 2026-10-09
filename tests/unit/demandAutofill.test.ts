@@ -24,7 +24,7 @@ vi.mock('@/lib/services/demand', async (orig) => {
 });
 vi.mock('@/lib/services/capture', () => ({ layerFreshness: vi.fn(), CaptureError: class extends Error {} }));
 
-import { classifyCoverage, fillAreaKey, fillLayersFor, fillAreaFor, RICH_PLACES, FILL_BASE_LAYERS } from '@/lib/services/demand';
+import { classifyCoverage, emptyContextLayers, fillAreaKey, fillLayersFor, fillAreaFor, RICH_PLACES, FILL_BASE_LAYERS } from '@/lib/services/demand';
 import { cronAuthorized } from '@/lib/api/cron';
 import { GET as demandGet } from '@/app/api/admin/capture/demand/route';
 import { GET as fillGet, POST as fillPost } from '@/app/api/admin/capture/autofill/route';
@@ -46,6 +46,10 @@ describe('demand rules', () => {
     expect(classifyCoverage(0, 2, 5)).toBe('partial');
     expect(classifyCoverage(0, 5, 5)).toBe('covered');
     expect(classifyCoverage(RICH_PLACES, 0, 5)).toBe('covered'); // bulk-ingested areas don't re-fetch
+    // …unless a context layer has nothing at all nearby (NCR transport, data check 2026-10-09).
+    expect(classifyCoverage(RICH_PLACES, 0, 5, 1)).toBe('partial');
+    const cats = new Map([['competitor', 900], ['school', 4]]);
+    expect(emptyContextLayers(['transport', 'health', 'education', 'anchors', 'v:fnb_qsr'] as never, cats)).toEqual(['transport', 'health']);
   });
   it('merges nearby requests into one ~1 km job and picks the layers', () => {
     expect(fillAreaKey(16.4126, 120.5978)).toBe(fillAreaKey(16.4131, 120.5981));

@@ -341,6 +341,27 @@ export interface ZonalBand {
   cityMunicipality: string;
   barangay: string | null;
   truthLayer: TruthLayer;  // Verified (BIR schedule) typically
+  /** high ÷ low. A band spanning many streets (e.g. a city-wide ₱9,000–₱2,160,000) has no meaningful midpoint. */
+  spread?: number | null;
+  /** false → the band is shown for reference only; no rent-to-land cross-check or zonal-anchored rent. */
+  comparable?: boolean;
+}
+
+/** Widest high ÷ low a zonal band may span and still be used as a rent anchor (data check 2026-10-09:
+ *  barangay CR/CC bands are mostly ≤ 6×; city-wide bands run 2–240×). */
+export const ZONAL_MAX_SPREAD = 6;
+
+/** Is a zonal band narrow enough for its midpoint to mean anything? Pure (unit-tested). */
+export function zonalBandComparable(low: number | null, high: number | null): { spread: number | null; comparable: boolean } {
+  if (low == null || high == null || low <= 0 || high <= 0) return { spread: null, comparable: low != null || high != null };
+  const spread = Math.round((high / low) * 10) / 10;
+  return { spread, comparable: spread <= ZONAL_MAX_SPREAD };
+}
+
+/** Year of the BIR schedule a zonal row came from ("Official 2025 …", "updated: 2023"), or null. Pure. */
+export function zonalScheduleYear(notes: string | null | undefined): number | null {
+  const m = /Official (\d{4})|updated:\s*(\d{4})/i.exec(notes ?? '');
+  return m ? Number(m[1] ?? m[2]) : null;
 }
 
 /** Midpoint of a low/high band (or whichever bound is present). */
@@ -376,12 +397,14 @@ export function zonalRentCrossCheck(
   }
   const r = Math.round((askingRentPhpSqm / zonalMid) * 1000 * 10) / 10;
   const position: ZonalRentPosition = r > band.high ? 'rich' : r < band.low ? 'thin' : 'inline';
+  // Neutral by design (no price verdicts): say where the ratio sits, never "expensive"/"cheap". BIR
+  // zonal values are a tax-reference floor, not market value — the broker reads what it means.
   const note =
     position === 'rich'
-      ? `Rent runs ₱${r}/mo per ₱1,000 of commercial land value — above the typical ₱${band.low}–${band.high} band for this area, so it is rich relative to the land.`
+      ? `Rent runs ₱${r}/mo per ₱1,000 of BIR zonal land value — above the typical ₱${band.low}–${band.high} band for this area. Worth checking against comparable leases with the broker; zonal value is a tax-reference floor, not market value.`
       : position === 'thin'
-        ? `Rent runs ₱${r}/mo per ₱1,000 of commercial land value — below the typical band; cheap relative to the land (or a prime-CBD zone where zonal is inflated).`
-        : `Rent runs ₱${r}/mo per ₱1,000 of commercial land value — in line with typical corridors for this area.`;
+        ? `Rent runs ₱${r}/mo per ₱1,000 of BIR zonal land value — below the typical ₱${band.low}–${band.high} band for this area (common in prime zones where zonal values run high). Zonal value is a tax-reference floor, not market value.`
+        : `Rent runs ₱${r}/mo per ₱1,000 of BIR zonal land value — within the typical band for this area.`;
   return { rentPer1000: r, position, note };
 }
 

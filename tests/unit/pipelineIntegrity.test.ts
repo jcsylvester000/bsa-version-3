@@ -55,8 +55,8 @@ describe('F-06 intake writes are gated and rolled back', () => {
     expect(intake).toContain('cleanup.intakeId');
     expect(intake).toContain('cleanup.runId');
     // Rollback deletes run (cascades sites), outlets, intake, and the brand only if we created it.
-    expect(intake).toMatch(/pipelineRun\.delete\(\{ where: \{ id: cleanup\.runId/);
+    expect(intake).toMatch(/DELETE FROM pipeline_run WHERE id = \$\{cleanup\.runId\}/);
     expect(intake).toMatch(/DELETE FROM outlet WHERE intake_submission_id = \$\{cleanup\.intakeId\}/);
-    expect(intake).toMatch(/franchisor\.delete\(\{ where: \{ id: cleanup\.createdFranchisorId/);
+    expect(intake).toMatch(/DELETE FROM franchisor WHERE id = \$\{cleanup\.createdFranchisorId\}/);
   });
 });

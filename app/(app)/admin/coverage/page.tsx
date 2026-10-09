@@ -23,7 +23,7 @@ export default async function AdminCoveragePage() {
         <p className="max-w-3xl text-body text-ink-muted">
           Everything captured so far, on one map. Green areas are covered for 90 days and Place Capture skips them;
           grey areas are due for a re-capture; red dashed areas are in the <a className="link" href="#retry">retry queue</a> because
-          OpenStreetMap did not return them completely. Pick a gap and capture it — not the same spot twice.
+          OpenStreetMap did not return them completely. Pick a gap and capture it — not the same spot twice.{' '}
           <a className="link" href="#demand">User demand</a> shows what users searched for and where they placed intake sites, and the{' '}
           <a className="link" href="#autofill">automatic back-fill</a> collects place data for those areas on its own.
         </p>

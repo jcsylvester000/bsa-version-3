@@ -3,7 +3,7 @@ import { prisma } from '@/lib/db/prisma';
 import { getSession } from '@/lib/auth/session';
 import { canAccessRun, canRunPipeline } from '@/lib/auth/auth';
 import { isUuid } from '@/lib/util/uuid';
-import { ok, errors } from '@/lib/api/respond';
+import { ok, errors, crossSiteBlock } from '@/lib/api/respond';
 import { runPipeline } from '@/lib/modules/orchestrator';
 import { audit } from '@/lib/audit/audit';
 import { captureException, errorRef } from '@/lib/monitoring/report';
@@ -34,6 +34,8 @@ export const maxDuration = 26;
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+  const blocked = crossSiteBlock(req);
+  if (blocked) return blocked;
   const session = await getSession();
   if (!session) return errors.unauthorized();
   if (!canRunPipeline(session)) return errors.forbidden();

@@ -53,7 +53,7 @@ const SECTION_LABELS: Record<string, string> = {
 };
 
 interface OutletRow { outletName: string; format: string; address: string; lat: string; lon: string; monthlySalesPhp: string; geocoding?: boolean; }
-interface CandidateRow { label: string; address: string; city: string; lat: string; lon: string; siteType: string; geocoding?: boolean; }
+interface CandidateRow { label: string; address: string; city: string; lat: string; lon: string; siteType: string; askingRent?: string; geocoding?: boolean; }
 
 
 function Select({ label, value, onChange, options, placeholder }: { label: string; value: string; onChange: (v: string) => void; options: Option[]; placeholder?: string }) {
@@ -190,7 +190,7 @@ export function SteppedIntakeWizard({ franchisors, mockMode = false, mockRunId, 
       if (d.franchisor?.id) { setBizType('franchisor'); setFranchisorId(d.franchisor.id); }
       if (d.sections) setSections({ ...d.sections });
       if (Array.isArray(d.outlets)) setOutlets(d.outlets.map((o: OutletRow) => ({ outletName: o.outletName, format: o.format ?? 'inline', address: '', lat: o.lat, lon: o.lon, monthlySalesPhp: o.monthlySalesPhp ?? '' })));
-      if (Array.isArray(d.candidateSites) && d.candidateSites.length) setCandidates(d.candidateSites.map((c: CandidateRow) => ({ label: c.label, address: c.address ?? '', city: c.city ?? '', lat: c.lat, lon: c.lon, siteType: c.siteType ?? 'inline' })));
+      if (Array.isArray(d.candidateSites) && d.candidateSites.length) setCandidates(d.candidateSites.map((c: CandidateRow) => ({ label: c.label, address: c.address ?? '', city: c.city ?? '', lat: c.lat, lon: c.lon, siteType: c.siteType ?? 'inline', askingRent: (c as { askingRentPhpSqm?: string }).askingRentPhpSqm ?? '' })));
     }).catch(() => {});
     // Keyed on editIntakeId only: this one-shot draft preload must run when the edited intake changes,
     // not when the setState setters (stable) it calls are referenced. Intentional dependency list.
@@ -325,7 +325,8 @@ export function SteppedIntakeWizard({ franchisors, mockMode = false, mockRunId, 
   async function geocode(address: string) {
     // Geocoding is off in DB-only mode — returns null and the user pins on the map (📍).
     const r = await fetch('/api/geocode', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ address }) }).then((x) => x.json()).catch(() => null);
-    return r?.ok ? r.data : null;
+    // A city-centre match (offline fallback) is not a site location — never use it as coordinates.
+    return r?.ok && !r.data?.approximate ? r.data : null;
   }
   async function geocodeOutlet(i: number) {
     const o = outlets[i]; if (!o.address.trim()) return;
@@ -367,7 +368,7 @@ export function SteppedIntakeWizard({ franchisors, mockMode = false, mockRunId, 
         : { independent: { name: indieName.trim(), comparableBrand: comparableBrand.trim() } }),
       vertical, sections,
       outlets: outlets.filter((o) => o.outletName && o.lat && o.lon).map((o) => ({ outletName: o.outletName, format: o.format || undefined, lat: Number(o.lat), lon: Number(o.lon), monthlySalesPhp: o.monthlySalesPhp ? Number(o.monthlySalesPhp) : undefined })),
-      candidateSites: candidates.filter((c) => c.label && c.lat && c.lon).map((c) => ({ label: c.label, address: c.address || undefined, city: c.city || undefined, lat: Number(c.lat), lon: Number(c.lon), siteType: c.siteType || undefined })),
+      candidateSites: candidates.filter((c) => c.label && c.lat && c.lon).map((c) => ({ label: c.label, address: c.address || undefined, city: c.city || undefined, lat: Number(c.lat), lon: Number(c.lon), siteType: c.siteType || undefined, askingRentPhpSqm: Number(c.askingRent) > 0 ? Number(c.askingRent) : undefined })),
       ...(parentIntakeId ? { parentIntakeId } : {}),
     };
     const res = await fetch('/api/intake', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }).then((r) => r.json());
@@ -729,7 +730,8 @@ export function SteppedIntakeWizard({ franchisors, mockMode = false, mockRunId, 
         <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
         <div className="card p-5">
           <p className="mb-1 text-sm font-medium text-ink-text">Candidate sites to evaluate</p>
-          <p className="mb-3 text-xs text-ink-muted"><span className="text-accent">Pin the exact spot on the map</span> (📍) for each site — the address is a label for your reference.</p>
+          <p className="mb-3 text-xs text-ink-muted"><span className="text-accent">Pin the exact spot on the map</span> (📍) for each site — the address is a label for your reference.
+            Add the asking rent if you have it: BSA benchmarks it against comparable leases in the corridor (lower rent scores higher; you and the client decide the budget).</p>
           <div className="space-y-2">
             {candidates.map((c, i) => (
               <div key={i} className="grid grid-cols-1 items-center gap-2 rounded-lg bg-ink-panel-2 p-2 sm:grid-cols-12">
@@ -738,6 +740,12 @@ export function SteppedIntakeWizard({ franchisors, mockMode = false, mockRunId, 
                 <select aria-label={`Site ${i + 1} type`} value={c.siteType} onChange={(e) => setCandidates((cs) => cs.map((x, j) => (j === i ? { ...x, siteType: e.target.value } : x)))} className="field px-2 py-1.5 text-sm sm:col-span-2">
                   {OUTLET_FORMATS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
                 </select>
+                <input
+                  aria-label={`Site ${i + 1} asking rent, pesos per square metre per month (optional)`}
+                  placeholder="Asking rent ₱/sqm/mo (optional)" inputMode="decimal" value={c.askingRent ?? ''}
+                  onChange={(e) => setCandidates((cs) => cs.map((x, j) => (j === i ? { ...x, askingRent: e.target.value.replace(/[^0-9.]/g, '') } : x)))}
+                  className="field px-2 py-1.5 text-sm sm:col-span-12"
+                />
                 <div className="flex items-center gap-2 text-xs sm:col-span-3">
                   <button type="button" onClick={() => setPinTarget({ kind: 'candidate', index: i })} className="rounded border border-ink-border px-1.5 py-1 text-xs text-accent hover:bg-ink-hover" aria-label={`Pin site ${i + 1} on the map`} title="Pin on map">📍 Pin</button>
                   {c.geocoding ? <span className="text-ink-muted">locating…</span> : c.lat && c.lon ? <span className="text-go">✓ located</span> : <span className="text-ink-muted">enter address</span>}

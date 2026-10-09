@@ -2,6 +2,9 @@ import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db/prisma';
 import { getSession } from '@/lib/auth/session';
+import { isUuid } from '@/lib/util/uuid';
+
+const uuidOrNull = (v: string) => (isUuid(v) ? v : null);
 import { ok, failValidation, errors } from '@/lib/api/respond';
 import { categorizeByName } from '@/lib/places/competitorRelevance';
 
@@ -74,6 +77,9 @@ export async function POST(req: NextRequest) {
         SELECT outlet_name AS name, lat, lon, NULL::text AS city FROM outlet
         WHERE outlet_name ILIKE ${'%' + q + '%'}
           AND (${isStaff}::boolean OR franchisor_id = ${ownFranchisorId}::uuid)
+          -- Outlets typed into an intake belong to that intake's author (reference network = NULL).
+          AND (${isStaff}::boolean OR intake_submission_id IS NULL
+               OR intake_submission_id IN (SELECT id FROM intake_submission WHERE created_by_user_id = ${uuidOrNull(session.id)}::uuid))
           AND ST_DWithin(geom, ST_SetSRID(ST_MakePoint(${input.lon}, ${input.lat}), 4326)::geography, ${Math.max(input.radiusM * 2, 5000)})`;
       const poiOwn = await prisma.$queryRaw<Row[]>`
         SELECT name, lat, lon, city FROM poi
@@ -120,6 +126,9 @@ export async function POST(req: NextRequest) {
         SELECT outlet_name AS name, lat, lon, NULL::text AS city FROM outlet
         WHERE outlet_name ILIKE ${'%' + q + '%'}
           AND (${isStaff}::boolean OR franchisor_id = ${ownFranchisorId}::uuid)
+          -- Outlets typed into an intake belong to that intake's author (reference network = NULL).
+          AND (${isStaff}::boolean OR intake_submission_id IS NULL
+               OR intake_submission_id IN (SELECT id FROM intake_submission WHERE created_by_user_id = ${uuidOrNull(session.id)}::uuid))
         LIMIT ${input.max}`
     : [];
   const seen = new Set<string>();

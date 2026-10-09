@@ -300,6 +300,9 @@ model CandidateSite {
   lon            Float           @db.DoublePrecision
   geom           Unsupported("geography(Point, 4326)")?
   siteType       String?         @map("site_type")
+  /// Monthly asking base rent (₱/sqm) the broker was quoted — entered at intake or on the Lease tab.
+  /// Re-runs benchmark it again, so a refresh never drops the user's rent. NULL = not given.
+  askingRentPhpSqm Decimal?      @map("asking_rent_php_sqm") @db.Decimal(10, 2)
   compositeScore Decimal?        @map("composite_score") @db.Decimal(6, 2)
   verdict        Verdict?
   /// Region this site resolves to (LGU name first, else pinned coordinate). Drives region-scoped data.

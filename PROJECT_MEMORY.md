@@ -7,22 +7,29 @@ rewritten at the end of every work batch — if it disagrees with older notes (e
 
 _Last updated: 2026-10-09 (b) — user demand tracking + automated POI back-fill (awaiting push); boundaries-on-demand pushed `af5bee8`._
 
-## ⏸ Resume here (updated 2026-10-09 b)
+## ⏸ Resume here (updated 2026-10-10)
 
-**State:** git HEAD `af5bee8` (boundaries load automatically). Working tree holds the tested, uncommitted
-**demand + automated back-fill** batch (migration `20261009000000_demand_autofill`; tsc clean · vitest 574/574 · build OK).
+**State:** git HEAD `5dc13d0`. Working tree holds the tested, uncommitted **audit + data check** batch — see
+`docs/qa-history/QA_AUDIT_2026-10-09.md` (parts 1 and 2). One migration: `20261010000000_candidate_asking_rent`
+(Netlify applies it on build). tsc clean · vitest 595/595 · build OK.
 
-**Owner to-do**
-1. Push: `git add -A` → `git commit -m "User demand tracking + automated POI back-fill; journey & QA pass"` → `git push`
-   (Netlify applies the migration on build).
-2. Netlify env: `CRON_SECRET` = 32+ random chars (turns on the 10-minute schedule); optional `AUTOFILL_DAILY_JOBS`
-   (default 30), `AUTOFILL_ENABLED=0` to pause. Redeploy after setting it.
-3. Smoke test: intake a site in an uncaptured town → dashboard shows "Gathering place data" → Capture Coverage →
-   Automatic back-fill → Run now → dashboard shows "Updated with new place data".
-4. Monthly: `npm run db:purge-demand` (RA 10173 retention, 12 months).
-5. Still open from before: change the demo admin password (`admin@grid.test` / `bsa-demo-1234`, F-31).
+**Owner to-do (in order)**
+1. Push (commands in the chat / below): `git add -A` → commit → `git push`.
+2. Against Neon, from "4 - Final Application": `npm run db:seed-cannibalization` · `npm run db:ingest -- malls` ·
+   `npm run db:ingest:osm:transport` · `npm run db:fetch-boundaries -- --region=ncr` · `npm run db:tag-boundaries`.
+3. Netlify env: `CRON_SECRET` (32+ chars) → redeploy.
+4. Data owner: confirm Taguig CR ₱2,160,000 (RDO 44); fix centroids of Wack-Wack/Highway Hills and Catmon/NBBS.
+5. Monthly: `npm run db:purge-demand`.
 
-**Suggested next work (not started):** "provisional" marker on PDF verdicts while data is gathering; e-mail notice when
+**Decided:** lease pillar keeps "lower rent scores higher" (owner 2026-10-10); the Lease summary shows rent vs
+location so the broker decides budget.
+
+**Next agency step:** after deploy, live re-test in Chrome (intake with asking rent → Lease tab prefilled → re-run keeps
+it; Place Capture transport/anchors; Coverage labels; address search; BGC lease tab shows "reference only");
+then user-journey QA. Open domain item: prime-CBD rent-to-land calibration (D9).
+Still open from before: change the demo admin password (F-31).
+
+**Suggested next work (not started):** e-mail notice when
 an analysis updates; read-only coverage/demand view for analysts.
 
 **Dev notes for the next thread**

@@ -5,6 +5,7 @@ import { consumeGoogleQuota } from '@/lib/auth/apiQuota';
 import { ok, fail, failValidation, errors } from '@/lib/api/respond';
 import { geocodeAddress, hasGoogleKey } from '@/lib/geo/geocode';
 import { recordDemand } from '@/lib/services/demand';
+import { localGeocode } from '@/lib/geo/localGeocode';
 
 // F-25: cap the address length so the paid Geocoding proxy can't be fed oversized input.
 const schema = z.object({ address: z.string().min(2).max(200) });
@@ -17,16 +18,19 @@ export async function POST(req: NextRequest) {
   const session = await getSession();
   if (!session) return errors.unauthorized();
 
-  if (!hasGoogleKey()) {
-    return fail({ code: 'geocoding_unavailable', message: 'Geocoding is not configured (no GOOGLE_API_KEY).' }, 503);
-  }
-
   const body = await req.json().catch(() => null);
   const parsed = schema.safeParse(body);
   if (!parsed.success) return failValidation(parsed.error);
 
-  const result = await geocodeAddress(parsed.data.address);
-  if (!result) return fail({ code: 'not_found', message: 'No match found for that address in the Philippines.' }, 404);
+  // Google when it is switched on; otherwise (or when it finds nothing) the offline fallback: typed
+  // coordinates exactly, or a city/province centre flagged `approximate` (the user still pins the site).
+  const google = hasGoogleKey() ? await geocodeAddress(parsed.data.address).catch(() => null) : null;
+  const result = google ? { ...google, approximate: false } : localGeocode(parsed.data.address);
+  if (!result) {
+    return hasGoogleKey()
+      ? fail({ code: 'not_found', message: 'No match found for that address in the Philippines.' }, 404)
+      : fail({ code: 'geocoding_unavailable', message: 'Street-address search is off in database-only mode. Type a city or "lat, lon", or click the map to drop the pin.' }, 503);
+  }
 
   // Demand tracking (admin → Capture Coverage → User demand): what was searched, where, and whether
   // BSA has place data there. Searches never queue a back-fill by themselves (an admin can).

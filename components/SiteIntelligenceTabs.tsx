@@ -144,8 +144,8 @@ export function SiteIntelligenceTabs({
     <div className="space-y-5">
       {/* Tab bar — underline tabs, roving tabindex, ← → to move; Truth Layer legend once per page. */}
       {/* Tabs never squeeze: they keep their natural width and the legend only sits beside them on
-          wide screens (xl+); below that it drops underneath. No visible scrollbar. */}
-      <div className="flex flex-col gap-x-6 gap-y-2 border-b border-ink-border xl:flex-row xl:items-end xl:justify-between">
+          wide screens (2xl+; at xl the sidebar left too little room and the page scrolled sideways); below that it drops underneath. No visible scrollbar. */}
+      <div className="flex min-w-0 flex-col gap-x-6 gap-y-2 border-b border-ink-border 2xl:flex-row 2xl:items-end 2xl:justify-between">
         <div role="tablist" aria-label="Site modules" className="scrollbar-none -mb-px flex shrink-0 overflow-x-auto">
           {TABS.map((t) => {
             const has = t.key === 'analysis' || payloads[t.key] != null;
@@ -176,7 +176,7 @@ export function SiteIntelligenceTabs({
             );
           })}
         </div>
-        <TruthLegend className="shrink-0 pb-3.5 xl:justify-end" />
+        <TruthLegend className="min-w-0 pb-3.5 2xl:justify-end" />
       </div>
 
       <div id="site-tabpanel" role="tabpanel" aria-labelledby={`tab-${tab}`}>
@@ -315,7 +315,7 @@ function TerritoryTab({ site, outlets, p, primary = true }: { site: { lat: numbe
 // Positional labels only — no price verdicts. L_VERDICT (all tones muted) lives in siteReportModel.
 function LeaseTab({ p, primary = true, siteId, corridors = [] }: { p: SiteModulePayloads['lease']; primary?: boolean; siteId: string; corridors?: string[] }) {
   const router = useRouter();
-  const [askingRent, setAskingRent] = useState('');
+  const [askingRent, setAskingRent] = useState(() => { const r = (p as { askingRentPhpSqm?: number | null } | null)?.askingRentPhpSqm; return r != null && r > 0 ? String(r) : ''; });
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
   const [corridorBusy, setCorridorBusy] = useState(false);
@@ -364,6 +364,7 @@ function LeaseTab({ p, primary = true, siteId, corridors = [] }: { p: SiteModule
   if (!p) return <RerunNote module="Lease Benchmark" />;
   const v = (p.verdict && p.verdict in L_VERDICT ? p.verdict : 'insufficient_data') as keyof typeof L_VERDICT;
   const lZonalBand = ((p as SiteModulePayloads['lease'] & { zonal?: LeaseZonal }).zonal ?? null)?.band ?? null;
+  const lZonalNote = (((p as SiteModulePayloads['lease'] & { zonal?: LeaseZonal }).zonal ?? null)?.crossCheck as { note?: string } | null | undefined)?.note ?? null;
   const n = p.sampleSize ?? p.comps?.length ?? 0;
 
   // Corridor comp rents → let the user drop their asking rent in and see, client-side,
@@ -536,7 +537,9 @@ function LeaseTab({ p, primary = true, siteId, corridors = [] }: { p: SiteModule
         </div>
         <p className="text-body font-semibold tabular-nums">
           {lZonalBand.classification ?? 'CR'} · {fmtPeso(lZonalBand.lowPhpSqm)} – {fmtPeso(lZonalBand.highPhpSqm)} /sqm
+          {lZonalBand.comparable === false && <span className="ml-2 text-label font-normal text-ink-muted">({lZonalBand.grain === 'city' ? 'city-wide' : 'wide'} range — reference only)</span>}
         </p>
+        {lZonalNote && <p className="text-label font-normal text-ink-text">{lZonalNote}</p>}
         <p className="text-label font-normal text-ink-muted">{ZONAL_FLOOR_NOTE}</p>
       </div>
     )}
@@ -901,6 +904,7 @@ function AnalysisTab({
         truthPct={m.truthPct}
         limited={m.limited}
         capNote={m.meta.capNote ?? null}
+        provisionalNote={m.meta.provisionalNote ?? null}
       />
       {m.summary.findings.length > 0 && (
         <FindingsList findings={m.summary.findings} keywords={m.summary.keywords} figures={m.figures} onOpenTab={onOpenTab} />

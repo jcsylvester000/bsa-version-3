@@ -38,6 +38,11 @@ export function DataGatheringNote({ data, compact = false }: { data: DataState |
               automatically from OpenStreetMap, and this analysis recomputes itself when they arrive — usually within the hour. Nothing is estimated in the meantime.
             </p>
           )}
+          {data.refreshedAt && (
+            <p className="mt-1 text-label font-normal text-ink-muted">
+              Partly updated {manilaShortStamp(new Date(data.refreshedAt))} with the places collected so far; the rest are still being retried.
+            </p>
+          )}
         </div>
         <AutoRefresh everyMs={60_000} />
       </div>

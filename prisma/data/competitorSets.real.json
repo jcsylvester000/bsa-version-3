@@ -806,7 +806,7 @@
       "indie refilling stations",
       "bottled-water retail"
     ],
-    "conceptKey": "laundry",
+    "conceptKey": "water",
     "truthLayer": "verified",
     "notes": "Leading branded water-refill chain; competes with every barangay refilling station."
   },
@@ -821,7 +821,7 @@
       "Aqua Master",
       "indie refilling stations"
     ],
-    "conceptKey": "laundry",
+    "conceptKey": "water",
     "truthLayer": "assumed",
     "notes": "Direct rival to Aquabest on the refill route."
   },

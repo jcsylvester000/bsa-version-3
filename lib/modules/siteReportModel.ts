@@ -18,7 +18,12 @@ import { fmtInt, fmtPeso } from '@/lib/util/format';
 import { manilaShortStampYear } from '@/lib/util/manilaTime';
 import { summariseSite, type SiteSummary, type Tone } from '@/lib/modules/siteVerdict';
 import { LEASE_POSITION_LABEL, ZONAL_FLOOR_NOTE } from '@/lib/truth/guardrailCopy';
+import { leaseTradeoffNote, locationRead } from '@/lib/modules/leaseTradeoff';
+
 import type { TruthLayer } from '@/lib/truth/truthLayer';
+
+/** Neutral rent-to-land wording (no price verdicts — 'rich'/'thin' are internal codes only). */
+const ZONAL_POSITION_LABEL: Record<string, string> = { rich: 'rent above typical rent-to-land band', thin: 'rent below typical rent-to-land band', inline: 'rent within typical rent-to-land band' };
 
 // ---------------------------------------------------------------------------------------------
 // Payload shapes (loosely typed — from module_result.payload JSON)
@@ -119,6 +124,17 @@ export interface SiteReportMeta {
   truthPct?: { verified: number; assumed: number; projected: number } | null;
   /** Set when the territory deal-breaker capped the composite (scorecard.territoryGate). */
   capNote?: string | null;
+  /** Set while place data around the site is still being gathered (or could not be) — the call is provisional. */
+  provisionalNote?: string | null;
+}
+
+/** Provisional wording for a run's data-refresh state (automatic back-fill). Pure (unit-tested). */
+export function provisionalNoteFor(state: string | null | undefined): string | null {
+  if (state === 'waiting' || state === 'due' || state === 'running') {
+    return 'Provisional — place data around this site is still being gathered; nearby-place counts and this call may change when the analysis updates.';
+  }
+  if (state === 'unavailable') return 'Place data around this site is limited — treat nearby-place counts as incomplete and confirm on the ground.';
+  return null;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -156,7 +172,7 @@ export const L_VERDICT = {
 
 /** Lease payload may also carry a BIR zonal block (not in the base type) — read it loosely. */
 export type LeaseZonal = {
-  band?: { classification?: string | null; lowPhpSqm?: number | null; highPhpSqm?: number | null; midPhpSqm?: number | null } | null;
+  band?: { classification?: string | null; lowPhpSqm?: number | null; highPhpSqm?: number | null; midPhpSqm?: number | null; comparable?: boolean; grain?: string | null } | null;
   crossCheck?: { position?: string | null } | null;
   usedAsFallback?: boolean;
 } | null;
@@ -314,6 +330,7 @@ export function buildSiteReportModel(args: {
   const lease: ModuleSummaryModel = {
     key: 'lease', title: 'Lease Benchmark', ran: l != null, contextual: !primary('lease'),
     status: l ? { tone: L_VERDICT[lV].tone, label: L_VERDICT[lV].label } : null,
+    lead: l ? leaseTradeoffNote(l.baseRentPercentile, locationRead(t ? T_VERDICT[tVerdict].tone : null, dNoData ? null : dWindow)) ?? undefined : undefined,
     rows: l ? [
       { label: 'Corridor', value: l.corridor ?? '—' },
       { label: 'Comparable leases', value: `${l.sampleSize ?? l.comps?.length ?? 0}`, truth: tk(tl(l.truth?.comps, 'Assumed')) },
@@ -333,7 +350,8 @@ export function buildSiteReportModel(args: {
             label: 'BIR zonal band (tax-reference floor)',
             value:
               `${lZonal.band.classification ?? 'CR'} · ${fmtPesoOrDash(lZonal.band.lowPhpSqm)}–${fmtPesoOrDash(lZonal.band.highPhpSqm)}/sqm` +
-              (lZonal.crossCheck?.position ? ` · ${lZonal.crossCheck.position.replace(/_/g, ' ')}` : '') +
+              (lZonal.crossCheck?.position && ZONAL_POSITION_LABEL[lZonal.crossCheck.position] ? ` · ${ZONAL_POSITION_LABEL[lZonal.crossCheck.position]}` : '') +
+              (lZonal.band.comparable === false ? ` · ${lZonal.band.grain === 'city' ? 'city-wide' : 'wide'} range, reference only` : '') +
               (lZonal.usedAsFallback ? ' · used as fallback anchor' : ''),
             truth: tk(tl(l.truth?.zonalBand, 'Verified')),
           }]
@@ -410,7 +428,7 @@ export function buildSiteReportModel(args: {
  */
 export function siteReportMeta(data: {
   site: { id: string; compositeScore: { toString(): string } | null; analyzedAt: Date | null };
-  run: { confidence: 'high' | 'med' | 'low' | null };
+  run: { confidence: 'high' | 'med' | 'low' | null; dataRefreshState?: string | null };
   rows: Array<{ module: string; truthLayer: string; score?: unknown }>;
   runSites: Array<{ id: string; compositeScore: { toString(): string } | null }>;
 }): SiteReportMeta {
@@ -437,6 +455,7 @@ export function siteReportMeta(data: {
     total: composite != null ? ranked.length : null,
     confidence: data.run.confidence ?? null,
     capNote,
+    provisionalNote: provisionalNoteFor(data.run.dataRefreshState),
     analysedAt: data.site.analyzedAt ? manilaShortStampYear(data.site.analyzedAt) : null,
     truthPct: layers.length ? { verified: pct('verified'), assumed: pct('assumed'), projected: pct('projected') } : null,
   };

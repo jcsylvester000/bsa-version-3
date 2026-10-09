@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db/prisma';
 import { getSession } from '@/lib/auth/session';
 import { isAdmin } from '@/lib/auth/auth';
-import { ok, errors } from '@/lib/api/respond';
+import { ok, errors, crossSiteBlock } from '@/lib/api/respond';
 import { siteCompositeFromModules, type ModuleScore } from '@/lib/modules/scorecard';
 import type { TruthLayer } from '@/lib/truth/truthLayer';
 
@@ -22,7 +22,9 @@ export const maxDuration = 60;
  * ADMIN ONLY: it rewrites stored composites across EVERY tenant's sites. Never fabricates
  * scores (sites with no scored modules are left untouched).
  */
-export async function POST(_req: NextRequest) {
+export async function POST(req: NextRequest) {
+  const blocked = crossSiteBlock(req);
+  if (blocked) return blocked;
   const session = await getSession();
   if (!session) return errors.unauthorized();
   if (!isAdmin(session)) return errors.forbidden();

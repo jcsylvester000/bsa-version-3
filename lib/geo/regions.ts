@@ -76,6 +76,10 @@ const NCR: RegionDef = {
   psaRegion: 'NCR',
   // Calibrated 2026-08 across the 13 NCR corridors with both comps and CR zonal (~₱10/₱1,000/mo).
   zonalRentBand: { low: 6, central: 10, high: 14 },
+  // Data check 2026-10-09: NCR had no PSGC mapping, so `db:fetch-boundaries` couldn't load it and only
+  // ~5% of NCR places carried a barangay. NCR's four districts stand in for provinces in PSGC.
+  psgcRegionCode: '1300000000',
+  psgcProvinces: ['1303900000', '1307400000', '1307500000', '1307600000'],
   provinces: ['Metro Manila', 'National Capital Region'],
   bbox: [14.35, 120.9, 14.78, 121.15],
   overpassAreas: ['Metro Manila', 'National Capital Region'],
@@ -132,6 +136,8 @@ const DAVAO: RegionDef = {
   key: 'davao',
   name: 'Davao Region (XI)',
   psaRegion: 'XI',
+  psgcRegionCode: '1100000000',
+  psgcProvinces: ['1102400000', '1102300000'], // Davao del Sur (incl. Davao City), Davao del Norte
   provinces: ['Davao del Sur', 'Davao del Norte', 'Davao Oriental', 'Davao de Oro', 'Davao Occidental'],
   bbox: [6.7, 125.2, 7.55, 126.3],
   overpassAreas: ['Davao Region'],

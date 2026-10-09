@@ -9,6 +9,7 @@ import { prisma } from '@/lib/db/prisma';
 import { isUuid } from '@/lib/util/uuid';
 import { verifySession, SESSION_COOKIE_NAME, type SessionUser } from './auth';
 import { isTokenRevoked } from './sessionRevocation';
+import { isMockAuth, isMockUser } from './mockUsers';
 
 /**
  * F-26: authoritative per-user check against the DB — is this token still valid, and what is the
@@ -27,8 +28,9 @@ export async function getSession(): Promise<SessionUser | null> {
   if (!token) return null;
   const s = await verifySession(token);
   if (!s) return null;
-  // Mock/demo accounts (non-UUID id) have no DB row — accept the signed token as-is.
-  if (!isUuid(s.id)) return s;
+  // Mock/demo accounts (non-UUID id) have no DB row — accept the signed token only while demo
+  // logins are enabled, so switching them off ends existing demo sessions too.
+  if (!isUuid(s.id)) return isMockAuth() && isMockUser(s) ? s : null;
   const live = await liveUser(s.id, s.iat);
   if (!live) return null;
   // Reflect the CURRENT role/franchisor from the DB so a change takes effect without re-login.

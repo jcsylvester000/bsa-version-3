@@ -19,7 +19,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     where: { id: params.id },
     include: {
       franchisor: { select: { id: true, brandName: true } },
-      run: { select: { id: true, sites: { select: { label: true, address: true, city: true, lat: true, lon: true, siteType: true } } } },
+      run: { select: { id: true, sites: { select: { label: true, address: true, city: true, lat: true, lon: true, siteType: true, askingRentPhpSqm: true } } } },
     },
   });
   if (!intake) return errors.notFound('Intake');
@@ -72,7 +72,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     vertical: intake.vertical,
     sections,
     outlets: outlets.map((o) => ({ outletName: o.outletName, format: o.format, lat: String(o.lat), lon: String(o.lon), monthlySalesPhp: o.monthlySalesPhp != null ? String(o.monthlySalesPhp) : '' })),
-    candidateSites: (intake.run?.sites ?? []).map((s) => ({ label: s.label, address: s.address ?? '', city: s.city ?? '', lat: String(s.lat), lon: String(s.lon), siteType: s.siteType ?? 'inline' })),
+    candidateSites: (intake.run?.sites ?? []).map((s) => ({ label: s.label, address: s.address ?? '', city: s.city ?? '', lat: String(s.lat), lon: String(s.lon), siteType: s.siteType ?? 'inline', askingRentPhpSqm: s.askingRentPhpSqm != null ? String(s.askingRentPhpSqm) : '' })),
     versions: versions.map((v) => ({ intakeId: v.id, version: v.version, createdAt: v.createdAt, runId: v.run?.id ?? null, status: v.run?.status ?? null })),
   });
 }

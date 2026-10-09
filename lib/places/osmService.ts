@@ -35,7 +35,7 @@ export interface OsmPlace {
 // Public Overpass endpoints. We rotate on failure — different instances have different load.
 const OVERPASS_ENDPOINTS = [
   'https://overpass-api.de/api/interpreter',
-  'https://overpass.kumi.systems/api/interpreter',
+  'https://overpass.private.coffee/api/interpreter',
   'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
 ];
 
@@ -409,7 +409,7 @@ export async function overpassStatus(): Promise<OverpassStatus> {
   if (statusCache && Date.now() - statusCache.at < 20_000) return statusCache.value;
   const url = OVERPASS_ENDPOINTS[0].replace(/\/interpreter$/, '/status');
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 4_000);
+  const timer = setTimeout(() => controller.abort(), 6_000);
   let value: OverpassStatus;
   try {
     const res = await fetch(url, { headers: { 'User-Agent': 'GridBSA/1.0 (site-analysis; admin capture)' }, signal: controller.signal });
@@ -429,6 +429,13 @@ export async function overpassStatus(): Promise<OverpassStatus> {
   }
   statusCache = { at: Date.now(), value };
   return value;
+}
+
+function isAbort(e: unknown): boolean {
+  return e instanceof Error && (e.name === 'AbortError' || /aborted/i.test(e.message));
+}
+function isNetworkError(e: unknown): boolean {
+  return e instanceof Error && !isAbort(e) && /fetch failed|ECONNRESET|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|network/i.test(`${e.message} ${(e as { cause?: { code?: string } }).cause?.code ?? ''}`);
 }
 
 export function clearCaptureCache(): void {
@@ -477,7 +484,9 @@ export async function captureElementsInBbox(
       return elements;
     } catch (err) {
       clearTimeout(timer);
-      lastErr = err;
+      // A network failure on the fallback instance must not hide the primary's real answer
+      // (e.g. "429 rate limited" or a timeout) — that's what tells the admin to wait vs. retry.
+      if (!lastErr || !isNetworkError(err)) lastErr = isAbort(err) ? new Error(`Overpass timed out on ${endpoint}`) : err;
     }
   }
   throw lastErr ?? new Error('Overpass unavailable');

@@ -40,12 +40,17 @@ export async function POST(req: NextRequest) {
   if (!site) return errors.notFound('Candidate site');
   if (!canAccessRun(session, site.run)) return errors.forbidden();
 
+  // A corridor change without a rent in the request still benchmarks the rent already on file.
+  const storedRent = site.askingRentPhpSqm != null ? Number(site.askingRentPhpSqm) : null;
+  const siteTerms = parsed.data.siteTerms?.baseRentPhpSqm === undefined && storedRent != null
+    ? { ...parsed.data.siteTerms, baseRentPhpSqm: storedRent }
+    : parsed.data.siteTerms;
   const result = await runLeaseBenchmark({
     candidateSiteId: site.id,
     format: parsed.data.format,
     corridor: parsed.data.corridor,
     mallName: parsed.data.mallName ?? null,
-    siteTerms: parsed.data.siteTerms,
+    siteTerms,
   });
   // Keep the proxy-corridor honesty flag if the pipeline had to fall back for this site.
   const prevLease = await prisma.moduleResult.findUnique({
@@ -56,6 +61,14 @@ export async function POST(req: NextRequest) {
   if (prevLease?.flags.includes('corridor_default_fallback') && prevCorridor === result.corridor) {
     result.flags.push('corridor_default_fallback');
     result.moduleTruthLayer = 'projected';
+  }
+  // The user chose this corridor/format on the Lease tab — re-runs keep it (orchestrator).
+  result.corridorUserSet = true;
+  // Keep the asking rent on the site row so every re-run benchmarks it again (it used to be lost
+  // on "Re-run analysis" and on the automatic refresh after a place-data back-fill).
+  const rent = parsed.data.siteTerms?.baseRentPhpSqm;
+  if (rent !== undefined) {
+    await prisma.candidateSite.update({ where: { id: site.id }, data: { askingRentPhpSqm: rent != null && rent > 0 ? rent : null } });
   }
   await persistLeaseResult(site.run.id, result);
   // The asking rent changes the lease criterion → refresh the stored composite so the

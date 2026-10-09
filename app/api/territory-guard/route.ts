@@ -7,6 +7,7 @@ import { territoryGuardRequestSchema } from '@/lib/validation/schemas';
 import { ok, fail, failValidation, errors } from '@/lib/api/respond';
 import { runTerritoryGuard, persistTerritoryResult, type TerritoryGuardResult } from '@/lib/modules/territoryGuard';
 import { generateGrounded } from '@/lib/ai/retrieveThenGenerate';
+import { recomputeSiteComposite } from '@/lib/modules/scorecardServer';
 import { audit } from '@/lib/audit/audit';
 import { isMockAuth } from '@/lib/auth/mockUsers';
 import { mockTerritoryGuard, DEMO_RUN_ID } from '@/lib/mock/mockCompute';
@@ -49,7 +50,8 @@ export async function POST(req: NextRequest) {
     run.franchisor?.brandName,
     run.franchisor?.subCategory,
     (run.intake?.sectionA as { brand?: string; concept?: string } | null)?.concept,
-  ].filter(Boolean).join(' ');
+    (run.intake?.sectionA as { brand?: string; concept?: string } | null)?.brand,
+  ].filter(Boolean).join(' '); // same concept text as the orchestrator, so both paths agree
 
   const results: Array<
     TerritoryGuardResult & {
@@ -62,8 +64,11 @@ export async function POST(req: NextRequest) {
     }
   > = [];
   for (const s of run.sites) {
-    const result = await runTerritoryGuard(s.id, run.franchisorId, radius, run.vertical, conceptText, run.franchisor?.brandName ?? undefined);
+    // Same inputs as the pipeline (incl. this intake's own outlets), then re-score the site so the
+    // dashboard composite / verdict never go stale after a Territory Guard re-run.
+    const result = await runTerritoryGuard(s.id, run.franchisorId, radius, run.vertical, conceptText, run.franchisor?.brandName ?? undefined, run.intakeSubmissionId);
     await persistTerritoryResult(run.id, result);
+    await recomputeSiteComposite(s.id);
 
     // Retrieve-then-generate: phrase the verdict from grounded, classified facts only.
     const site = await prisma.candidateSite.findUniqueOrThrow({

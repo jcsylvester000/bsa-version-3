@@ -93,7 +93,7 @@ Body:
   "vertical": "fnb_cafe",           // one of the 18 verticals
   "sections": { "a": "...", ... },  // A–K; must-have set gates at 80%
   "outlets": [{ "outletName","format?","lat","lon","monthlySalesPhp?","performanceTag?" }],
-  "candidateSites": [{ "label","address?","barangay?","city?","lat","lon","siteType?" }]
+  "candidateSites": [{ "label","address?","barangay?","city?","lat","lon","siteType?","askingRentPhpSqm?" }]
 }
 ```
 Validates (Zod + PH lat/lon bounds), enforces the **80% completeness gate**

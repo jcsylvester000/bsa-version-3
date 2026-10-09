@@ -36,12 +36,35 @@ export const RICH_PLACES = 60;
 export type CoverageStatus = 'covered' | 'partial' | 'gap';
 export type DemandKind = 'search' | 'intake_site';
 
-/** Pure rule (unit-tested): what BSA's data looks like around a point. */
-export function classifyCoverage(placesNearby: number, freshLayers: number, totalLayers: number): CoverageStatus {
-  if (placesNearby >= RICH_PLACES) return 'covered';
+/**
+ * Context layers whose places have their own POI category — used to spot a "rich" area that still has
+ * none of a layer (data check 2026-10-09: NCR held ~18,000 competitor places but only a few hundred
+ * transport stops, so the Accessibility pillar was missing on every NCR run).
+ */
+export const LAYER_CATEGORIES: Partial<Record<LayerKey, string[]>> = {
+  transport: ['transport'],
+  health: ['clinic', 'hospital', 'diagnostic'],
+  education: ['school'],
+};
+
+/**
+ * Pure rule (unit-tested): what BSA's data looks like around a point. `emptyLayers` = context layers
+ * with no stored place of their category nearby and no fresh capture — a rich area missing one of them
+ * is only 'partial' (that layer gets back-filled).
+ */
+export function classifyCoverage(placesNearby: number, freshLayers: number, totalLayers: number, emptyLayers = 0): CoverageStatus {
+  if (placesNearby >= RICH_PLACES) return emptyLayers > 0 ? 'partial' : 'covered';
   if (totalLayers > 0 && freshLayers >= totalLayers) return 'covered';
   if (placesNearby === 0 && freshLayers === 0) return 'gap';
   return 'partial';
+}
+
+/** Stale context layers with no stored place of their category nearby. Pure (unit-tested). */
+export function emptyContextLayers(staleLayers: LayerKey[], countsByCategory: Map<string, number>): LayerKey[] {
+  return staleLayers.filter((l) => {
+    const cats = LAYER_CATEGORIES[l];
+    return !!cats && cats.every((c) => !(countsByCategory.get(c) ?? 0));
+  });
 }
 
 /** ~1 km key so demand points close together share ONE job. */
@@ -88,16 +111,24 @@ export async function recordDemand(input: DemandInput): Promise<DemandResult> {
   try {
     const area = fillAreaFor(input.lat, input.lon);
     const layers = fillLayersFor(input.vertical);
-    const [count, fresh, bnd] = await Promise.all([
+    const [count, byCat, fresh, bnd] = await Promise.all([
       prisma.$queryRaw<Array<{ n: number }>>`
         SELECT COUNT(*)::int AS n FROM poi
         WHERE geom IS NOT NULL AND ST_DWithin(geom, ST_SetSRID(ST_MakePoint(${input.lon}, ${input.lat}), 4326)::geography, ${area.radiusM})`,
+      prisma.$queryRaw<Array<{ category: string; n: number }>>`
+        SELECT category::text AS category, COUNT(*)::int AS n FROM poi
+        WHERE geom IS NOT NULL AND ST_DWithin(geom, ST_SetSRID(ST_MakePoint(${input.lon}, ${input.lat}), 4326)::geography, ${area.radiusM})
+        GROUP BY category`,
       layerFreshness(area, layers),
       resolveAdminBoundary(input.lat, input.lon),
     ]);
     const placesNearby = count[0]?.n ?? 0;
-    const missing = fresh.filter((l) => !l.covered).map((l) => l.layer as LayerKey);
-    const status = classifyCoverage(placesNearby, layers.length - missing.length, layers.length);
+    const catN = new Map(byCat.map((r) => [r.category, r.n]));
+    const notFresh = fresh.filter((l) => !l.covered).map((l) => l.layer as LayerKey);
+    const empty = emptyContextLayers(notFresh, catN);
+    // Rich areas only back-fill the context layers they have none of; thin areas fill every stale layer.
+    const missing = placesNearby >= RICH_PLACES ? empty : notFresh;
+    const status = classifyCoverage(placesNearby, layers.length - notFresh.length, layers.length, empty.length);
     const where = [bnd?.barangay ? `Brgy ${bnd.barangay}` : null, bnd?.city].filter(Boolean).join(', ');
 
     let jobId: string | null = null;

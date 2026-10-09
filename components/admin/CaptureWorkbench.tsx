@@ -577,7 +577,9 @@ export function CaptureWorkbench() {
       const lr = r.ok ? r.data.layers[0] : undefined;
       const retryable = !r.ok ? RETRYABLE.test(r.error.code) : lr?.status === 'failed' && !/Unknown layer/.test(lr.message ?? '');
       if ((!r.ok || lr?.status === 'failed') && retryable && attempt < AUTO_ATTEMPTS) {
-        const wait = RETRY_WAIT_S[attempt - 1] * (osmWindow().offPeak ? 1 : 1.5);
+        // Rate-limited (429) means the server's slot is used up — a short wait just fails again.
+        const limited = /rate-limit/i.test(lr?.message ?? '') || (!r.ok && r.error.code === 'rate_limited');
+        const wait = Math.max(RETRY_WAIT_S[attempt - 1] * (osmWindow().offPeak ? 1 : 1.5), limited ? 30 : 0);
         setBusy(`OpenStreetMap is busy — retrying ${label} in ${Math.round(wait)} s…`);
         await new Promise((res) => setTimeout(res, wait * 1000));
         continue;
@@ -590,7 +592,7 @@ export function CaptureWorkbench() {
         ...x,
         stored: r.data.stored ?? x.stored,
         notes: [...new Set([...x.notes, ...r.data.notes])],
-        layers: x.layers.map((l) => (l.layer === layer ? { ...l, ...lr!, layer, attempts: attempt } : l)),
+        layers: x.layers.map((l) => (l.layer === layer ? { ...l, message: undefined, truncated: undefined, ...lr!, layer, attempts: attempt } : l)),
       }));
       addItems(areaId, r.data.candidates);
       return;

@@ -37,3 +37,23 @@ export const errors = {
     return res;
   },
 };
+
+/**
+ * CSRF guard for body-less POST mutations (they can't rely on "JSON only"): the request must come
+ * from this site. Browsers send `Sec-Fetch-Site` on every fetch; older ones send `Origin`. A request
+ * with neither (curl, server-to-server) is allowed — cookies are SameSite=Lax and it carries no
+ * ambient browser credentials. Returns a 403 response to send, or null when the request is fine.
+ */
+export function crossSiteBlock(req: Request): Response | null {
+  const site = req.headers.get('sec-fetch-site');
+  if (site && site !== 'same-origin' && site !== 'none') return fail({ code: 'forbidden', message: 'Cross-site request blocked.' }, 403);
+  const origin = req.headers.get('origin');
+  if (!site && origin) {
+    try {
+      if (new URL(origin).host !== req.headers.get('host')) return fail({ code: 'forbidden', message: 'Cross-site request blocked.' }, 403);
+    } catch {
+      return fail({ code: 'forbidden', message: 'Cross-site request blocked.' }, 403);
+    }
+  }
+  return null;
+}
