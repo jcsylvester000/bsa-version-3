@@ -5,20 +5,21 @@ always-current snapshot. `WORKLOG.md` is the full history (newest first). This f
 rewritten at the end of every work batch — if it disagrees with older notes (e.g.
 `2 - Data Intake/Migration Guide/PROJECT_MEMORY_EXPORT.md`, 2026-08-10), **this file wins**.
 
-_Last updated: 2026-10-08 (end of day, paused) — capture playbook enforced (in the folder, **not yet pushed**); Capture Coverage pushed `55ff1f0`; Design v2 batches 0–13 pushed (HEAD `498db86`, hotfix `db36c53`)._
+_Last updated: 2026-10-09 — barangay boundaries load automatically in Place Capture (awaiting push); playbook enforced pushed `33ef548`; Design v2 batches 0–13 pushed (HEAD `498db86`, hotfix `db36c53`)._
 
-## ⏸ Paused 2026-10-08 — resume here
+## ⏸ Resume here (updated 2026-10-09)
 
-**State:** git HEAD `55ff1f0` (Capture Coverage + retry queue). Working tree holds the uncommitted, tested
-"capture playbook enforced" batch (tsc clean · vitest 559/559 · next build OK). Nothing else is in flight.
+**State:** git HEAD `33ef548` (capture playbook enforced). Working tree holds the tested, uncommitted
+**boundaries-on-demand** batch (`lib/geo/psgcIndex.json`, `lib/geo/boundaryOnDemand.ts`, `POST /api/admin/capture/boundaries`,
+workbench auto-load; tsc clean · vitest 564/564 · next build OK). No migration.
 
 **Owner to-do before/at next session**
-1. Push the playbook batch: `git add -A` → `git commit -m "Capture playbook enforced: pre-flight checklist, ring limits, 3 types max, one area at a time, OSM status, what-to-capture-next"` → `git push` (no migration).
+1. Push the boundaries batch: `git add -A` → `git commit -m "Place Capture: barangay boundaries load automatically for any capture area"` → `git push` (no migration).
 2. Confirm Netlify applied migration `20261008000000_capture_gaps` (Capture Coverage loads without a `db_migration_pending` reason).
 3. If not done yet: `npm run db:recompute-composites` once (Territory Guard deal-breaker for runs saved before 2026-10-07).
 4. Security: the seeded admin `admin@grid.test` uses the public demo password `bsa-demo-1234` — change it
    (Settings → Change password) or create a real admin and retire the demo one (runbook F-31).
-5. Load barangay boundaries for every region being captured (`db:fetch-boundaries -- --region=<r>` → `db:load-boundaries` → `db:tag-boundaries`); Capture Coverage lists regions missing them.
+5. Boundaries now load by themselves where you capture (any region, HUCs included); bulk province loads via `db:fetch-boundaries` remain optional.
 
 **Suggested next work (not started)**
 - Owner smoke test of the enforced playbook on the live site (dense pin, no-boundary pin, failed layer → retry list → retry → save closes it).

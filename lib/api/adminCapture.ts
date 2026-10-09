@@ -81,6 +81,9 @@ export const PreviewBody = z.object({
 /** POST /plan — the pre-flight check for an area before anything is fetched. */
 export const PlanBody = z.object({ area: CaptureAreaSchema, layers: z.array(layer).min(1).max(12) });
 
+/** POST /boundaries — load barangay boundaries for the cities a capture area touches. */
+export const BoundariesBody = z.object({ area: CaptureAreaSchema });
+
 /** POST /gaps/:id — dismiss or re-open a retry-queue entry. */
 export const GapActionBody = z.object({ action: z.enum(['dismiss', 'reopen']) });
 

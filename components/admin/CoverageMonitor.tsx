@@ -18,6 +18,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { defaultBasemapUrl, basemapPaint, OSM_ATTRIBUTION, OSM_MAX_ZOOM } from '@/lib/ui/theme';
 import { ALL_LAYERS } from '@/lib/capture/layers';
 import { listRegions } from '@/lib/geo/regions';
+import { PH_REGIONS } from '@/lib/geo/phRegions';
 import { manilaShortStampYear } from '@/lib/util/manilaTime';
 import { FRESH_DAYS, osmWindow, type OsmWindow } from '@/lib/capture/capturePolicy';
 
@@ -58,7 +59,13 @@ const REGION_LABEL: Record<string, string> = Object.fromEntries(listRegions().ma
 const layerName = (k: string) => LAYER_LABEL[k] ?? k;
 /** poi_coverage key → readable name ("fnb_qsr" → QSR…, "layer:anchors" → Everyday anchors). */
 const coverageName = (k: string) => (k.startsWith('layer:') ? LAYER_LABEL[k.slice(6)] ?? k : LAYER_LABEL[`v:${k}`] ?? k);
-const regionName = (r: string | null) => (r ? REGION_LABEL[r] ?? r : 'Unknown region');
+/** Registered BSA region key, or `ph-<code>` for boundaries loaded on demand elsewhere (e.g. ph-car). */
+const regionName = (r: string | null) => {
+  if (!r) return 'Unknown region';
+  if (REGION_LABEL[r]) return REGION_LABEL[r];
+  const ph = r.startsWith('ph-') ? PH_REGIONS.find((x) => x.code.toLowerCase() === r.slice(3)) : undefined;
+  return ph?.name ?? r;
+};
 const place = (x: { barangay: string | null; city: string | null; province: string | null }) =>
   [x.barangay ? `Brgy ${x.barangay}` : null, x.city, x.province].filter(Boolean).join(', ') || 'No boundary loaded here';
 const ageDays = (iso: string) => Math.floor((Date.now() - new Date(iso).getTime()) / DAY);
@@ -167,7 +174,10 @@ export function CoverageMonitor() {
       out.push({ key: `a${a.id}`, tone: 'caution', title: `Re-capture due (${ageDays(a.createdAt)} days)`, detail: `${a.label} · ${place(a)}`, href: `/admin/capture?lat=${a.lat.toFixed(6)}&lon=${a.lon.toFixed(6)}`, action: 'Re-capture' });
     }
     for (const r of byRegion) {
-      if (r.region && (r.barangays ?? 0) === 0) out.push({ key: `b${r.region}`, tone: 'caution', title: `Load barangay boundaries: ${regionName(r.region)}`, detail: `${r.captures} capture(s) saved without barangay / city tags.`, action: '', code: `npm run db:fetch-boundaries -- --region=${r.region} && npm run db:load-boundaries && npm run db:tag-boundaries` });
+      if (r.region && (r.barangays ?? 0) === 0) {
+        const at = (data?.areas ?? []).find((a) => a.region === r.region);
+        out.push({ key: `b${r.region}`, tone: 'caution', title: `Barangay boundaries missing: ${regionName(r.region)}`, detail: `${r.captures} capture(s) saved without barangay / city tags. Open Place Capture there — the boundaries load automatically and the saved places get tagged.`, href: at ? `/admin/capture?lat=${at.lat.toFixed(6)}&lon=${at.lon.toFixed(6)}` : undefined, action: 'Load & tag' });
+      }
     }
     return out;
   }, [data, byRegion]);
@@ -332,7 +342,7 @@ export function CoverageMonitor() {
       <section className="card overflow-hidden" aria-labelledby="cov-next-h">
         <div className="px-5 py-4">
           <h2 id="cov-next-h" className="font-body text-title">What to capture next</h2>
-          <p className="text-label font-normal text-ink-muted">Retries first, then areas past {FRESH_DAYS} days, then regions missing barangay boundaries. For new ground, pick a spot with no colour on the map below.</p>
+          <p className="text-label font-normal text-ink-muted">Retries first, then areas past {FRESH_DAYS} days, then regions missing barangay boundaries (they load automatically in Place Capture). For new ground, pick a spot with no colour on the map below.</p>
         </div>
         <ul className="divide-y divide-ink-border border-t border-ink-border">
           {next.slice(0, 8).map((n) => (

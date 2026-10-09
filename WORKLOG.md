@@ -5,6 +5,28 @@ The cross-thread state record. Read this (with the Master Instruction and the cu
 
 ---
 
+## 2026-10-09 — Barangay boundaries load automatically in Place Capture
+
+**Owner report:** capturing in Baguio was blocked — "No barangay boundaries here — load them first, or tick
+capture anyway". Loading boundaries needed a command-line step per province, and Baguio (an HUC) isn't in any
+province file at all.
+
+- `lib/geo/psgcIndex.json` (133 KB): all 1,634 cities/municipalities incl. the 16 HUCs outside NCR that sit outside
+  province files (Baguio, Angeles, Cebu, Davao, CDO, …) — PSGC code, name, province/region code, bbox. Generated
+  from faeldon/philippines-json-maps 2023 (PSGC Q4-2023, MIT).
+- `lib/geo/boundaryOnDemand.ts` + `POST /api/admin/capture/boundaries`: cities the ring touches (≤ 4, nearest first,
+  already-loaded skipped) → barangay polygons (medres) → `admin_boundary` (batched upserts, city = union of its
+  barangays, province name row; region = registered key or `ph-<code>`, e.g. `ph-car`) → tags untagged `poi` in the
+  area. Admin-only, JSON-only, 60/h, audited.
+- Place Capture: loads them automatically as soon as the pin lands where none exist; no longer a blocker (warning +
+  "Load boundaries for this area" retry if the download fails). Capture Coverage labels `ph-*` regions and its
+  "missing boundaries" item opens Place Capture there to load + tag.
+
+Verified: real PG16 + PostGIS through the Neon HTTP emulator — Baguio ring loaded Baguio City (128), Tuba (13),
+La Trinidad (16) in ~0.8 s, tagged a saved place (Brgy Kabayanihan, Baguio City), second call skipped all three;
+Noveleta ring → Noveleta, Kawit, Imus (region `cavite`). tsc clean · vitest 564/564 · next build OK · headless:
+Baguio pin auto-loads, step 1 shows the barangay, capture button enabled, no console errors.
+
 ## 2026-10-08 — End of day (paused)
 
 Day's work, in order: Place Capture v3 + Neon save fix + Territory Guard deal-breaker (pushed `623941d`) →

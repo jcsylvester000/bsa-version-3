@@ -9,7 +9,7 @@ The rules below are built into Admin → Place Capture and Capture Coverage (`li
 | Practice | How the app applies it |
 |---|---|
 | Check coverage first, capture gaps | Capture Coverage map + "What to capture next"; the capture map draws saved areas (green fresh / grey due / red retry); the **Before you capture** checklist lists layers already captured here — they are skipped |
-| Boundaries before capturing | No barangay boundary at the pin → capture is blocked until boundaries are loaded or the admin ticks "Capture anyway"; Coverage shows boundaries per region |
+| Boundaries before capturing | **Automatic (2026-10-09):** when the pin has no barangay boundary, the app loads the PSA barangay polygons for the cities/municipalities the ring touches (≤ 4, a few seconds, anywhere in the Philippines incl. HUCs like Baguio) and tags places already saved there. Never blocks: if the download fails you can still capture and the places are tagged when the boundaries load. Coverage shows boundaries per region |
 | Ring 700–1,000 m in dense centres, ≤ 1,500 m in towns | Slider is capped per spot (dense centres list or ≥ 300 stored places/km²), default 800 m when dense; the server rejects bigger rings (`ring_too_large`) |
 | 2–3 business types | Max 3 per capture on screen and in the API |
 | One area at a time, don't reload | The next area is blocked until the current one is saved or removed; the browser warns before leaving while loading |
@@ -37,8 +37,8 @@ area — one ring or several smaller ones.
 
 1. **Open Capture Coverage first.** Green = captured (skipped for 90 days), grey = re-capture due, red dashed =
    retry queue. Work the gaps; don't re-scan green areas.
-2. **Load the region's barangay boundaries** (`npm run db:fetch-boundaries -- --region=<region>` then `npm run db:load-boundaries`) so saved
-   places are tagged with barangay / city / province.
+2. **Barangay boundaries load by themselves** when you drop a pin where none exist (whole provinces can still be bulk-loaded
+   with `npm run db:fetch-boundaries -- --region=<region>`).
 
 ## During a capture
 

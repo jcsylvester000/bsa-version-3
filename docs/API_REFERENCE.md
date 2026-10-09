@@ -53,6 +53,7 @@ Workflow (v3, 2026-10-07): **preview/import are read-only → the admin reviews 
 | `GET /gaps/:id` | — | one entry (area spec, layer, setup) — Place Capture's `?retry=<id>` re-runs it. |
 | `POST /gaps/:id` | `{ action: 'dismiss' \| 'reopen' }` (JSON only) | close an entry by hand / re-open a dismissed one. Audited (`poi.capture.gap.*`). |
 | `POST /plan` | `{ area, layers[] }` (JSON only) | the pre-flight: `{ layers[] (covered, cells, freshCells, lastCapturedAt), toFetch[], openGaps[], ring {ok, message, dense, reason, maxM, defaultM}, storedPlaces, boundary, previousCaptures[] }`. Read-only. |
+| `POST /boundaries` | `{ area }` (JSON only) | loads the PSA barangay boundaries for the cities/municipalities the area touches (≤ 4; `lib/geo/psgcIndex.json` → faeldon/philippines-json-maps medres) and tags untagged places there: `{ cities[] (loaded/already/failed), barangaysLoaded, placesTagged }`. 60 / admin / hour, audited (`admin_boundary.load`). `422 outside_ph`, `502 boundary_source_unavailable`. |
 | `GET /osm-status` | — | `{ reachable, slotsNow, waitSeconds, window {offPeak, hour, label, advice} }` — Overpass slots for this server (cached 20 s) + the PHT off-peak window. |
 | `GET /cells?bbox=s,w,n,e&layer=KEY` | bbox ≤ 2° a side; KEY = vertical (`fnb_qsr`) or `layer:<base>` | Territory Guard coverage cells (~1.1 km) with `fetchedAt` — the freshness map. |
 

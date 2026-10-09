@@ -24,6 +24,10 @@ vi.mock('@/lib/services/capture', () => ({
   coverageCells: (...a: unknown[]) => svc.coverageCells(...(a as [])),
   planCapture: (...a: unknown[]) => svc.planCapture(...(a as [])),
 }));
+const loadBoundariesForArea = vi.fn(async () => ({ cities: [{ psgc: '1430300000', name: 'Baguio City', barangays: 128, status: 'loaded' }], barangaysLoaded: 128, placesTagged: 0 }));
+vi.mock('@/lib/geo/boundaryOnDemand', () => ({ loadBoundariesForArea: (...a: unknown[]) => loadBoundariesForArea(...(a as [])) }));
+vi.mock('@/lib/auth/rateLimit', () => ({ checkLimit: vi.fn(async () => ({ limited: false, retryAfterSeconds: 0 })), recordAttempt: vi.fn(async () => undefined) }));
+vi.mock('@/lib/audit/audit', () => ({ audit: vi.fn(async () => undefined) }));
 vi.mock('@/lib/places/osmService', () => ({ overpassStatus: vi.fn(async () => ({ reachable: true, slotsNow: 2, waitSeconds: 0, checkedAt: '' })) }));
 
 import { GET as log } from '@/app/api/admin/capture/log/route';
@@ -33,6 +37,7 @@ import { GET as cells } from '@/app/api/admin/capture/cells/route';
 import { POST as plan } from '@/app/api/admin/capture/plan/route';
 import { GET as osmStatus } from '@/app/api/admin/capture/osm-status/route';
 import { SiteContextSchema } from '@/lib/api/adminCapture';
+import { POST as boundaries } from '@/app/api/admin/capture/boundaries/route';
 
 const admin = { id: '11111111-1111-4111-8111-111111111111', email: 'a@grid', role: 'admin', franchisorId: null };
 const analyst = { ...admin, role: 'analyst' };
@@ -102,5 +107,18 @@ describe('capture coverage routes', () => {
   it('API refuses more than 3 business types per capture', () => {
     expect(SiteContextSchema.safeParse({ verticals: ['fnb_qsr', 'fnb_bakery', 'pharmacy'] }).success).toBe(true);
     expect(SiteContextSchema.safeParse({ verticals: ['fnb_qsr', 'fnb_bakery', 'pharmacy', 'salon'] }).success).toBe(false);
+  });
+
+  it('boundaries on demand: admin only, JSON only, validated', async () => {
+    const area = { kind: 'circle', lat: 16.4146, lon: 120.5955, radiusM: 1500 };
+    session.mockResolvedValue(analyst);
+    expect((await boundaries(post('/api/admin/capture/boundaries', { area }))).status).toBe(403);
+    session.mockResolvedValue(admin);
+    expect((await boundaries(post('/api/admin/capture/boundaries', { area }, 'text/plain'))).status).toBe(415);
+    expect((await boundaries(post('/api/admin/capture/boundaries', { area: { kind: 'circle', lat: 40, lon: 0, radiusM: 10 } }))).status).toBe(422);
+    expect(loadBoundariesForArea).not.toHaveBeenCalled();
+    const r = await boundaries(post('/api/admin/capture/boundaries', { area }));
+    expect(r.status).toBe(200);
+    expect((await r.json()).data.barangaysLoaded).toBe(128);
   });
 });

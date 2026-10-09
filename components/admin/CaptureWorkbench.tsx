@@ -86,6 +86,8 @@ interface CapturePlan {
   boundary: { barangay: string | null; city: string | null; province: string | null } | null;
   previousCaptures: Array<{ id: string; label: string; createdAt: string; layers: string[]; savedCount: number }>;
 }
+interface BoundaryLoad { cities: Array<{ psgc: string; name: string; barangays: number; status: 'loaded' | 'already' | 'failed' }>; barangaysLoaded: number; placesTagged: number }
+type BoundaryState = { status: 'idle' } | { status: 'loading'; key: string } | { status: 'done'; result: BoundaryLoad } | { status: 'failed'; key: string; message: string };
 interface OsmStatus { reachable: boolean; slotsNow: number | null; waitSeconds: number; checkedAt: string; window: OsmWindow }
 interface GapEntry { id: string; layer: string; label: string; areaSpec: CaptureArea; context: SiteContext | null; reason: string; attempts: number }
 interface SavedBatch {
@@ -216,8 +218,10 @@ export function CaptureWorkbench() {
   const [plan, setPlan] = useState<CapturePlan | null>(null);
   const [planLoading, setPlanLoading] = useState(false);
   const [osm, setOsm] = useState<OsmStatus | null>(null);
-  /** Admin acknowledged capturing without barangay boundaries (places save untagged). */
-  const [noBoundaryOk, setNoBoundaryOk] = useState(false);
+  /** Barangay boundaries load ON DEMAND for the area being captured (no command-line step). */
+  const [bnd, setBnd] = useState<BoundaryState>({ status: 'idle' });
+  const [refreshNonce, setRefreshNonce] = useState(0);
+  const bndTried = useRef(new Set<string>());
 
   useEffect(() => { modeRef.current = mode; if (mode !== 'rect') rectStart.current = null; }, [mode]);
 
@@ -286,7 +290,8 @@ export function CaptureWorkbench() {
       if (r.ok) setReadiness(r.data);
     }, 350);
     return () => clearTimeout(t);
-  }, [site, verticals, format, radiusM, brand, readinessFor]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [site, verticals, format, radiusM, brand, readinessFor, refreshNonce]);
 
   /* ---------------------------------------------------------------- playbook: pre-flight */
 
@@ -304,13 +309,29 @@ export function CaptureWorkbench() {
       if (r.ok) setPlan(r.data);
     }, 450);
     return () => { stale = true; clearTimeout(t); };
-  }, [planKey]);
+  }, [planKey, refreshNonce]);
 
   // Keep the ring inside the rule for this spot (1,000 m in dense centres, 1,500 m elsewhere).
   useEffect(() => {
     if (radiusM > ringMax) setRadiusM(Math.min(ring.defaultM, ringMax));
   }, [ringMax, ring.defaultM, radiusM]);
-  useEffect(() => { setNoBoundaryOk(false); }, [site?.lat, site?.lon]);
+  // No barangay boundaries where we are about to capture → load them automatically (once per area).
+  const loadBoundaries = useCallback(async (a: CaptureArea, key: string) => {
+    bndTried.current.add(key);
+    setBnd({ status: 'loading', key });
+    const r = await api<BoundaryLoad>('/api/admin/capture/boundaries', jsonInit('POST', { area: a }));
+    if (!r.ok) { setBnd({ status: 'failed', key, message: r.error.message }); return; }
+    setBnd({ status: 'done', result: r.data });
+    setRefreshNonce((n) => n + 1); // re-run the plan + readiness so the pin shows its barangay
+  }, []);
+  // Triggered as soon as the pin is down (readiness = what the pin resolves to), not only at step 3.
+  // One automatic attempt per pin spot (~100 m), so dragging the ring slider never re-triggers it.
+  const areaKey = site ? `${site.lat.toFixed(3)},${site.lon.toFixed(3)}` : '';
+  useEffect(() => {
+    if (!readiness || readiness.boundary || !area || !areaKey || bndTried.current.has(areaKey) || bnd.status === 'loading') return;
+    void loadBoundaries(area, areaKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [readiness, areaKey, bnd.status, loadBoundaries]);
 
   // OpenStreetMap readiness + the off-peak window, refreshed every minute.
   const loadOsm = useCallback(async () => {
@@ -767,7 +788,7 @@ export function CaptureWorkbench() {
   const blockers: string[] = [];
   if (blockingArea) blockers.push(`Save or remove “${blockingArea.label}” first — one area at a time.`);
   if (plan && !plan.ring.ok && plan.ring.message) blockers.push(plan.ring.message);
-  if (plan && !plan.boundary && !noBoundaryOk) blockers.push('No barangay boundaries here — load them first, or tick “capture anyway”.');
+  if (bnd.status === 'loading') blockers.push('Loading barangay boundaries for this area (one time)…');
   if (step2Done && area && planLoading && !plan) blockers.push('Checking what is already captured here…');
   const allCovered = !!plan && !refresh && plan.toFetch.length === 0;
   const loading = areas.some((a) => a.layers.some((l) => l.status === 'loading' || l.status === 'waiting'));
@@ -834,7 +855,7 @@ export function CaptureWorkbench() {
                     {readyLoading && !readiness ? <p className="text-ink-muted">Locating…</p>
                       : readiness?.boundary
                         ? <p className="text-ink-muted">Brgy {readiness.boundary.barangay ?? '—'}, {readiness.boundary.city ?? '—'}{readiness.boundary.province ? `, ${readiness.boundary.province}` : ''} <span className="opacity-70">· PSGC {readiness.boundary.psgcCode}</span></p>
-                        : readiness && <p className="text-caution">▲ No barangay boundary loaded here. Places still save with exact coordinates; load the region&apos;s boundaries to tag barangays.</p>}
+                        : readiness && <p className="text-caution">{bnd.status === 'loading' ? '… Loading the barangay boundaries for this area (one time, a few seconds)…' : bnd.status === 'failed' ? `▲ Couldn't load barangay boundaries just now — you can still capture; places are tagged automatically when they load.` : '▲ No barangay boundary loaded here yet — loading it automatically…'}</p>}
                     {!!readiness?.previousCaptures?.length && (
                       <div className="mt-2 border-t border-ink-border pt-2">
                         <p className="text-ink-text">↺ Captured here before ({readiness.previousCaptures.length}{readiness.previousCaptures.length >= 5 ? '+' : ''})</p>
@@ -904,7 +925,7 @@ export function CaptureWorkbench() {
                 {area && <p className={`mt-3 text-label font-normal ${tooBig ? 'text-nogo' : 'text-ink-muted'}`}>{tooBig ? '✕ ' : ''}Area ≈ {km2.toFixed(1)} km² · {layers.length} layer{layers.length === 1 ? '' : 's'}{tooBig ? ` — over the ${MAX_CAPTURE_KM2} km² limit. Make the ring smaller.` : ''}</p>}
                 {step2Done && area && (
                   <Preflight plan={plan} loading={planLoading} osm={osm} verticals={verticals.length} radiusM={area.kind === 'circle' ? area.radiusM : null}
-                    blockingArea={blockingArea?.label ?? null} refresh={refresh} noBoundaryOk={noBoundaryOk} onNoBoundaryOk={setNoBoundaryOk} />
+                    blockingArea={blockingArea?.label ?? null} refresh={refresh} bnd={bnd} onRetryBoundaries={() => { if (area) void loadBoundaries(area, areaKey); }} />
                 )}
                 <button type="button" className="btn-primary mt-3 w-full" disabled={!step2Done || !area || tooBig || !layers.length || !!busy || blockers.length > 0} onClick={showOnMap}
                   title={blockers[0]}>
@@ -1215,9 +1236,9 @@ function SaveStatus({ status, onNew, onHistory }: { status: { at: string; areas:
  * Pre-flight checklist — the capture playbook applied to the area on screen (docs/PLACE_CAPTURE_PLAYBOOK.md).
  * ✓ ok · ▲ worth knowing · ✕ stops the capture until fixed.
  */
-function Preflight({ plan, loading, osm, verticals, radiusM, blockingArea, refresh, noBoundaryOk, onNoBoundaryOk }: {
+function Preflight({ plan, loading, osm, verticals, radiusM, blockingArea, refresh, bnd, onRetryBoundaries }: {
   plan: CapturePlan | null; loading: boolean; osm: OsmStatus | null; verticals: number; radiusM: number | null;
-  blockingArea: string | null; refresh: boolean; noBoundaryOk: boolean; onNoBoundaryOk: (v: boolean) => void;
+  blockingArea: string | null; refresh: boolean; bnd: BoundaryState; onRetryBoundaries: () => void;
 }) {
   const win = osm?.window ?? osmWindow();
   const Row = ({ tone, children }: { tone: 'ok' | 'warn' | 'stop'; children: React.ReactNode }) => (
@@ -1239,13 +1260,22 @@ function Preflight({ plan, loading, osm, verticals, radiusM, blockingArea, refre
             {plan.openGaps.length > 0 && <span className="block text-caution">{plan.openGaps.length} retry entr{plan.openGaps.length === 1 ? 'y' : 'ies'} inside this area ({[...new Set(plan.openGaps.map((g) => LAYER_LABEL[g.layer] ?? g.layer))].join(', ')}) — closed when you save these layers here.</span>}
           </Row>
           {plan.boundary
-            ? <Row tone="ok"><strong className="text-ink-text">Boundaries:</strong> loaded — places will be tagged Brgy {plan.boundary.barangay ?? '—'}, {plan.boundary.city ?? '—'}.</Row>
-            : (
-              <Row tone={noBoundaryOk ? 'warn' : 'stop'}>
-                <strong className="text-ink-text">Boundaries:</strong> no barangay boundaries loaded here, so places would save without barangay / city tags. Load the region first (<code>npm run db:fetch-boundaries</code> → <code>db:load-boundaries</code>).
-                <label className="mt-1 block text-ink-text"><input type="checkbox" className="mr-2 align-middle" checked={noBoundaryOk} onChange={(e) => onNoBoundaryOk(e.target.checked)} />Capture anyway — tag them later with <code>db:tag-boundaries</code></label>
+            ? (
+              <Row tone="ok">
+                <strong className="text-ink-text">Boundaries:</strong> loaded — places will be tagged Brgy {plan.boundary.barangay ?? '—'}, {plan.boundary.city ?? '—'}.
+                {bnd.status === 'done' && bnd.result.barangaysLoaded > 0 && (
+                  <span className="block">Just loaded {bnd.result.barangaysLoaded.toLocaleString('en-US')} barangays ({bnd.result.cities.filter((c) => c.status === 'loaded').map((c) => c.name).join(', ')}){bnd.result.placesTagged ? `; tagged ${bnd.result.placesTagged.toLocaleString('en-US')} places saved earlier` : ''}.</span>
+                )}
               </Row>
-            )}
+            )
+            : bnd.status === 'loading'
+              ? <Row tone="warn"><strong className="text-ink-text">Boundaries:</strong> loading the barangay boundaries for this area (PSA, one time — a few seconds)…</Row>
+              : (
+                <Row tone="warn">
+                  <strong className="text-ink-text">Boundaries:</strong> {bnd.status === 'failed' ? `couldn't load them just now (${bnd.message}).` : 'not loaded here yet.'} You can still capture — places save with exact coordinates and are tagged automatically when the boundaries load.
+                  <button type="button" className="link mt-1 block" onClick={onRetryBoundaries}>Load boundaries for this area</button>
+                </Row>
+              )}
           <Row tone={plan.ring.ok ? 'ok' : 'stop'}>
             <strong className="text-ink-text">Ring size:</strong>{' '}
             {plan.ring.ok ? `${radiusM ? `${radiusM.toLocaleString('en-US')} m` : 'rectangle'} — within the ${plan.ring.maxM.toLocaleString('en-US')} m limit${plan.ring.dense ? ` for a dense area (${plan.ring.reason})` : ''}.` : plan.ring.message}
