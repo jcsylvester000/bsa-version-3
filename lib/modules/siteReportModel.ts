@@ -125,6 +125,8 @@ export interface SiteReportMeta {
   truthPct?: { verified: number; assumed: number; projected: number } | null;
   /** Set when the territory deal-breaker capped the composite (scorecard.territoryGate). */
   capNote?: string | null;
+  /** 'nogo' for the cannibalization deal-breaker, 'caution' for a Caution cap (styles the note). */
+  capBand?: 'nogo' | 'caution' | null;
   /** Set while place data around the site is still being gathered (or could not be) — the call is provisional. */
   provisionalNote?: string | null;
 }
@@ -153,6 +155,7 @@ export const tk = (t: TL): TruthLayer => t.toLowerCase() as TruthLayer;
 export const fmtPct = (v: number | null | undefined): string => (v == null ? '—' : `${v}%`);
 export const fmtPesoOrDash = (v: number | null | undefined): string => (v == null ? '—' : fmtPeso(v));
 export function ordinal(n: number): string {
+  n = Math.round(n); // percentiles can arrive fractional (16.7 → "17th")
   const s = ['th', 'st', 'nd', 'rd'], v = n % 100;
   return n + (s[(v - 20) % 10] ?? s[v] ?? s[0]);
 }
@@ -226,6 +229,7 @@ export interface SiteReportModel {
 
 export const FINDING_MODULE: Record<string, { key: ModuleKey; label: string }> = {
   Cannibalization: { key: 'territory', label: 'Territory Guard' },
+  Competition: { key: 'territory', label: 'Territory Guard' },
   'Lease position': { key: 'lease', label: 'Lease Benchmark' },
   'Demand window': { key: 'daypart', label: 'Daypart Demand' },
   'White-space': { key: 'whitespace', label: 'White-Space' },
@@ -288,6 +292,9 @@ export function buildSiteReportModel(args: {
   })() : null);
 
   const figures: SiteReportModel['figures'] = {
+    Competition: t?.competitiveSaturationPct != null
+      ? { value: `${Math.round(t.competitiveSaturationPct)}% saturation`, truth: tk(tl(t.truth?.competitiveSaturation, 'Projected')) }
+      : undefined,
     Cannibalization: t?.totalCannibalizedPhp != null
       ? { value: `${fmtPeso(t.totalCannibalizedPhp)} / mo`, truth: tk(tl(t.truth?.cannibalizedPhp, 'Projected')) }
       : undefined,
@@ -310,7 +317,7 @@ export function buildSiteReportModel(args: {
   const territory: ModuleSummaryModel = {
     key: 'territory', title: 'Territory Guard', ran: t != null, contextual: !primary('territory'),
     status: t ? (tCall.contested && tVerdict === 'mixed' && (tCall.ownPct ?? 0) < 15 ? { tone: 'caution' as Tone, label: 'Contested corridor' } : { tone: T_VERDICT[tVerdict].tone, label: T_VERDICT[tVerdict].label }) : null,
-    lead: t?.headlineSource === 'competitive' ? 'Driven by competitive saturation, not your own branches.' : undefined,
+    lead: tCall.contested && (tCall.ownPct ?? 0) < 15 ? 'Driven by competitive saturation, not your own branches.' : undefined,
     rows: t ? [
       { label: 'Own-branch overlap', value: fmtPct(tOwn), truth: tk(tl(t.truth?.overlapPct, 'Assumed')) },
       {
@@ -392,13 +399,13 @@ export function buildSiteReportModel(args: {
       : null,
     rows: w && wRecs ? [
       { label: 'Barangays scanned', value: fmtInt(w.scanned ?? 0), truth: 'verified' as TruthLayer },
-      { label: 'Cannibalization threshold', value: `≤ ${w.threshold ?? 40}`, truth: 'projected' as TruthLayer },
+      { label: 'Overlap-score threshold', value: `≤ ${w.threshold ?? 40}`, truth: 'projected' as TruthLayer },
       ...(wProposed?.cannibalizationPct != null
-        ? [{ label: "This site's cannibalization", value: `${Math.round(wProposed.cannibalizationPct)}%`, truth: 'projected' as TruthLayer }]
+        ? [{ label: "This site's overlap score", value: `${Math.round(wProposed.cannibalizationPct)}%`, truth: 'projected' as TruthLayer }]
         : []),
       ...wTop.map((r, i) => ({
         label: `#${r.rank ?? i + 1} ${r.barangay ?? 'Unnamed area'}${r.city ? `, ${r.city}` : ''}`,
-        value: `${Math.round(r.cannibalizationPct)}% cannibalization`,
+        value: `${Math.round(r.cannibalizationPct)}% overlap score`,
         truth: 'projected' as TruthLayer,
       })),
     ] : [],
@@ -459,6 +466,7 @@ export function siteReportMeta(data: {
     total: composite != null ? ranked.length : null,
     confidence: data.run.confidence ?? null,
     capNote,
+    capBand: capNote ? gate.maxBand : null,
     provisionalNote: provisionalNoteFor(data.run.dataRefreshState),
     analysedAt: data.site.analyzedAt ? manilaShortStampYear(data.site.analyzedAt) : null,
     truthPct: layers.length ? { verified: pct('verified'), assumed: pct('assumed'), projected: pct('projected') } : null,

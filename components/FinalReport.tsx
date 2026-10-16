@@ -19,6 +19,7 @@ export function FinalReportHero({
   truthPct,
   limited: limitedProp,
   capNote,
+  capBand,
   provisionalNote,
 }: {
   summary: SiteSummary;
@@ -39,6 +40,7 @@ export function FinalReportHero({
   limited?: boolean;
   /** Why the composite was capped (territory deal-breaker), shown under the rationale. */
   capNote?: string | null;
+  capBand?: 'nogo' | 'caution' | null;
   provisionalNote?: string | null;
 }) {
   const limited = limitedProp ?? summary.coverage < 2;
@@ -77,7 +79,9 @@ export function FinalReportHero({
 
       <div className="flex flex-col justify-center gap-6 p-6 md:px-10 md:py-9">
         <p className="rationale text-pretty">{summary.headline}</p>
-        {capNote && <p className="text-label font-normal text-nogo">✕ {capNote}</p>}
+        {capNote && (capBand === 'caution'
+          ? <p className="text-label font-normal text-caution">▲ {capNote}</p>
+          : <p className="text-label font-normal text-nogo">✕ {capNote}</p>)}
         {provisionalNote && <p className="text-label font-normal text-caution">◌ {provisionalNote}</p>}
         {thinData && (
           <p className="text-label font-normal text-ink-muted">

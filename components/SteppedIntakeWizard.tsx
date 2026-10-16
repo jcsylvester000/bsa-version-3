@@ -706,6 +706,12 @@ export function SteppedIntakeWizard({ franchisors, mockMode = false, mockRunId, 
             <label className="btn-ghost cursor-pointer text-xs">Upload CSV<input type="file" accept=".csv" onChange={onCsv} className="hidden" /></label>
           </div>
           <div className="space-y-2">
+            {outlets.length > 0 && (
+              <div aria-hidden className="hidden grid-cols-12 gap-2 px-2 text-[12px] font-semibold uppercase tracking-wide text-ink-muted sm:grid">
+                <span className="col-span-3">Branch</span><span className="col-span-2">Format</span><span className="col-span-3">Address</span>
+                <span className="col-span-2">Monthly sales (₱)</span><span className="col-span-2">Map pin</span>
+              </div>
+            )}
             {outlets.map((o, i) => (
               <div key={i} className="grid grid-cols-1 items-center gap-2 rounded-lg bg-ink-panel-2 p-2 sm:grid-cols-12">
                 <input aria-label={`Branch ${i + 1} name`} placeholder="Branch name" value={o.outletName} onChange={(e) => setOutlets((cs) => cs.map((x, j) => (j === i ? { ...x, outletName: e.target.value } : x)))} className="field px-2 py-1.5 text-sm sm:col-span-3" />
@@ -733,20 +739,24 @@ export function SteppedIntakeWizard({ franchisors, mockMode = false, mockRunId, 
           <p className="mb-3 text-xs text-ink-muted"><span className="text-accent">Pin the exact spot on the map</span> (📍) for each site — the address is a label for your reference.
             Add the asking rent if you have it: BSA benchmarks it against comparable leases in the corridor (lower rent scores higher; you and the client decide the budget).</p>
           <div className="space-y-2">
+            <div aria-hidden className="hidden grid-cols-12 gap-2 px-2 text-[12px] font-semibold uppercase tracking-wide text-ink-muted sm:grid">
+              <span className="col-span-3">Site</span><span className="col-span-3">Address</span><span className="col-span-2">Format</span>
+              <span className="col-span-2">Asking rent ₱/sqm/mo</span><span className="col-span-2">Map pin</span>
+            </div>
             {candidates.map((c, i) => (
               <div key={i} className="grid grid-cols-1 items-center gap-2 rounded-lg bg-ink-panel-2 p-2 sm:grid-cols-12">
                 <input aria-label={`Site ${i + 1} label`} placeholder="Label" value={c.label} onChange={(e) => setCandidates((cs) => cs.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)))} className="field px-2 py-1.5 text-sm sm:col-span-3" />
-                <input aria-label={`Site ${i + 1} address`} placeholder="Address" value={c.address} onChange={(e) => setCandidates((cs) => cs.map((x, j) => (j === i ? { ...x, address: e.target.value } : x)))} onBlur={() => geocodeCandidate(i)} className="field px-2 py-1.5 text-sm sm:col-span-4" />
+                <input aria-label={`Site ${i + 1} address`} placeholder="Address" value={c.address} onChange={(e) => setCandidates((cs) => cs.map((x, j) => (j === i ? { ...x, address: e.target.value } : x)))} onBlur={() => geocodeCandidate(i)} className="field px-2 py-1.5 text-sm sm:col-span-3" />
                 <select aria-label={`Site ${i + 1} type`} value={c.siteType} onChange={(e) => setCandidates((cs) => cs.map((x, j) => (j === i ? { ...x, siteType: e.target.value } : x)))} className="field px-2 py-1.5 text-sm sm:col-span-2">
                   {OUTLET_FORMATS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
                 </select>
                 <input
                   aria-label={`Site ${i + 1} asking rent, pesos per square metre per month (optional)`}
-                  placeholder="Asking rent ₱/sqm/mo (optional)" inputMode="decimal" value={c.askingRent ?? ''}
+                  placeholder="Optional" inputMode="decimal" value={c.askingRent ?? ''}
                   onChange={(e) => setCandidates((cs) => cs.map((x, j) => (j === i ? { ...x, askingRent: e.target.value.replace(/[^0-9.]/g, '') } : x)))}
-                  className="field px-2 py-1.5 text-sm sm:col-span-12"
+                  className="field px-2 py-1.5 text-sm sm:col-span-2"
                 />
-                <div className="flex items-center gap-2 text-xs sm:col-span-3">
+                <div className="flex items-center gap-2 text-xs sm:col-span-2">
                   <button type="button" onClick={() => setPinTarget({ kind: 'candidate', index: i })} className="rounded border border-ink-border px-1.5 py-1 text-xs text-accent hover:bg-ink-hover" aria-label={`Pin site ${i + 1} on the map`} title="Pin on map">📍 Pin</button>
                   {c.geocoding ? <span className="text-ink-muted">locating…</span> : c.lat && c.lon ? <span className="text-go">✓ located</span> : <span className="text-ink-muted">enter address</span>}
                 </div>

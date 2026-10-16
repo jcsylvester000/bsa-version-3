@@ -321,9 +321,9 @@ export function analysisSchemaText(ctx: AnalysisContext): string {
     out.push(`verdict: ${recs.length ? `${recs.length} recommended area(s)` : 'No open areas in current coverage'}`);
     const sc = num(rd(w, 'scanned'));
     out.push(line('Areas scanned', sc != null ? String(sc) : '—', 'Verified'));
-    out.push(line('Cannibalization threshold', `<= ${num(rd(w, 'threshold')) ?? 40}`, 'Projected'));
+    out.push(line('Overlap-score threshold', `<= ${num(rd(w, 'threshold')) ?? 40}`, 'Projected'));
     const prop = rd(w, 'proposed') as AnyRec;
-    if (prop && num(rd(prop, 'cannibalizationPct')) != null) out.push(line("This site's cannibalization", `${Math.round(num(rd(prop, 'cannibalizationPct'))!)}%`, 'Projected'));
+    if (prop && num(rd(prop, 'cannibalizationPct')) != null) out.push(line("This site's overlap score", `${Math.round(num(rd(prop, 'cannibalizationPct'))!)}%`, 'Projected'));
     recs.slice(0, 3).forEach((r, i) => {
       const name = [str(rd(r, 'barangay')) ?? 'Unnamed area', str(rd(r, 'city'))].filter(Boolean).join(', ');
       const cp = num(rd(r, 'cannibalizationPct'));

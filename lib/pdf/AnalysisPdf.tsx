@@ -236,7 +236,7 @@ export function AnalysisPdf(p: AnalysisPdfProps): React.ReactElement {
           </View>
           <View style={s.heroRight}>
             <Text style={s.rationale}>{sum.headline}</Text>
-            {m.meta.capNote ? <Text style={{ fontSize: 8.5, color: C.nogo, marginTop: 4 }}>{m.meta.capNote}</Text> : null}
+            {m.meta.capNote ? <Text style={{ fontSize: 8.5, color: m.meta.capBand === 'caution' ? C.caution : C.nogo, marginTop: 4 }}>{m.meta.capNote}</Text> : null}
             {m.meta.provisionalNote ? <Text style={{ fontSize: 8.5, color: C.caution, marginTop: 4 }}>{m.meta.provisionalNote}</Text> : null}
             {!m.limited && sum.coverage < 2 ? (
               <Text style={{ fontSize: 7.5, color: C.muted, marginTop: 4 }}>

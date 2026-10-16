@@ -67,6 +67,18 @@ export function emptyContextLayers(staleLayers: LayerKey[], countsByCategory: Ma
   });
 }
 
+/**
+ * Does a context layer change THIS business type's analysis? Transport feeds every Site Fit
+ * (Accessibility); clinics/hospitals only the healthcare reads; schools only education. Used so a
+ * busy area isn't flagged "gathering place data" for layers that don't affect the result. Pure.
+ */
+export function layerMattersFor(layer: LayerKey, vertical: string | null | undefined): boolean {
+  if (layer === 'transport') return true;
+  if (layer === 'health') return vertical === 'pharmacy' || vertical === 'diagnostics';
+  if (layer === 'education') return vertical === 'education';
+  return true;
+}
+
 /** ~1 km key so demand points close together share ONE job. */
 export function fillAreaKey(lat: number, lon: number): string {
   return `f:${lat.toFixed(2)}:${lon.toFixed(2)}`;
@@ -125,7 +137,7 @@ export async function recordDemand(input: DemandInput): Promise<DemandResult> {
     const placesNearby = count[0]?.n ?? 0;
     const catN = new Map(byCat.map((r) => [r.category, r.n]));
     const notFresh = fresh.filter((l) => !l.covered).map((l) => l.layer as LayerKey);
-    const empty = emptyContextLayers(notFresh, catN);
+    const empty = emptyContextLayers(notFresh, catN).filter((l) => layerMattersFor(l, input.vertical));
     // Rich areas only back-fill the context layers they have none of; thin areas fill every stale layer.
     const missing = placesNearby >= RICH_PLACES ? empty : notFresh;
     const status = classifyCoverage(placesNearby, layers.length - notFresh.length, layers.length, empty.length);

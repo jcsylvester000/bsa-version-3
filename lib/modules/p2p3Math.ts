@@ -377,7 +377,7 @@ export function rankWhiteSpaceRecommendations(
     const beatsProposed = proposed == null ? null : a.cannibalizationPct < proposed;
     const directWord = a.competitorMix.direct === 1 ? 'direct rival' : 'direct rivals';
     const reason =
-      `${Math.round(a.cannibalizationPct)}% cannibalization · ${a.competitorMix.direct} ${directWord}` +
+      `${Math.round(a.cannibalizationPct)}% overlap score · ${a.competitorMix.direct} ${directWord}` +
       `, ${a.competitorMix.adjacent} adjacent in catchment` +
       `${a.population > 0 ? ` · pop ${a.population.toLocaleString()}` : ''}` +
       `${a.nearestOwnM == null ? ' · no own branch nearby' : ` · ${Math.round(a.nearestOwnM)} m to nearest own branch`}`;

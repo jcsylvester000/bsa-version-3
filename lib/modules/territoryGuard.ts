@@ -387,8 +387,14 @@ export async function runTerritoryGuard(
   // The anchorBrand is the representative brand of the comparison set (e.g. "Mercury Drug"
   // for pharmacies). Carry the run's OWN brand as the subject so the UI can label the set
   // "for <this run's brand>" instead of mislabelling it as being for the anchor brand.
+  // Never list the run's own brand as its competitor (e.g. "Macao Imperial" in a Serenitea-class set).
+  const own = (ownBrandName ?? '').trim().toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const isOwn = (c: string) => {
+    const n = c.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    return !!own && !!n && (own.startsWith(n) || n.startsWith(own));
+  };
   const competitorSet = competitorSetRaw
-    ? { ...competitorSetRaw, subjectBrand: (ownBrandName ?? '').trim() || null }
+    ? { ...competitorSetRaw, competitors: (competitorSetRaw.competitors ?? []).filter((c: string) => !isOwn(c)), subjectBrand: (ownBrandName ?? '').trim() || null }
     : null;
 
   // HEADLINE = the stronger of the two signals. Own-branch overlap is Verified; competitive

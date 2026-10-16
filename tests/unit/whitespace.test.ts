@@ -139,7 +139,7 @@ describe('rankWhiteSpaceRecommendations', () => {
       area('Cubao', 8, 6000, { competitorMix: { direct: 1, adjacent: 2, unrelated: 0 }, nearestOwnM: 1500 }),
     ]);
     expect(rec.verdict).toBe('open');
-    expect(rec.reason).toContain('8% cannibalization');
+    expect(rec.reason).toContain('8% overlap score');
     expect(rec.reason).toContain('1 direct rival');
   });
 });

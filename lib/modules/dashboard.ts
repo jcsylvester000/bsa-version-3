@@ -88,8 +88,9 @@ export function buildDashboard(
 
     const terr = byModule.get('territory');
     if (terr) {
-      const overlap = Number((terr.payload as { maxOverlapPct?: number }).maxOverlapPct ?? 0);
-      const v = territoryCall(territorySplitOf(terr.payload)).verdict ?? String((terr.payload as { verdict?: string }).verdict ?? '');
+      const call = territoryCall(territorySplitOf(terr.payload));
+      const overlap = Math.round((call.ownPct ?? Number((terr.payload as { maxOverlapPct?: number }).maxOverlapPct ?? 0)) * 10) / 10;
+      const v = call.verdict ?? String((terr.payload as { verdict?: string }).verdict ?? '');
       if (v === 'redistributes') {
         territoryConflicts++;
         highlights.push('territory conflict');
@@ -103,7 +104,18 @@ export function buildDashboard(
         alerts.push({
           module: 'territory', moduleLabel: 'Territory Guard', severity: 'nogo',
           title: `Territory conflict — ${s.label}`,
-          detail: `Trade-area overlaps an existing branch at ${overlap}%. ${cannibText}`,
+          detail: `Trade area overlaps the brand's own branch at ${overlap}%. ${cannibText}`,
+          truthLayer: 'projected',
+        });
+      } else if (v === 'mixed' && (call.ownPct ?? 0) >= 15) {
+        highlights.push('some overlap with own branches');
+      } else if (call.contested) {
+        // Crowded with competitors but not cannibalizing the network (2026-10-16 rule): say why it is Caution.
+        highlights.push('crowded competitor corridor');
+        alerts.push({
+          module: 'territory', moduleLabel: 'Territory Guard', severity: 'caution',
+          title: `Contested corridor — ${s.label}`,
+          detail: `Competitor saturation ${Math.round(call.competitivePct ?? 0)}% in the catchment; little overlap with the brand's own branches. Capped at Caution.`,
           truthLayer: 'projected',
         });
       } else {
@@ -130,6 +142,8 @@ export function buildDashboard(
         });
       } else if (v === 'below_market') {
         highlights.push('rent below corridor median');
+      } else if (v === 'at_market') {
+        highlights.push('rent within corridor range');
       }
     }
 

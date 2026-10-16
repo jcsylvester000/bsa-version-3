@@ -183,7 +183,7 @@ export function SiteIntelligenceTabs({
       {tab === 'territory' && <TerritoryTab site={site} outlets={mapOutlets} p={payloads.territory} primary={primary('territory')} />}
       {tab === 'lease' && <LeaseTab p={payloads.lease} primary={primary('lease')} siteId={site.id} corridors={leaseCorridors ?? []} />}
       {tab === 'daypart' && <DaypartTab p={payloads.daypart} primary={primary('daypart')} />}
-      {tab === 'whitespace' && <WhiteSpaceTab p={payloads.whitespace} primary={primary('whitespace')} />}
+      {tab === 'whitespace' && <WhiteSpaceTab p={payloads.whitespace} primary={primary('whitespace')} site={site} />}
       {tab === 'analysis' && <AnalysisTab payloads={payloads} primary={primary} verdict={verdict} report={report} onOpenTab={setTab} />}
       </div>
     </div>
@@ -684,7 +684,7 @@ const WS_VERDICT = {
  * re-run so the recommendations recompute; (3) ran but no area ≤ threshold → honest "all contested"
  * note; (4) recommendations → map + ranked recommendation cards.
  */
-function WhiteSpaceTab({ p }: { p: SiteModulePayloads['whitespace']; primary?: boolean }) {
+function WhiteSpaceTab({ p, site }: { p: SiteModulePayloads['whitespace']; primary?: boolean; site?: { lat: number; lon: number } }) {
   if (!p) return <RerunNote module="White-Space" />;
   // A run made before this rebuild has the old `gaps` shape and no `recommendations` key.
   if (p.recommendations == null) return <RerunNote module="White-Space" />;
@@ -701,10 +701,10 @@ function WhiteSpaceTab({ p }: { p: SiteModulePayloads['whitespace']; primary?: b
         <div className="flex items-start gap-3">
           <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full bg-caution/15 text-caution" aria-hidden>!</span>
           <div>
-            <p className="text-sm font-semibold text-ink-text">No low-cannibalization areas in current coverage</p>
+            <p className="text-sm font-semibold text-ink-text">No low-overlap areas in current coverage</p>
             <p className="mt-1 text-sm leading-relaxed text-ink-muted">
               White-Space scanned {fmtInt(scanned)} barangay{scanned === 1 ? '' : 's'} for {conceptLabel} and
-              found none with a cannibalization score at or below {threshold} — every area we hold data for is already
+              found none with an overlap score at or below {threshold} — every area we hold data for is already
               contested by same-concept rivals or sits on top of one of your branches. That itself is a finding: this
               network&apos;s territory is saturated for this concept at the current data coverage.
             </p>
@@ -738,9 +738,9 @@ function WhiteSpaceTab({ p }: { p: SiteModulePayloads['whitespace']; primary?: b
           Top {recs.length} area{recs.length === 1 ? '' : 's'} to open{brand ? ` a ${brand} branch` : ''}
         </p>
         <p className="mt-1 text-sm text-ink-muted">
-          Areas with a cannibalization score of {threshold} or less for {conceptLabel} — low same-concept overlap and
+          Areas with an overlap score of {threshold} or less (competition plus closeness to your own branches) for {conceptLabel} — low same-concept overlap and
           real demand. Scored the same way as Territory Guard, across {fmtInt(scanned)} barangay
-          {scanned === 1 ? '' : 's'}. Cannibalization is Projected.
+          {scanned === 1 ? '' : 's'}. The score is Projected.
         </p>
       </div>
 
@@ -748,7 +748,7 @@ function WhiteSpaceTab({ p }: { p: SiteModulePayloads['whitespace']; primary?: b
       <div className="card p-5">
         <p className="mb-3 font-body text-title">Recommended areas · OpenStreetMap</p>
         {mapPoints.length > 0 ? (
-          <GapsMap gaps={mapPoints} />
+          <GapsMap gaps={mapPoints} site={site} />
         ) : (
           <div className="rounded-lg border border-dashed border-ink-border p-4 text-center text-xs text-ink-muted">
             Re-run this analysis to attach barangay coordinates — the recommended areas will then plot on a map here.
@@ -790,7 +790,7 @@ function WhiteSpaceTab({ p }: { p: SiteModulePayloads['whitespace']; primary?: b
 
               {/* Data row — same fields Territory Guard shows, per area. */}
               <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                <Stat label="Cannibalization" value={`${Math.round(r.cannibalizationPct)}%`} sub="lower is better" truth="projected" />
+                <Stat label="Overlap score" value={`${Math.round(r.cannibalizationPct)}%`} sub="lower is better" truth="projected" />
                 <Stat
                   label="Same-concept nearby"
                   value={`${r.competitorMix.direct} direct`}
@@ -906,6 +906,7 @@ function AnalysisTab({
         truthPct={m.truthPct}
         limited={m.limited}
         capNote={m.meta.capNote ?? null}
+        capBand={m.meta.capBand ?? null}
         provisionalNote={m.meta.provisionalNote ?? null}
       />
       {m.summary.findings.length > 0 && (

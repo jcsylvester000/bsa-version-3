@@ -40,7 +40,7 @@ describe('buildSiteReportModel', () => {
     expect(byKey.lease.rows.find((r) => r.label.startsWith('BIR zonal'))?.value).toBe('Commercial Regular · ₱9,000–₱2,160,000/sqm');
     expect(byKey.daypart.rows.find((r) => r.label === 'Peak window')?.value).toBe('11:00–14:00 (office-led)');
     expect(byKey.whitespace.rows.map((r) => r.label)).toContain('#1 Pasong Tamo, Quezon City');
-    expect(byKey.whitespace.rows.find((r) => r.label === "This site's cannibalization")?.value).toBe('92%');
+    expect(byKey.whitespace.rows.find((r) => r.label === "This site's overlap score")?.value).toBe('92%');
   });
 
   it('headline figures per finding', () => {

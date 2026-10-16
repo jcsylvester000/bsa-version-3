@@ -16,6 +16,8 @@ export function locationRead(territoryTone: string | null | undefined, daypartWi
   if (!parts.length) return null;
   if (t === 0) return 'weak'; // a territory deal-breaker outweighs a good daypart
   const avg = parts.reduce((a, b) => a + b, 0) / parts.length;
+  // A territory that is only "caution" (some overlap or a crowded corridor) can't read as strong.
+  if (t === 1) return avg >= 1 ? 'mixed' : 'weak';
   return avg >= 1.5 ? 'strong' : avg >= 1 ? 'mixed' : 'weak';
 }
 

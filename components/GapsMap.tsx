@@ -33,7 +33,7 @@ export interface BusinessPoint {
  * as coloured dots: red for exact/direct rivals, white for similar/adjacent formats. Read-only,
  * no API key (same free basemap the Territory map uses).
  */
-export function GapsMap({ gaps, businesses = [] }: { gaps: GapPoint[]; businesses?: BusinessPoint[] }) {
+export function GapsMap({ gaps, businesses = [], site }: { gaps: GapPoint[]; businesses?: BusinessPoint[]; site?: { lat: number; lon: number } | null }) {
   const ref = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
 
@@ -94,6 +94,11 @@ export function GapsMap({ gaps, businesses = [] }: { gaps: GapPoint[]; businesse
           .addTo(map);
         bounds.extend([g.lon, g.lat]);
       }
+      // The proposed site, so the map reads "not here — there".
+      if (site && Number.isFinite(site.lat) && Number.isFinite(site.lon)) {
+        new maplibregl.Marker({ element: markerElement('site', 'Proposed site'), anchor: 'bottom' }).setLngLat([site.lon, site.lat]).addTo(map);
+        bounds.extend([site.lon, site.lat]);
+      }
       if (!bounds.isEmpty()) map.fitBounds(bounds, { padding: 56, maxZoom: 14 });
       map.resize();
     });
@@ -123,6 +128,7 @@ export function GapsMap({ gaps, businesses = [] }: { gaps: GapPoint[]; businesse
   const direct = businesses.filter((b) => b.tier === 'direct').length;
   const adjacent = businesses.length - direct;
   const legend: Array<{ kind: LegendKind; text: string }> = [
+    ...(site ? [{ kind: 'site' as const, text: 'Proposed site' }] : []),
     { kind: 'area', text: 'Recommended area (by rank)' },
     ...(direct ? [{ kind: 'direct' as const, text: `Direct / same concept (${direct})` }] : []),
     ...(adjacent ? [{ kind: 'adjacent' as const, text: `Similar / adjacent (${adjacent})` }] : []),

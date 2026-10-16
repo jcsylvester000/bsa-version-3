@@ -210,7 +210,7 @@ export function summariseSite(
   const findings = [...drivers.map((d) => d.finding), whitespaceFinding(input.whitespace)].filter(Boolean) as SiteFinding[];
 
   const keywords: string[] = [];
-  if (input.territory?.verdict) keywords.push(KEYWORD[input.territory.verdict] ?? input.territory.verdict);
+  if (input.territory?.verdict) keywords.push(input.territory.contested && input.territory.verdict === 'mixed' && !(typeof input.territory.totalCannibalizedPhp === 'number' && input.territory.totalCannibalizedPhp > 0) ? 'contested-corridor' : KEYWORD[input.territory.verdict] ?? input.territory.verdict);
   if (territoryVeto) keywords.push('deal-breaker');
   if (input.lease?.verdict) keywords.push(KEYWORD[input.lease.verdict] ?? input.lease.verdict);
   if (df && df.tone !== 'muted') keywords.push(df.tone === 'go' ? 'strong-window' : df.tone === 'caution' ? 'partial-window' : 'weak-window');
