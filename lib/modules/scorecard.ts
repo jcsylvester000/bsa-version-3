@@ -8,6 +8,7 @@
  * Pure logic (server module composes the inputs); testable.
  */
 import type { TruthLayer } from '@/lib/truth/truthLayer';
+import { territoryCall, type TerritoryCallInput } from './territoryMath';
 
 export interface ScorecardCriterion {
   key: string;
@@ -66,6 +67,9 @@ export interface ModuleScore {
   score: number | null;
   truthLayer: TruthLayer;
   note: string;
+  /** Territory rows: the payload's overlap split, so the gate can tell own-branch overlap
+   *  (deal-breaker) from competitor saturation (caution). Omitted → legacy (score-only) gate. */
+  territory?: TerritoryCallInput | null;
 }
 
 /**
@@ -117,7 +121,26 @@ const TERRITORY_CAUTION_CAP = 64;
 
 export interface TerritoryGate { cap: number | null; maxBand: 'nogo' | 'caution' | null; reason: string | null }
 
-export function territoryGate(overlapPct: number | null | undefined): TerritoryGate {
+export function territoryGate(overlapPct: number | null | undefined, split?: TerritoryCallInput | null): TerritoryGate {
+  // Split known (new rule, 2026-10-16): only own-branch overlap is a deal-breaker; a crowded
+  // corridor of competitors caps at Caution. See territoryMath.territoryCall.
+  if (split) {
+    const call = territoryCall({ maxOverlapPct: overlapPct ?? null, ...split });
+    const own = call.ownPct ?? 0;
+    const pct = (v: number) => Math.round(v * 10) / 10;
+    if (call.verdict === 'redistributes') {
+      return { cap: TERRITORY_NOGO_CAP, maxBand: 'nogo', reason: `Cannibalization deal-breaker: ${pct(own)}% overlap with the brand's own branches (≥ ${TERRITORY_NOGO_OVERLAP_PCT}%) — the site mostly redistributes existing sales.` };
+    }
+    if (call.verdict === 'mixed') {
+      return {
+        cap: TERRITORY_CAUTION_CAP, maxBand: 'caution',
+        reason: own >= TERRITORY_CAUTION_OVERLAP_PCT
+          ? `Cannibalization risk: ${pct(own)}% overlap with the brand's own branches (≥ ${TERRITORY_CAUTION_OVERLAP_PCT}%) — cannot rate above Caution.`
+          : `Contested corridor: competitor saturation ${pct(call.competitivePct ?? 0)}% — cannot rate above Caution (the brand's own branches are not at risk).`,
+      };
+    }
+    if (call.verdict) return { cap: null, maxBand: null, reason: null };
+  }
   if (overlapPct == null || !Number.isFinite(overlapPct)) return { cap: null, maxBand: null, reason: null };
   if (overlapPct >= TERRITORY_NOGO_OVERLAP_PCT) {
     return { cap: TERRITORY_NOGO_CAP, maxBand: 'nogo', reason: `Cannibalization deal-breaker: ${Math.round(overlapPct * 10) / 10}% territory overlap (≥ ${TERRITORY_NOGO_OVERLAP_PCT}%) — the site mostly redistributes existing sales.` };
@@ -129,8 +152,8 @@ export function territoryGate(overlapPct: number | null | undefined): TerritoryG
 }
 
 /** Apply the territory gate to a stored/computed composite (also used at read time for older runs). */
-export function gateComposite(composite: number | null, overlapPct: number | null | undefined): number | null {
-  const g = territoryGate(overlapPct);
+export function gateComposite(composite: number | null, overlapPct: number | null | undefined, split?: TerritoryCallInput | null): number | null {
+  const g = territoryGate(overlapPct, split);
   return composite != null && g.cap != null ? Math.min(composite, g.cap) : composite;
 }
 
@@ -140,14 +163,18 @@ function overlapFromCriteria(criteria: ScorecardCriterion[]): number | null {
   return t?.score != null ? Math.round((100 - t.score) * 10) / 10 : null;
 }
 
-function cappedComposite(criteria: ScorecardCriterion[]): number | null {
+function territorySplit(moduleScores: ModuleScore[]): TerritoryCallInput | null {
+  return moduleScores.find((m) => m.module === 'territory')?.territory ?? null;
+}
+
+function cappedComposite(criteria: ScorecardCriterion[], split: TerritoryCallInput | null = null): number | null {
   let composite = scorecardComposite(criteria);
   const siteFit = criteria.find((c) => c.key === 'site_fit');
   const siteFitMissing = siteFit != null && siteFit.score == null;
   if (composite != null && siteFitMissing && composite > NO_SITEFIT_GO_CAP) {
     composite = NO_SITEFIT_GO_CAP;
   }
-  return gateComposite(composite, overlapFromCriteria(criteria));
+  return gateComposite(composite, overlapFromCriteria(criteria), split);
 }
 
 /**
@@ -163,14 +190,15 @@ export function siteCompositeFromModules(moduleScores: ModuleScore[]): {
   gate: TerritoryGate;
 } {
   const criteria = scorecardCriteria(moduleScores);
-  const composite = cappedComposite(criteria);
-  return { composite, band: scorecardBand(composite), uncapped: scorecardComposite(criteria), gate: territoryGate(overlapFromCriteria(criteria)) };
+  const split = territorySplit(moduleScores);
+  const composite = cappedComposite(criteria, split);
+  return { composite, band: scorecardBand(composite), uncapped: scorecardComposite(criteria), gate: territoryGate(overlapFromCriteria(criteria), split) };
 }
 
 /** Build the scorecard from the run's module scores for one site. */
 export function buildScorecard(siteLabel: string, moduleScores: ModuleScore[]): Scorecard {
   const criteria = scorecardCriteria(moduleScores);
-  const composite = cappedComposite(criteria);
+  const composite = cappedComposite(criteria, territorySplit(moduleScores));
   return {
     siteLabel,
     criteria,

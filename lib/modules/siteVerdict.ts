@@ -48,7 +48,7 @@ export interface SiteSummary {
 
 /** Minimal shapes we read — loose on purpose so this never couples to the full payload types. */
 export interface SummaryInput {
-  territory?: { verdict?: string | null; totalCannibalizedPhp?: number | null; competitiveSaturationPct?: number | null } | null;
+  territory?: { verdict?: string | null; contested?: boolean | null; totalCannibalizedPhp?: number | null; competitiveSaturationPct?: number | null } | null;
   lease?: { verdict?: string | null; corridor?: string | null } | null;
   daypart?: { windowMatchPct?: number | null; noCatchmentData?: boolean | null } | null;
   whitespace?: { recommendations?: Array<{ verdict?: string | null }> | null } | null;
@@ -69,6 +69,10 @@ function territoryFinding(t: SummaryInput['territory']): SiteFinding | null {
   const risk = typeof t.totalCannibalizedPhp === 'number' && t.totalCannibalizedPhp > 0 ? ` · ${peso(t.totalCannibalizedPhp)}/mo of own sales at risk` : '';
   if (v === 'adds') return { keyword: 'Cannibalization', detail: `Adds sales — little overlap with your own branches${risk}`, tone: 'go' };
   if (v === 'redistributes') return { keyword: 'Cannibalization', detail: `Redistributes existing sales${risk}`, tone: 'nogo' };
+  if (t.contested && !(typeof t.totalCannibalizedPhp === 'number' && t.totalCannibalizedPhp > 0)) {
+    const sat = typeof t.competitiveSaturationPct === 'number' ? ` (${Math.round(t.competitiveSaturationPct)}% saturation)` : '';
+    return { keyword: 'Competition', detail: `Contested corridor — crowded with competitors${sat}; little overlap with your own branches`, tone: 'caution' };
+  }
   return { keyword: 'Cannibalization', detail: `Mixed — some redistribution of own sales${risk}`, tone: 'caution' };
 }
 

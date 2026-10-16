@@ -112,6 +112,8 @@ export interface PrefillOutlet {
 }
 export interface PrefillCandidate {
   label: string; address: string; city: string; lat: string; lon: string; siteType: string; geocoded: boolean;
+  /** Illustrative asking rent (₱/sqm/mo) so the demo shows the Lease position — not a real quote. */
+  askingRent?: string;
 }
 export interface DemoScenario {
   key: string;
@@ -134,14 +136,17 @@ export interface DemoScenario {
 }
 
 export const DEMO_SCENARIOS: DemoScenario[] = [
-  // 1 — Milk tea / cafe. Ayala candidate cannibalizes an existing branch (75% overlap);
-  // Ortigas candidate is clean territory with dense competition. Both data-rich.
+  // 1 — Milk tea / cafe (the investor-demo story, 2026-10-16). Three contrasting calls:
+  //   Ayala Ave   — ~300 m from the brand's own One Ayala branch → cannibalization deal-breaker (No-Go)
+  //   Katipunan   — university belt, no own branch nearby → white space for the network
+  //   BGC         — no own branch nearby but a crowded café corridor → contested (Caution)
+  // Asking rents are illustrative, inside each corridor's comparable range.
   {
     key: 'cafe',
     label: '1 · Milk tea — Macao Imperial Tea',
     vertical: 'fnb_cafe',
     brandName: 'Macao Imperial Tea',
-    blurb: 'Milk-tea chain scouting Ayala vs Ortigas against its own NCR network — Territory, Lease, Daypart.',
+    blurb: 'Milk-tea chain choosing between Ayala, Katipunan and BGC against its own NCR network — Territory, Lease, Daypart.',
     sections: {
       a: 'Macao Imperial Tea — premium milk tea with a signature cheese-tea series',
       b: 'Young professionals & students (18–34)',
@@ -160,8 +165,9 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
       { outletName: 'Macao Imperial Tea — E. Rodriguez', format: 'inline', address: 'E. Rodriguez Ave, Quezon City', lat: '14.6207', lon: '121.0203', monthlySalesPhp: '430000', geocoded: true },
     ],
     candidates: [
-      { label: 'Proposed — Makati Ayala Ave', address: 'Ayala Avenue, Makati', city: 'Makati', lat: '14.5480', lon: '121.0250', siteType: 'inline', geocoded: true },
-      { label: 'Proposed — Ortigas Center', address: 'Ortigas Center, Pasig', city: 'Pasig', lat: '14.5866', lon: '121.0614', siteType: 'inline', geocoded: true },
+      { label: 'Proposed — Makati Ayala Ave', address: 'Ayala Avenue, Makati', city: 'Makati', lat: '14.5480', lon: '121.0250', siteType: 'inline', geocoded: true, askingRent: '2400' },
+      { label: 'Proposed — Katipunan (QC university belt)', address: 'Katipunan Ave, Loyola Heights, Quezon City', city: 'Quezon City', lat: '14.6390', lon: '121.0745', siteType: 'inline', geocoded: true, askingRent: '1150' },
+      { label: 'Proposed — BGC High Street', address: 'BGC High Street, Taguig', city: 'Taguig', lat: '14.5507', lon: '121.0487', siteType: 'inline', geocoded: true, askingRent: '3000' },
     ],
   },
 

@@ -4,6 +4,7 @@ import { getSession } from '@/lib/auth/session';
 import { isAdmin } from '@/lib/auth/auth';
 import { ok, errors, crossSiteBlock } from '@/lib/api/respond';
 import { siteCompositeFromModules, type ModuleScore } from '@/lib/modules/scorecard';
+import { territorySplitOf } from '@/lib/modules/territoryMath';
 import type { TruthLayer } from '@/lib/truth/truthLayer';
 
 // Allow a longer execution for a full backfill across every run.
@@ -41,7 +42,7 @@ export async function POST(req: NextRequest) {
   for (const site of sites) {
     const rows = await prisma.moduleResult.findMany({
       where: { candidateSiteId: site.id },
-      select: { module: true, score: true, truthLayer: true },
+      select: { module: true, score: true, truthLayer: true, payload: true },
     });
     if (!rows.length) { skipped++; continue; }
 
@@ -50,6 +51,7 @@ export async function POST(req: NextRequest) {
       score: r.score != null ? Number(r.score) : null,
       truthLayer: r.truthLayer as TruthLayer,
       note: '',
+      territory: r.module === 'territory' ? territorySplitOf(r.payload) : undefined,
     }));
     const { composite, band } = siteCompositeFromModules(moduleScores);
     if (composite == null) { skipped++; continue; }

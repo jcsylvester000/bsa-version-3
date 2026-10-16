@@ -5,6 +5,8 @@
 import 'server-only';
 import { prisma } from '@/lib/db/prisma';
 import { buildScorecard, siteCompositeFromModules, type Scorecard, type ModuleScore } from './scorecard';
+import { territorySplitOf } from './territoryMath';
+export { territorySplitOf };
 import type { TruthLayer } from '@/lib/truth/truthLayer';
 
 // Humanize a raw verdict/enum for display — turns "above_market" → "above market",
@@ -51,6 +53,7 @@ export async function buildScorecardsForRun(runId: string): Promise<Scorecard[]>
         score: r.score != null ? Number(r.score) : null,
         truthLayer: r.truthLayer as TruthLayer,
         note: noteFor(r.module, (r.payload ?? {}) as Record<string, unknown>),
+        territory: r.module === 'territory' ? territorySplitOf(r.payload) : undefined,
       }));
     return buildScorecard(site.label, moduleScores);
   });
@@ -66,10 +69,13 @@ export async function buildScorecardsForRun(runId: string): Promise<Scorecard[]>
 export async function recomputeSiteComposite(siteId: string): Promise<{ composite: number | null; band: Scorecard['band'] }> {
   const rows = await prisma.moduleResult.findMany({
     where: { candidateSiteId: siteId, module: { not: 'analysis' } },
-    select: { module: true, score: true, truthLayer: true },
+    select: { module: true, score: true, truthLayer: true, payload: true },
   });
   const { composite, band } = siteCompositeFromModules(
-    rows.map((r) => ({ module: r.module, score: r.score != null ? Number(r.score) : null, truthLayer: r.truthLayer as TruthLayer, note: '' })),
+    rows.map((r) => ({
+      module: r.module, score: r.score != null ? Number(r.score) : null, truthLayer: r.truthLayer as TruthLayer, note: '',
+      territory: r.module === 'territory' ? territorySplitOf(r.payload) : undefined,
+    })),
   );
   await prisma.candidateSite.update({
     where: { id: siteId },

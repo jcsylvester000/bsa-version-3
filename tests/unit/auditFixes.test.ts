@@ -122,3 +122,37 @@ describe('F1 — provisional marker', () => {
     expect(provisionalNoteFor(null)).toBeNull();
   });
 });
+
+import { territoryCall } from '@/lib/modules/territoryMath';
+import { territoryGate, siteCompositeFromModules } from '@/lib/modules/scorecard';
+
+describe('Territory — own branches are the deal-breaker, competitors cap at Caution (2026-10-16)', () => {
+  it('own-branch overlap ≥ 40 % is No-Go', () => {
+    expect(territoryCall({ ownOutletOverlapPct: 62, competitiveSaturationPct: 30, maxOverlapPct: 62 }).verdict).toBe('redistributes');
+    expect(territoryGate(62, { ownOutletOverlapPct: 62, competitiveSaturationPct: 30 }).maxBand).toBe('nogo');
+  });
+  it('a crowded corridor alone caps at Caution, never No-Go', () => {
+    const c = territoryCall({ ownOutletOverlapPct: 0, competitiveSaturationPct: 86, maxOverlapPct: 86 });
+    expect(c).toMatchObject({ verdict: 'mixed', contested: true });
+    const g = territoryGate(86, { ownOutletOverlapPct: 0, competitiveSaturationPct: 86 });
+    expect(g.maxBand).toBe('caution');
+    expect(g.reason).toMatch(/Contested corridor/);
+  });
+  it('light competition with no own overlap adds sales, no cap', () => {
+    expect(territoryCall({ ownOutletOverlapPct: 3, competitiveSaturationPct: 25, maxOverlapPct: 25 }).verdict).toBe('adds');
+    expect(territoryGate(25, { ownOutletOverlapPct: 3, competitiveSaturationPct: 25 }).cap).toBeNull();
+  });
+  it('legacy rows: competitive headline is read as competition, own headline as own overlap', () => {
+    expect(territoryCall({ verdict: 'redistributes', maxOverlapPct: 80, headlineSource: 'competitive' }).verdict).toBe('mixed');
+    expect(territoryCall({ verdict: 'redistributes', maxOverlapPct: 80, headlineSource: 'own' }).verdict).toBe('redistributes');
+    expect(territoryGate(80).maxBand).toBe('nogo'); // no split → old behaviour
+  });
+  it('composite: strong site in a crowded corridor reads Caution, not No-Go', () => {
+    const r = siteCompositeFromModules([
+      { module: 'site_fit', score: 90, truthLayer: 'assumed', note: '' },
+      { module: 'territory', score: 86, truthLayer: 'projected', note: '', territory: { ownOutletOverlapPct: 0, competitiveSaturationPct: 86, maxOverlapPct: 86 } },
+      { module: 'daypart', score: 75, truthLayer: 'projected', note: '' },
+    ]);
+    expect(r.band).toBe('caution');
+  });
+});

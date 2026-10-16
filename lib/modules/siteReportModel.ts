@@ -13,6 +13,7 @@
  * band (audit F-07), so the screen, the dashboard and the PDF can never disagree.
  */
 import { gateComposite, territoryGate } from './scorecard';
+import { territoryCall, territorySplitOf } from './territoryMath';
 import type { ModuleKind } from '@prisma/client';
 import { fmtInt, fmtPeso } from '@/lib/util/format';
 import { manilaShortStampYear } from '@/lib/util/manilaTime';
@@ -249,7 +250,9 @@ export function buildSiteReportModel(args: {
   const w = payloads.whitespace;
   const ranCount = [t, l, d, w].filter(Boolean).length;
 
-  const tVerdict = (t?.verdict && t.verdict in T_VERDICT ? t.verdict : 'mixed') as keyof typeof T_VERDICT;
+  // Effective call (2026-10-16): own-branch overlap is the deal-breaker; a crowded corridor is "contested".
+  const tCall = territoryCall(t as Parameters<typeof territoryCall>[0]);
+  const tVerdict = (tCall.verdict ?? 'mixed') as keyof typeof T_VERDICT;
   const tMix = t?.competitorMix;
   const tOwn = t?.ownOutletOverlapPct ?? t?.maxOverlapPct ?? null;
 
@@ -269,7 +272,7 @@ export function buildSiteReportModel(args: {
 
   const summary = summariseSite(
     {
-      territory: t ? { verdict: t.verdict ?? null, totalCannibalizedPhp: t.totalCannibalizedPhp ?? null, competitiveSaturationPct: t.competitiveSaturationPct ?? null } : null,
+      territory: t ? { verdict: tCall.verdict ?? t.verdict ?? null, contested: tCall.contested, totalCannibalizedPhp: t.totalCannibalizedPhp ?? null, competitiveSaturationPct: t.competitiveSaturationPct ?? null } : null,
       lease: l ? { verdict: l.verdict ?? null, corridor: l.corridor ?? null } : null,
       daypart: d ? { windowMatchPct: d.windowMatchPct ?? null, noCatchmentData: d.noCatchmentData ?? null } : null,
       whitespace: wRecs ? { recommendations: wRecs.map((r) => ({ verdict: r.verdict ?? null })) } : null,
@@ -306,7 +309,7 @@ export function buildSiteReportModel(args: {
   // --- Territory Guard ---
   const territory: ModuleSummaryModel = {
     key: 'territory', title: 'Territory Guard', ran: t != null, contextual: !primary('territory'),
-    status: t ? { tone: T_VERDICT[tVerdict].tone, label: T_VERDICT[tVerdict].label } : null,
+    status: t ? (tCall.contested && tVerdict === 'mixed' && (tCall.ownPct ?? 0) < 15 ? { tone: 'caution' as Tone, label: 'Contested corridor' } : { tone: T_VERDICT[tVerdict].tone, label: T_VERDICT[tVerdict].label }) : null,
     lead: t?.headlineSource === 'competitive' ? 'Driven by competitive saturation, not your own branches.' : undefined,
     rows: t ? [
       { label: 'Own-branch overlap', value: fmtPct(tOwn), truth: tk(tl(t.truth?.overlapPct, 'Assumed')) },
@@ -429,7 +432,7 @@ export function buildSiteReportModel(args: {
 export function siteReportMeta(data: {
   site: { id: string; compositeScore: { toString(): string } | null; analyzedAt: Date | null };
   run: { confidence: 'high' | 'med' | 'low' | null; dataRefreshState?: string | null };
-  rows: Array<{ module: string; truthLayer: string; score?: unknown }>;
+  rows: Array<{ module: string; truthLayer: string; score?: unknown; payload?: unknown }>;
   runSites: Array<{ id: string; compositeScore: { toString(): string } | null }>;
 }): SiteReportMeta {
   const num = (v: { toString(): string } | null): number | null => (v == null ? null : Number(v.toString()));
@@ -438,8 +441,9 @@ export function siteReportMeta(data: {
   const terr = data.rows.find((r) => r.module === 'territory');
   const overlap = terr?.score != null && Number.isFinite(Number(terr.score)) ? Number(terr.score) : null;
   const stored = num(data.site.compositeScore);
-  const composite = gateComposite(stored, overlap);
-  const gate = territoryGate(overlap);
+  const split = terr?.payload ? territorySplitOf(terr.payload) : null;
+  const composite = gateComposite(stored, overlap, split);
+  const gate = territoryGate(overlap, split);
   const capNote = gate.reason && stored != null && composite != null && composite < stored
     ? `${gate.reason} Composite capped at ${Math.round(composite)} (the weighted average alone would be ${Math.round(stored)}).`
     : gate.reason && composite != null && gate.cap != null && composite <= gate.cap ? gate.reason : null;

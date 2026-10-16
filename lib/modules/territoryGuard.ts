@@ -12,7 +12,7 @@ import 'server-only';
 import { prisma } from '@/lib/db/prisma';
 import { catchmentOverlap, type LatLon } from '@/lib/geo/geo';
 import type { TruthLayer } from '@/lib/truth/truthLayer';
-import { catchmentRadius, cannibalizationFraction, verdictFromOverlap, competitiveSaturationPct } from './territoryMath';
+import { catchmentRadius, cannibalizationFraction, competitiveSaturationPct, territoryCall } from './territoryMath';
 import { competitorsNear } from '@/lib/places/poiCache';
 import { haversineMeters } from '@/lib/geo/geo';
 import {
@@ -397,8 +397,11 @@ export async function runTerritoryGuard(
   const maxOverlapPct = Math.max(ownOutletOverlapPct, competitiveSaturation);
   const headlineSource: 'own' | 'competitive' | 'none' =
     maxOverlapPct <= 0 ? 'none' : ownOutletOverlapPct >= competitiveSaturation ? 'own' : 'competitive';
-  const verdict = verdictFromOverlap(maxOverlapPct);
+  // Own-branch overlap is the deal-breaker; a crowded corridor caps at Caution (territoryCall).
+  const call = territoryCall({ ownOutletOverlapPct, competitiveSaturationPct: competitiveSaturation, maxOverlapPct, headlineSource });
+  const verdict = call.verdict ?? 'adds';
   if (verdict === 'redistributes') flags.push('high_cannibalization_risk');
+  if (call.contested) flags.push('contested_corridor');
 
   // MAP POINTS — the same tiered list, ordered so DIRECT rivals come first (they draw and
   // read first), then adjacent formats, then unrelated businesses as faint context. Every

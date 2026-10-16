@@ -4,6 +4,7 @@
  * Truth Layer quality mix, and Intelligence Alerts (module findings tagged to source).
  */
 import { gateComposite, territoryGate } from './scorecard';
+import { territoryCall, territorySplitOf } from './territoryMath';
 import type { TruthLayer } from '@/lib/truth/truthLayer';
 
 export interface DashSite {
@@ -88,7 +89,7 @@ export function buildDashboard(
     const terr = byModule.get('territory');
     if (terr) {
       const overlap = Number((terr.payload as { maxOverlapPct?: number }).maxOverlapPct ?? 0);
-      const v = String((terr.payload as { verdict?: string }).verdict ?? '');
+      const v = territoryCall(territorySplitOf(terr.payload)).verdict ?? String((terr.payload as { verdict?: string }).verdict ?? '');
       if (v === 'redistributes') {
         territoryConflicts++;
         highlights.push('territory conflict');
@@ -151,14 +152,15 @@ export function buildDashboard(
     // Territory deal-breaker at read time (runs stored before the gate): the dashboard must agree
     // with the Final Report — a site that redistributes its own sales never shows Go.
     const terrOverlap = terr ? Number((terr.payload as { maxOverlapPct?: number }).maxOverlapPct ?? terr.score ?? NaN) : null;
-    const gate = territoryGate(Number.isFinite(terrOverlap as number) ? terrOverlap : null);
+    const split = terr ? territorySplitOf(terr.payload) : null;
+    const gate = territoryGate(Number.isFinite(terrOverlap as number) ? terrOverlap : null, split);
     const rawComposite = s.composite != null ? Number(s.composite) : (fit?.score ?? null);
     let gatedVerdict = (s.verdict as 'go' | 'caution' | 'nogo' | null) ?? null;
     if (gatedVerdict && gate.maxBand === 'nogo') gatedVerdict = 'nogo';
     else if (gatedVerdict === 'go' && gate.maxBand === 'caution') gatedVerdict = 'caution';
     ranked.push({
       siteId: s.id, label: s.label, city: s.city,
-      composite: gateComposite(rawComposite, gate.cap != null ? terrOverlap : null),
+      composite: gateComposite(rawComposite, gate.cap != null ? terrOverlap : null, split),
       verdict: gatedVerdict,
       highlights: highlights.slice(0, 3),
     });

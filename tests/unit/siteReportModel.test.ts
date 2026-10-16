@@ -10,19 +10,27 @@ import { SAMPLE_PAYLOADS, SAMPLE_META } from '../fixtures/siteReportSample';
 const model = () => buildSiteReportModel({ payloads: SAMPLE_PAYLOADS, verdict: 'go', meta: SAMPLE_META });
 
 describe('buildSiteReportModel', () => {
-  it('the territory deal-breaker overrides a Go band (fixture: Redistributes + band go) and the hero meta is carried through', () => {
+  it('a crowded corridor (competitors only) caps a Go band at Caution, never No-Go (2026-10-16), and the hero meta is carried through', () => {
     const m = model();
-    expect(m.summary.label).toBe('No-Go');
+    expect(m.summary.label).toBe('Proceed with caution');
     expect(m.limited).toBe(false);
     expect(m.coverageText).toBe('4 of 4 modules');
     expect(m.meta.rank).toBe(1);
     expect(m.truthPct).toEqual({ verified: 0, assumed: 50, projected: 50 });
   });
 
+  it('own-branch overlap ≥ 40 % overrides a Go band (deal-breaker)', () => {
+    const m = buildSiteReportModel({
+      payloads: { ...SAMPLE_PAYLOADS, territory: { ...SAMPLE_PAYLOADS.territory!, headlineSource: 'own', ownOutletOverlapPct: 62, competitiveSaturationPct: 30, maxOverlapPct: 62 } as typeof SAMPLE_PAYLOADS.territory },
+      verdict: 'go', meta: SAMPLE_META,
+    });
+    expect(m.summary.label).toBe('No-Go');
+  });
+
   it('carries every module row the screen shows, each with its Truth Layer', () => {
     const m = model();
     const byKey = Object.fromEntries(m.modules.map((x) => [x.key, x]));
-    expect(byKey.territory.status).toEqual({ tone: 'nogo', label: 'Redistributes existing sales' });
+    expect(byKey.territory.status).toEqual({ tone: 'caution', label: 'Contested corridor' });
     expect(byKey.territory.lead).toMatch(/competitive saturation/);
     expect(byKey.territory.rows.map((r) => r.label)).toEqual([
       'Own-branch overlap', 'Competitive saturation', 'Est. monthly cannibalization', 'Competes with', 'Affected own outlets',

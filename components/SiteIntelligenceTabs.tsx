@@ -15,7 +15,7 @@ import { TerritoryMap, type MapOutlet } from '@/components/TerritoryMap';
 import { DaypartCurve, type DaypartData } from '@/components/DaypartCurve';
 import { LeaseDistributionChart } from '@/components/LeaseDistributionChart';
 import { GapsMap } from '@/components/GapsMap';
-import { catchmentRadius } from '@/lib/modules/territoryMath';
+import { catchmentRadius, territoryCall } from '@/lib/modules/territoryMath';
 import { daypartCurve } from '@/lib/modules/p2p3Math';
 import { MIN_SAMPLE } from '@/lib/modules/leaseMath';
 import { isPrimaryModule } from '@/lib/modules/verticalConfig';
@@ -208,7 +208,9 @@ function TerritoryTab({ site, outlets, p, primary = true }: { site: { lat: numbe
   if (!p) return <RerunNote module="Territory Guard" />;
   // Validate against the map (not just ?? for null): an older run's payload can hold a verdict
   // value outside T_VERDICT, and T_VERDICT[unknown].tone would throw during SSR (React #329).
-  const verdict = (p.verdict && p.verdict in T_VERDICT ? p.verdict : 'mixed') as keyof typeof T_VERDICT;
+  const call = territoryCall(p as Parameters<typeof territoryCall>[0]);
+  const verdict = (call.verdict && call.verdict in T_VERDICT ? call.verdict : 'mixed') as keyof typeof T_VERDICT;
+  const contestedOnly = call.contested && (call.ownPct ?? 0) < 15;
   const comps = p.mapCompetitors?.length ?? 0;
   const same = p.realCompetitors?.length ?? 0;
   const catchmentM = p.candidateCatchmentM ?? catchmentRadius(site.siteType);
@@ -238,7 +240,7 @@ function TerritoryTab({ site, outlets, p, primary = true }: { site: { lat: numbe
       <div className="space-y-3">
         <div className="card p-5">
           <p className="overline">Territory call</p>
-          <p className="mt-2 text-title"><Chip tone={T_VERDICT[verdict].tone}>{T_VERDICT[verdict].label}</Chip></p>
+          <p className="mt-2 text-title"><Chip tone={T_VERDICT[verdict].tone}>{contestedOnly ? 'Contested corridor' : T_VERDICT[verdict].label}</Chip></p>
           {p.headlineSource === 'competitive' && (
             <p className="mt-2 text-xs text-ink-muted">Driven by competitive saturation, not your own branches.</p>
           )}

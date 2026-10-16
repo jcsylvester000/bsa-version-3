@@ -29,6 +29,60 @@ export function cannibalizationFraction(overlapPct: number): number {
 
 export type TerritoryVerdict = 'adds' | 'mixed' | 'redistributes';
 
+/** Loose territory payload fields the call is read from (new and legacy rows). */
+export interface TerritoryCallInput {
+  verdict?: string | null;
+  maxOverlapPct?: number | null;
+  ownOutletOverlapPct?: number | null;
+  competitiveSaturationPct?: number | null;
+  headlineSource?: string | null;
+}
+
+/** The territory payload's overlap split (own vs competitive) for the scorecard gate. */
+export function territorySplitOf(payload: unknown): TerritoryCallInput | null {
+  if (!payload || typeof payload !== 'object') return null;
+  const p = payload as Record<string, unknown>;
+  const n = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+  return {
+    verdict: typeof p.verdict === 'string' ? p.verdict : null,
+    maxOverlapPct: n(p.maxOverlapPct), ownOutletOverlapPct: n(p.ownOutletOverlapPct),
+    competitiveSaturationPct: n(p.competitiveSaturationPct), headlineSource: typeof p.headlineSource === 'string' ? p.headlineSource : null,
+  };
+}
+
+/** Competitive saturation at or above this makes a corridor "contested" (caps the site at Caution). */
+export const CONTESTED_SATURATION_PCT = 40;
+
+/**
+ * The Territory call (owner decision 2026-10-16). Cannibalization means taking sales from the brand's
+ * OWN branches — that is the deal-breaker. A crowded corridor of competitors is a risk, not
+ * cannibalization: it lowers the territory score and caps the site at Caution, but never forces No-Go
+ * on its own (in Metro Manila almost every corridor is crowded, so it used to turn every site No-Go).
+ *   own-branch overlap ≥ 40 %        → redistributes  (No-Go deal-breaker)
+ *   own-branch overlap ≥ 15 %        → mixed          (at most Caution)
+ *   competitive saturation ≥ 40 %    → mixed, contested corridor (at most Caution)
+ *   otherwise                        → adds
+ * Reads legacy rows too (no split stored → falls back to the stored verdict). Pure (unit-tested).
+ */
+export function territoryCall(p: TerritoryCallInput | null | undefined): { verdict: TerritoryVerdict | null; contested: boolean; ownPct: number | null; competitivePct: number | null } {
+  if (!p) return { verdict: null, contested: false, ownPct: null, competitivePct: null };
+  const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+  const max = num(p.maxOverlapPct);
+  let own = num(p.ownOutletOverlapPct);
+  let comp = num(p.competitiveSaturationPct);
+  if (own == null && max != null) own = p.headlineSource === 'competitive' ? 0 : max;
+  if (comp == null && max != null && p.headlineSource === 'competitive') comp = max;
+  if (own == null && comp == null) {
+    const v = p.verdict === 'adds' || p.verdict === 'mixed' || p.verdict === 'redistributes' ? p.verdict : null;
+    return { verdict: v, contested: false, ownPct: null, competitivePct: null };
+  }
+  const o = own ?? 0, c = comp ?? 0;
+  if (o >= 40) return { verdict: 'redistributes', contested: false, ownPct: own, competitivePct: comp };
+  if (o >= 15) return { verdict: 'mixed', contested: c >= CONTESTED_SATURATION_PCT, ownPct: own, competitivePct: comp };
+  if (c >= CONTESTED_SATURATION_PCT) return { verdict: 'mixed', contested: true, ownPct: own, competitivePct: comp };
+  return { verdict: 'adds', contested: false, ownPct: own, competitivePct: comp };
+}
+
 /** Verdict from the Verified overlap measurement (not the Projected PHP). */
 export function verdictFromOverlap(maxOverlapPct: number): TerritoryVerdict {
   if (maxOverlapPct >= 40) return 'redistributes';

@@ -285,7 +285,7 @@ export function SteppedIntakeWizard({ franchisors, mockMode = false, mockRunId, 
     })));
     setCandidates(s.candidates.map((c) => ({
       label: c.label, address: c.address, city: c.city,
-      lat: c.lat, lon: c.lon, siteType: c.siteType,
+      lat: c.lat, lon: c.lon, siteType: c.siteType, askingRent: c.askingRent ?? '',
     })));
     setError(null);
     setStep(0);
