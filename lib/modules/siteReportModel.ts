@@ -235,6 +235,16 @@ export const FINDING_MODULE: Record<string, { key: ModuleKey; label: string }> =
   'White-space': { key: 'whitespace', label: 'White-Space' },
 };
 
+/** Truth-layer mix across the figures shown in the module summaries (rows that carry a tag). Pure. */
+export function figureMix(mods: ModuleSummaryModel[]): { verified: number; assumed: number; projected: number } | null {
+  const tags = mods.flatMap((m) => m.rows.map((r) => r.truth)).filter((t): t is TruthLayer => t === 'verified' || t === 'assumed' || t === 'projected');
+  if (!tags.length) return null;
+  const n = tags.length;
+  const v = Math.round((tags.filter((t) => t === 'verified').length / n) * 100);
+  const a = Math.round((tags.filter((t) => t === 'assumed').length / n) * 100);
+  return { verified: v, assumed: a, projected: Math.max(0, 100 - v - a) };
+}
+
 export function buildSiteReportModel(args: {
   payloads: SiteModulePayloads;
   /** candidate_site.verdict — the composite band ('go' | 'caution' | 'nogo' | null). */
@@ -423,7 +433,10 @@ export function buildSiteReportModel(args: {
     limited: band == null && summary.coverage < 2,
     coverageText: `${ranCount} of 4 modules`,
     meta,
-    truthPct,
+    // "Where the figures come from" = the mix across every figure the report shows (each carries its own
+    // tag), not across whole modules — a module row is tagged by its softest field, which read "0% Verified"
+    // even when the overlap, zonal floor and population figures are Verified.
+    truthPct: figureMix([territory, lease, daypart, whitespace]) ?? truthPct,
     figures,
     findingModule: FINDING_MODULE,
     modules: [territory, lease, daypart, whitespace],

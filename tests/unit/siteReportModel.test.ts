@@ -16,7 +16,8 @@ describe('buildSiteReportModel', () => {
     expect(m.limited).toBe(false);
     expect(m.coverageText).toBe('4 of 4 modules');
     expect(m.meta.rank).toBe(1);
-    expect(m.truthPct).toEqual({ verified: 0, assumed: 50, projected: 50 });
+    // Per-figure mix (2026-10-16): counts every tagged figure in the module summaries.
+    expect(m.truthPct).toEqual({ verified: 22, assumed: 11, projected: 67 });
   });
 
   it('own-branch overlap ≥ 40 % overrides a Go band (deal-breaker)', () => {

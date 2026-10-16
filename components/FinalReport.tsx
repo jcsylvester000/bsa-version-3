@@ -119,6 +119,7 @@ export function FinalReportHero({
 
 const FIND_TAB: Record<string, { tab: 'territory' | 'lease' | 'daypart' | 'whitespace'; label: string }> = {
   Cannibalization: { tab: 'territory', label: 'Territory Guard' },
+  Competition: { tab: 'territory', label: 'Territory Guard' },
   'Lease position': { tab: 'lease', label: 'Lease Benchmark' },
   'Demand window': { tab: 'daypart', label: 'Daypart Demand' },
   'White-space': { tab: 'whitespace', label: 'White-Space' },

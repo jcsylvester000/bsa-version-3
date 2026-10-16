@@ -504,8 +504,14 @@ export async function runWhiteSpace(
   }
 
   const competitorSetRaw = await lookupCompetitorSet(vertical, brandOrConcept);
+  // Never list the run's own brand as its competitor (same rule as Territory Guard).
+  const ownKey = (ownBrandName ?? '').trim().toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const notOwn = (c: string) => {
+    const n = c.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    return !(ownKey && n && (ownKey.startsWith(n) || n.startsWith(ownKey)));
+  };
   const competitorSet = competitorSetRaw
-    ? { ...competitorSetRaw, subjectBrand: (ownBrandName ?? '').trim() || null }
+    ? { ...competitorSetRaw, competitors: (competitorSetRaw.competitors ?? []).filter(notOwn), subjectBrand: (ownBrandName ?? '').trim() || null }
     : null;
 
   // No geographic data anywhere → honest empty state (tells the user to load data).
