@@ -7,14 +7,14 @@ rewritten at the end of every work batch — if it disagrees with older notes (e
 
 _Last updated: 2026-10-09 (b) — user demand tracking + automated POI back-fill (awaiting push); boundaries-on-demand pushed `af5bee8`._
 
-## ⏸ Resume here (updated 2026-10-10)
+## ⏸ Resume here (updated 2026-10-16)
 
-**State:** git HEAD `5dc13d0`. Working tree holds the tested, uncommitted **audit + data check** batch — see
-`docs/qa-history/QA_AUDIT_2026-10-09.md` (parts 1 and 2). One migration: `20261010000000_candidate_asking_rent`
-(Netlify applies it on build). tsc clean · vitest 595/595 · build OK.
+**State:** git HEAD `c3e93ff` — audit + data check **pushed** (working tree clean). Netlify applies migration
+`20261010000000_candidate_asking_rent` on build. Report: `docs/qa-history/QA_AUDIT_2026-10-09.md` (parts 1 and 2).
+Portable handoff summary refreshed in `../5 - Worklogs and Memory/` (2026-10-16).
 
 **Owner to-do (in order)**
-1. Push (commands in the chat / below): `git add -A` → commit → `git push`.
+1. ~~Push~~ — done (`c3e93ff`). Not yet confirmed: whether the data loads in step 2 have been run.
 2. Against Neon, from "4 - Final Application": `npm run db:seed-cannibalization` · `npm run db:ingest -- malls` ·
    `npm run db:ingest:osm:transport` · `npm run db:fetch-boundaries -- --region=ncr` · `npm run db:tag-boundaries`.
 3. Netlify env: `CRON_SECRET` (32+ chars) → redeploy.

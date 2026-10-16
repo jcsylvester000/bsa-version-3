@@ -5,6 +5,19 @@ The cross-thread state record. Read this (with the Master Instruction and the cu
 
 ---
 
+## 2026-10-16 — Records refresh
+
+- Owner pushed the audit + data-check batch as `c3e93ff` (working tree clean).
+- `PROJECT_MEMORY.md` resume point updated to HEAD `c3e93ff`.
+- Portable handoff folder `5 - Worklogs and Memory/` refreshed (it was last updated 2026-08-17): README status,
+  WORKLOG phases 4–8, CODE_CHANGES commit index to `c3e93ff`, KNOWN_ISSUES §0 current to-dos (August "uncommitted"
+  item marked resolved), MEMORY §9 decisions since August, ENVIRONMENT §7 (build command, CRON_SECRET, data
+  commands), TESTING §7 (audit + data check).
+- Still open: owner data loads (competitor sets, malls, NCR transport, NCR boundaries + tags), `CRON_SECRET`, Taguig
+  zonal confirmation, two demographic centroids, demo admin password; then live re-test + user-journey QA.
+
+---
+
 ## 2026-10-10 — Data check + enhancements (follow-on to the 2026-10-09 audit)
 
 **Owner:** lease scoring stays (lower rent scores higher — brokers want the lowest, then decide budget); do a data
