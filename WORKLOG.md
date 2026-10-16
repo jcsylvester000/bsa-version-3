@@ -5,6 +5,30 @@ The cross-thread state record. Read this (with the Master Instruction and the cu
 
 ---
 
+## 2026-10-16 (b) — Investor-demo polish + pitch materials
+
+**Owner ask:** polish so the demo data works for Monday's investor meeting; pitch deck (no prices), "how it works /
+cannibalization" deck, presenter script — screenshots from the live app.
+
+- **Scoring rule (owner decision):** own-branch overlap ≥ 40 % = No-Go deal-breaker; own 15–40 % = Caution; competitor
+  saturation ≥ 40 % alone = Caution ("contested corridor"), never No-Go (`territoryMath.territoryCall`, scorecard gate,
+  report, dashboard). Before, nearly every NCR site read No-Go. All stored composites re-scored (reconcile endpoint).
+- **Demo scenario 1** (Macao Imperial Tea): Ayala Ave (No-Go, 75.3 % overlap with One Ayala, ₱408,240/mo at risk),
+  Katipunan (Proceed 76), BGC High Street (Caution 63, contested). Illustrative asking rents.
+- Polish: intake column headers + compact asking-rent field; no "gathering data" banner for layers that don't affect
+  the vertical (`layerMattersFor`); amber Caution cap notes; competition finding + link; "overlap score" wording on
+  White-Space; proposed-site pin on the White-Space map; own brand never listed as its own competitor; percentiles
+  rounded; report truth bar = per-figure mix (was module-level "0 % Verified").
+- Commits `9fd4c70`, `3c87902`, `8182329` (owner pushed). tsc clean · vitest 601/601 · build OK.
+- Demo run: **"Investor demo — Macao Imperial Tea (3 sites)"** `794f7379-be33-43f5-b3c5-54caf74f1f3d`.
+- Deliverables in `../5 - Handoff Package/Investor Pitch - Oct 2026/`: BSA_Investor_Pitch_Deck.pptx (11 slides, no
+  prices), BSA_How_It_Works.pptx (14 slides), BSA_Investor_Presenter_Script.docx (run of show, slide talk track, demo
+  run-sheet, Q&A, fallback).
+- Known: Overpass from Netlify currently failing (back-fill "Run now" errors) — not in the demo path. The brand has 6
+  extra Macao outlets on file, so the map legend says "Your outlets (11)".
+
+---
+
 ## 2026-10-16 — Records refresh
 
 - Owner pushed the audit + data-check batch as `c3e93ff` (working tree clean).

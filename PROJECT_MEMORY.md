@@ -7,11 +7,12 @@ rewritten at the end of every work batch — if it disagrees with older notes (e
 
 _Last updated: 2026-10-09 (b) — user demand tracking + automated POI back-fill (awaiting push); boundaries-on-demand pushed `af5bee8`._
 
-## ⏸ Resume here (updated 2026-10-16)
+## ⏸ Resume here (updated 2026-10-16 b)
 
-**State:** git HEAD `c3e93ff` — audit + data check **pushed** (working tree clean). Netlify applies migration
-`20261010000000_candidate_asking_rent` on build. Report: `docs/qa-history/QA_AUDIT_2026-10-09.md` (parts 1 and 2).
-Portable handoff summary refreshed in `../5 - Worklogs and Memory/` (2026-10-16).
+**State:** HEAD `8182329` live (demo polish). Investor meeting Monday — materials in
+`../5 - Handoff Package/Investor Pitch - Oct 2026/`; demo run "Investor demo — Macao Imperial Tea (3 sites)"
+(`794f7379-be33-43f5-b3c5-54caf74f1f3d`). **Decided 2026-10-16:** own-branch overlap is the only No-Go deal-breaker;
+crowded competitor corridors cap at Caution.
 
 **Owner to-do (in order)**
 1. ~~Push~~ — done (`c3e93ff`). Not yet confirmed: whether the data loads in step 2 have been run.
