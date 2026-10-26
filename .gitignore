@@ -62,3 +62,6 @@ prisma/data/malls/*.csv
 # Local traffic files with real AADT (owner-filled per R-07 README); templates stay tracked
 prisma/data/traffic/*.json
 !prisma/data/traffic/*.template.json
+
+# Neon data snapshots (contain user accounts)
+db-snapshot/

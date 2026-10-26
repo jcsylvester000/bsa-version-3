@@ -5,6 +5,32 @@ The cross-thread state record. Read this (with the Master Instruction and the cu
 
 ---
 
+## 2026-10-26 — Database image for the dev team (DigitalOcean handoff)
+- New `scripts/exportNeonSnapshot.mjs` (read-only; Neon HTTPS driver, no pg_dump): every public table as
+  parent-first INSERTs + sequence values → `bsa-data.sql.gz`, `counts.tsv`, `manifest.json`. `db-snapshot/` git-ignored.
+- Package `../5 - Handoff Package/BSA Database Image/`: Dockerfile (PG16 + PostGIS 3.4 + pgvector; first start =
+  extensions → Prisma migrations → data → row-count check), docker-compose, restore script for DO Managed Postgres,
+  README. Snapshot 2026-10-26: 27 tables / 34,314 rows (25,237 POI, 2,927 boundaries, 2,197 zonal).
+- Verified locally: counts, columns/types and migration checksums identical to Neon; geometries valid, SRID 4326.
+  `docker build` itself not run here (Docker Hub blocked in the sandbox).
+- Neon is Postgres 18 / PostGIS 3.6. `doc_chunk` embeddings are empty on Neon too.
+- Security: the Neon connection string was shared in chat — rotate the Neon password. The snapshot holds user
+  accounts (hashes) — share privately, never commit or push to a public registry.
+
+## 2026-10-16 (c) — Investor materials finalized (no code change; HEAD `8182329` live)
+- Final set (all in `../5 - Handoff Package/Investor Pitch - Oct 2026/`): BSA_Investor_Pitch_Deck.pptx (11 slides,
+  no prices), BSA_How_It_Works.pptx (14 slides), BSA_Investor_Presenter_Script.docx, BSA_Investor_QA.docx +
+  BSA_Investor_QA.xlsx (40 Q&As, 8 topics; sheets Investor Q&A / Summary (COUNTIF) / Ground rules).
+- NCR-only disclaimer placed: pitch slide 8 + roadmap, How It Works slide 12, script, Q&A cover + ground rules.
+- Demo accounts for the meeting: admin (admin side) and `owner@macaoimperial.test` (brand/front-end side). Passwords
+  are the repo demo passwords — not written into any deliverable; **change them after the meeting**.
+- Caveats for the meeting: the demo run `794f7379…` is owned by the admin account, so the Macao owner login won't list
+  it — the owner must start their own run from demo scenario 1 (or present the run from admin). The owner account is
+  only created by the seed — confirm it exists on live before Monday. Overpass from Netlify still failing (back-fill
+  "Run now" errors) — keep out of the demo. Map legend shows "Your outlets (11)" (6 extra seeded Macao outlets).
+- Pitch-source scripts (pptxgenjs / docx-js / openpyxl) lived in the agency sandbox; the files in the handoff folder are
+  the masters — edit those directly.
+
 ## 2026-10-16 (b) — Investor-demo polish + pitch materials
 
 **Owner ask:** polish so the demo data works for Monday's investor meeting; pitch deck (no prices), "how it works /
@@ -24,6 +50,9 @@ cannibalization" deck, presenter script — screenshots from the live app.
 - Deliverables in `../5 - Handoff Package/Investor Pitch - Oct 2026/`: BSA_Investor_Pitch_Deck.pptx (11 slides, no
   prices), BSA_How_It_Works.pptx (14 slides), BSA_Investor_Presenter_Script.docx (run of show, slide talk track, demo
   run-sheet, Q&A, fallback).
+- Coverage disclaimer added (owner ask): pitch slide 8 + roadmap, How It Works slide 12, script cover/slide 8/Q&A —
+  "BSA has mapped Metro Manila (NCR) only"; deck figures restated as NCR (~18,000 places, 69 leases / 13 corridors).
+- Investor Q&A added: BSA_Investor_QA.docx + .xlsx (40 questions, 8 topics, ground rules; no prices).
 - Known: Overpass from Netlify currently failing (back-fill "Run now" errors) — not in the demo path. The brand has 6
   extra Macao outlets on file, so the map legend says "Your outlets (11)".
 
