@@ -26,7 +26,7 @@ describe('leaseFreshness (audit F-14)', () => {
     expect(f.staleCompCount).toBe(2);
   });
   it('handles no dated comps', () => {
-    expect(leaseFreshness([null, undefined], now)).toEqual({ dataAsOf: null, monthsSinceNewest: null, staleCompCount: 0, isStale: false });
+    expect(leaseFreshness([null, undefined], now)).toEqual({ dataAsOf: null, monthsSinceNewest: null, staleCompCount: 0, isStale: false, isAgeing: false, compCount: 2 });
   });
 });
 

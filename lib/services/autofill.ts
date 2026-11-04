@@ -19,7 +19,10 @@ import { prisma } from '@/lib/db/prisma';
 import type { SessionUser } from '@/lib/auth/auth';
 import { previewArea, saveCapture, type SaveInput } from '@/lib/services/capture';
 import { loadBoundariesForArea } from '@/lib/geo/boundaryOnDemand';
-import { overpassStatus } from '@/lib/places/osmService';
+import { overpassStatus, isOverpassBusyError } from '@/lib/places/osmService';
+import { enqueueFill, fillAreaKey } from '@/lib/services/demand';
+import { FRESH_DAYS } from '@/lib/capture/capturePolicy';
+import { isLayerKey } from '@/lib/capture/layers';
 import { osmLiveEnabled } from '@/lib/places/poiCache';
 import { runPipeline } from '@/lib/modules/orchestrator';
 import { audit } from '@/lib/audit/audit';
@@ -31,6 +34,14 @@ export const MAX_FILL_ATTEMPTS = 3;
 const RETRY_BASE_MIN = 20;
 const STALE_RUNNING_MIN = 10;
 const MIN_LAYER_MS = 7_000;
+/** A job that only ever hit a busy OpenStreetMap keeps waiting (no attempt used) for up to this long. */
+export const BUSY_GIVE_UP_DAYS = 7;
+/** Back-off while OpenStreetMap is busy. */
+const BUSY_RETRY_MIN = 30;
+/** 90-day refresh (Brief C-4): stale coverage cells queued per pass, only when nothing else is due. */
+const STALE_PER_PASS = 2;
+/** A stale cell is not queued again within this many days of its last refresh job (done or failed). */
+const STALE_REQUEUE_DAYS = 7;
 
 export function autofillEnabled(): boolean {
   const v = (process.env.AUTOFILL_ENABLED ?? '1').toLowerCase();
@@ -46,6 +57,65 @@ export function retryDelayMs(attempts: number): number {
   return RETRY_BASE_MIN * 60_000 * 2 ** Math.max(0, attempts - 1);
 }
 
+/** Every failed layer failed only because OpenStreetMap was busy. Pure (unit-tested). */
+export function onlyBusyFailures(failed: string[], busyFailed: string[]): boolean {
+  return failed.length > 0 && failed.every((l) => busyFailed.includes(l));
+}
+
+/** Whole days since a job was created (unknown → 0). Pure. */
+export function jobAgeDays(createdAt: Date | string | null | undefined, now = Date.now()): number {
+  if (!createdAt) return 0;
+  const t = new Date(createdAt).getTime();
+  return Number.isFinite(t) ? Math.floor((now - t) / 86_400_000) : 0;
+}
+
+/** Coverage key (poi_coverage.vertical) → the capture layer that refreshes it, or null. Pure (unit-tested).
+ *  'layer:transport' → 'transport'; '__transport__' (bulk ingest) → 'transport'; 'fnb_qsr' → 'v:fnb_qsr'. */
+export function layerForCoverageKey(key: string): LayerKey | null {
+  const k = key === '__transport__' ? 'layer:transport' : key;
+  const layer = k.startsWith('layer:') ? k.slice(6) : `v:${k}`;
+  return isLayerKey(layer) ? (layer as LayerKey) : null;
+}
+
+/**
+ * The 90-day refresh (Brief C-4): coverage cells whose last OpenStreetMap pull is older than FRESH_DAYS
+ * are queued as ordinary back-fill jobs (reason 'refresh'), a couple per pass and only when nothing else
+ * is due, so user demand always goes first. A cell is skipped while a job for its area is open or ran in
+ * the last STALE_REQUEUE_DAYS (a failing area never loops). Returns how many were queued.
+ */
+export async function enqueueStaleRefresh(): Promise<number> {
+  const due = await prisma.$queryRaw<Array<{ n: number }>>`
+    SELECT COUNT(*)::int AS n FROM poi_fill_job WHERE status IN ('queued', 'running') AND next_attempt_at <= now()`;
+  if ((due[0]?.n ?? 0) > 0) return 0;
+  // Cells with at least one stale key and no fresher pull of the same layer (bulk '__transport__' and
+  // capture 'layer:transport' are the same layer).
+  const rows = await prisma.$queryRaw<Array<{ cell_key: string; lat: number; lon: number; keys: string[] }>>`
+    WITH c AS (
+      SELECT cell_key, lat, lon, CASE WHEN vertical = '__transport__' THEN 'layer:transport' ELSE vertical END AS k, fetched_at
+      FROM poi_coverage
+      WHERE source <> 'bulk'  -- bulk sweep tiles (~8 km) refresh via db:ingest:osm --stale, not 1.5 km jobs
+    ), latest AS (
+      SELECT cell_key, k, MAX(fetched_at) AS at, MIN(lat) AS lat, MIN(lon) AS lon FROM c GROUP BY cell_key, k
+    )
+    SELECT cell_key, MIN(lat) AS lat, MIN(lon) AS lon, array_agg(k) AS keys
+    FROM latest WHERE at < now() - make_interval(days => ${FRESH_DAYS}::int)
+    GROUP BY cell_key ORDER BY MIN(at) ASC LIMIT 40`;
+  let queued = 0;
+  for (const r of rows) {
+    if (queued >= STALE_PER_PASS) break;
+    const layers = [...new Set(r.keys.map(layerForCoverageKey).filter((l): l is LayerKey => l != null))];
+    if (!layers.length) continue;
+    const recent = await prisma.$queryRaw<Array<{ n: number }>>`
+      SELECT COUNT(*)::int AS n FROM poi_fill_job
+      WHERE area_key = ${fillAreaKey(r.lat, r.lon)}
+        AND (status IN ('queued', 'running') OR created_at >= now() - make_interval(days => ${STALE_REQUEUE_DAYS}::int))`;
+    if ((recent[0]?.n ?? 0) > 0) continue;
+    const id = await enqueueFill({ lat: r.lat, lon: r.lon, layers, reason: 'refresh', label: `90-day refresh · ${r.lat.toFixed(3)}, ${r.lon.toFixed(3)}` });
+    if (id) queued++;
+  }
+  return queued;
+}
+
 /** Final status once no layer is left to try. Pure (unit-tested). */
 export function finalStatus(done: number, failed: number): 'done' | 'partial' | 'failed' {
   if (failed === 0) return 'done';
@@ -54,32 +124,42 @@ export function finalStatus(done: number, failed: number): 'done' | 'partial' | 
 
 interface JobRow {
   id: string; label: string; lat: number; lon: number; radius_m: number; layers: string[]; layers_done: string[];
-  layers_failed: string[]; attempts: number; run_ids: string[]; places_saved: number;
+  layers_failed: string[]; attempts: number; run_ids: string[]; places_saved: number; created_at?: Date;
 }
 
 export interface AutofillSummary {
   skipped?: string;
   job?: { id: string; label: string; status: string; layersDone: string[]; layersFailed: string[]; saved: number; boundaries: number };
   refreshed: Array<{ runId: string; state: string }>;
+  /** Stale (> 90 days) areas queued for refresh on this pass. */
+  staleQueued?: number;
   ms: number;
 }
 
 /** One time-boxed pass of the queue + the waiting runs. Never throws (errors land on the job). */
-export async function runAutofill(opts: { budgetMs?: number; trigger: 'cron' | 'admin'; actorId?: string | null } = { trigger: 'cron' }): Promise<AutofillSummary> {
+export async function runAutofill(opts: {
+  budgetMs?: number; trigger: 'cron' | 'admin' | 'runner'; actorId?: string | null;
+  /** Command-line runner (no serverless limit): up to 10 min per pass and 50 s per layer. */
+  patient?: boolean;
+} = { trigger: 'cron' }): Promise<AutofillSummary> {
   const t0 = Date.now();
-  const deadline = t0 + Math.min(Math.max(opts.budgetMs ?? 20_000, 8_000), 25_000);
+  const cap = opts.patient ? 600_000 : 25_000;
+  const deadline = t0 + Math.min(Math.max(opts.budgetMs ?? 20_000, 8_000), cap);
   const summary: AutofillSummary = { refreshed: [], ms: 0 };
 
   // A runner that died mid-job (timeout, deploy) leaves it "running" — hand it back to the queue.
   await prisma.$executeRaw`
     UPDATE poi_fill_job SET status = 'queued'
-    WHERE status = 'running' AND started_at < now() - make_interval(mins => ${STALE_RUNNING_MIN})`;
+    WHERE status = 'running' AND started_at < now() - make_interval(mins => ${STALE_RUNNING_MIN}::int)`;
+
+  // 90-day refresh: queue stale areas (cheap; only when no other job is due, so user demand goes first).
+  try { summary.staleQueued = await enqueueStaleRefresh(); } catch (e) { console.error('[autofill] stale refresh', e); }
 
   const skip = await fetchGuard();
   if (skip) summary.skipped = skip;
   else {
     const job = await claimJob();
-    if (job) summary.job = await workJob(job, deadline);
+    if (job) summary.job = await workJob(job, deadline, opts.patient === true);
   }
 
   // Refresh phase runs even when fetching is paused, so finished data always reaches the reports.
@@ -96,8 +176,10 @@ async function fetchGuard(): Promise<string | null> {
   const used = await prisma.$queryRaw<Array<{ n: number }>>`
     SELECT COUNT(*)::int AS n FROM poi_fill_job WHERE started_at >= now() - interval '24 hours'`;
   if ((used[0]?.n ?? 0) >= autofillDailyCap()) return `daily cap reached (${autofillDailyCap()} jobs / 24 h)`;
+  // Busy or unreachable OpenStreetMap: jobs wait in the queue — no attempt is used (Brief C-5).
   const st = await overpassStatus();
-  if (st.reachable && st.waitSeconds > 15) return `OpenStreetMap busy (next slot in ${st.waitSeconds} s)`;
+  if (!st.reachable) return 'OpenStreetMap unreachable — jobs wait in the queue (no attempt used)';
+  if (st.busy) return `OpenStreetMap busy${st.waitSeconds ? ` (next slot in ~${st.waitSeconds} s)` : ''} — jobs wait in the queue (no attempt used)`;
   return null;
 }
 
@@ -109,17 +191,18 @@ async function claimJob(): Promise<JobRow | null> {
       WHERE status = 'queued' AND next_attempt_at <= now()
       ORDER BY demand_count DESC, created_at ASC
       LIMIT 1 FOR UPDATE SKIP LOCKED)
-    RETURNING id::text, label, lat, lon, radius_m, layers, layers_done, layers_failed, attempts, run_ids::text[] AS run_ids, places_saved`;
+    RETURNING id::text, label, lat, lon, radius_m, layers, layers_done, layers_failed, attempts, run_ids::text[] AS run_ids, places_saved, created_at`;
   return rows[0] ?? null;
 }
 
-async function workJob(job: JobRow, deadline: number): Promise<NonNullable<AutofillSummary['job']>> {
+async function workJob(job: JobRow, deadline: number, patient = false): Promise<NonNullable<AutofillSummary['job']>> {
   const area = { kind: 'circle' as const, lat: job.lat, lon: job.lon, radiusM: job.radius_m };
   let boundaries = 0;
   try { boundaries = (await loadBoundariesForArea(area)).barangaysLoaded; } catch (e) { console.error('[autofill] boundaries', e); }
 
   const todo = job.layers.filter((l) => !job.layers_done.includes(l));
   const done: string[] = [], failed: string[] = [], fetched: string[] = [];
+  const busyFailed: string[] = [];
   const items: SaveInput['items'] = [];
   let lastError: string | null = null;
   for (const layer of todo) {
@@ -127,18 +210,19 @@ async function workJob(job: JobRow, deadline: number): Promise<NonNullable<Autof
     if (left < MIN_LAYER_MS) break; // resume next call
     try {
       const r = await previewArea(AUTOFILL_ACTOR, {
-        area, layers: [layer as LayerKey], label: `Auto-fill · ${job.label}`, budgetMs: Math.min(15_000, left - 4_000),
+        area, layers: [layer as LayerKey], label: `Auto-fill · ${job.label}`, budgetMs: Math.min(patient ? 50_000 : 15_000, left - 4_000),
       });
       const lr = r.layers[0];
       if (lr?.status === 'covered') done.push(layer);
       else if (lr?.status === 'loaded' && !lr.truncated) { done.push(layer); fetched.push(layer); }
-      else { failed.push(layer); lastError = lr?.message ?? 'failed'; }
+      else { failed.push(layer); lastError = lr?.message ?? 'failed'; if (isOverpassBusyError(lastError) || /busy|rate-limiting/i.test(lastError)) busyFailed.push(layer); }
       for (const c of r.candidates) {
         items.push({ osmRef: c.osmRef, receipt: c.receipt ?? null, name: c.name, kind: c.kind, category: c.category, lat: c.lat, lon: c.lon, origin: 'osm', notes: null });
       }
     } catch (e) {
       failed.push(layer);
       lastError = e instanceof Error ? e.message.slice(0, 200) : 'error';
+      if (isOverpassBusyError(lastError)) busyFailed.push(layer);
     }
   }
 
@@ -168,6 +252,15 @@ async function workJob(job: JobRow, deadline: number): Promise<NonNullable<Autof
       UPDATE poi_fill_job SET status = 'queued', layers_done = ${layersDone}::text[], layers_failed = ${failed}::text[],
         places_saved = places_saved + ${saved}, last_error = ${lastError}, next_attempt_at = now()
       WHERE id = ${job.id}::uuid`;
+  } else if (failed.length && onlyBusyFailures(failed, busyFailed) && jobAgeDays(job.created_at) < BUSY_GIVE_UP_DAYS) {
+    // OpenStreetMap was busy, not wrong: wait and try again without using an attempt (Brief C-5).
+    status = 'queued';
+    const next = new Date(Date.now() + BUSY_RETRY_MIN * 60_000);
+    await prisma.$executeRaw`
+      UPDATE poi_fill_job SET status = 'queued', layers_done = ${layersDone}::text[], layers_failed = ${failed}::text[],
+        places_saved = places_saved + ${saved}, last_error = ${`Waiting: ${lastError ?? 'OpenStreetMap busy'}`}, next_attempt_at = ${next}
+      WHERE id = ${job.id}::uuid`;
+    if (saved > 0) await markPartialData(job.run_ids);
   } else if (failed.length && job.attempts + 1 < MAX_FILL_ATTEMPTS) {
     status = 'queued';
     const next = new Date(Date.now() + retryDelayMs(job.attempts + 1));

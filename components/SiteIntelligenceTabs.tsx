@@ -909,6 +909,7 @@ function AnalysisTab({
         capBand={m.meta.capBand ?? null}
         provisionalNote={m.meta.provisionalNote ?? null}
         visitNote={m.meta.visitNote ?? null}
+        coverageNote={m.meta.coverageNote ?? null}
         siteLevelConfidence={m.meta.siteLevelConfidence ?? false}
       />
       {m.summary.findings.length > 0 && (

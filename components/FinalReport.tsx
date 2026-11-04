@@ -23,6 +23,7 @@ export function FinalReportHero({
   provisionalNote,
   visitNote,
   siteLevelConfidence,
+  coverageNote,
 }: {
   summary: SiteSummary;
   composite?: number | null;
@@ -48,6 +49,8 @@ export function FinalReportHero({
   visitNote?: string | null;
   /** Confidence shown is this site's own (true) or the legacy run-level value (false). */
   siteLevelConfidence?: boolean;
+  /** Region only partly loaded (Brief C-2). */
+  coverageNote?: string | null;
 }) {
   const limited = limitedProp ?? summary.coverage < 2;
   const thinData = !limited && summary.coverage < 2;
@@ -90,6 +93,7 @@ export function FinalReportHero({
           : <p className="text-label font-normal text-nogo">✕ {capNote}</p>)}
         {provisionalNote && <p className="text-label font-normal text-caution">◌ {provisionalNote}</p>}
         {visitNote && <p className="text-label font-normal text-caution">⚑ {visitNote}</p>}
+        {coverageNote && <p className="text-label font-normal text-caution">◐ Partial coverage: {coverageNote}</p>}
         {thinData && (
           <p className="text-label font-normal text-ink-muted">
             Limited module data — {summary.coverage} of 3 core modules rated. The call follows the site&apos;s composite score; confirm on the ground.

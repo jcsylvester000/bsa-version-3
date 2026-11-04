@@ -50,7 +50,7 @@ interface LogData {
   boundaries?: Array<{ region: string | null; barangays: number }>;
   coverageKeys: Array<{ vertical: string; cells: number }>;
 }
-interface OsmStatus { reachable: boolean; slotsNow: number | null; waitSeconds: number; window: OsmWindow }
+interface OsmStatus { reachable: boolean; busy?: boolean; slotsNow: number | null; waitSeconds: number; window: OsmWindow }
 interface Cell { key: string; lat: number; lon: number; poiCount: number; fetchedAt: string; source: string }
 
 const DAY = 86_400_000;
@@ -367,7 +367,7 @@ export function CoverageMonitor() {
       <div className={`card flex flex-wrap items-center gap-3 px-5 py-3 text-label font-normal ${win.offPeak ? '' : 'border-caution/60'}`} role="status">
         <span className={`rounded-full border px-3 py-1 ${win.offPeak ? 'border-go text-go' : 'border-caution text-caution'}`}>{win.offPeak ? '✓' : '▲'} {win.label}</span>
         <span className="text-ink-muted">{win.advice}</span>
-        {osm && <span className="ml-auto text-ink-muted">OpenStreetMap: {!osm.reachable ? 'status unknown' : osm.waitSeconds > 0 ? `next free slot in ${osm.waitSeconds} s` : `${osm.slotsNow ?? 0} slot${osm.slotsNow === 1 ? '' : 's'} free`}</span>}
+        {osm && <span className="ml-auto text-ink-muted">OpenStreetMap: {!osm.reachable ? 'not answering — jobs wait in the queue' : osm.busy ? 'busy (servers at capacity) — jobs wait, no attempt used' : osm.waitSeconds > 0 ? `next free slot in ${osm.waitSeconds} s` : `${osm.slotsNow ?? 0} slot${osm.slotsNow === 1 ? '' : 's'} free`}</span>}
       </div>
 
       <section className="card overflow-hidden" aria-labelledby="cov-next-h">

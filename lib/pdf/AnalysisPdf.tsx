@@ -239,6 +239,7 @@ export function AnalysisPdf(p: AnalysisPdfProps): React.ReactElement {
             {m.meta.capNote ? <Text style={{ fontSize: 8.5, color: m.meta.capBand === 'caution' ? C.caution : C.nogo, marginTop: 4 }}>{m.meta.capNote}</Text> : null}
             {m.meta.provisionalNote ? <Text style={{ fontSize: 8.5, color: C.caution, marginTop: 4 }}>{m.meta.provisionalNote}</Text> : null}
             {m.meta.visitNote ? <Text style={{ fontSize: 8.5, color: C.caution, marginTop: 4 }}>{m.meta.visitNote}</Text> : null}
+            {m.meta.coverageNote ? <Text style={{ fontSize: 8.5, color: C.caution, marginTop: 4 }}>Partial coverage: {m.meta.coverageNote}</Text> : null}
             {!m.limited && sum.coverage < 2 ? (
               <Text style={{ fontSize: 7.5, color: C.muted, marginTop: 4 }}>
                 Limited module data — {sum.coverage} of 3 core modules rated. The call follows the site’s composite score; confirm on the ground.

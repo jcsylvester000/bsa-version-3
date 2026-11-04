@@ -24,7 +24,7 @@ import { audit } from '@/lib/audit/audit';
 import { regionForPoint } from '@/lib/geo/regions';
 import { approxPlaceOf } from '@/lib/geo/boundaryOnDemand';
 import { resolveAdminBoundary } from '@/lib/geo/adminBoundary';
-import { captureElementsInBbox, OSM_SELECTORS } from '@/lib/places/osmService';
+import { captureElementsInBbox, isOverpassBusyError, OSM_SELECTORS } from '@/lib/places/osmService';
 import { claimLegacyOsmSql } from '@/lib/ingest/poiKeySql';
 import type { BsaPoiCategory } from '@/lib/places/osmCategory';
 import { areaGeoJson, areaKm2, bboxOfArea, containsPoint, describeArea, MAX_CAPTURE_KM2, type CaptureArea } from '@/lib/capture/area';
@@ -277,9 +277,11 @@ export async function previewArea(user: SessionUser, input: PreviewInput) {
       elements = await captureElementsInBbox(selectors, bboxOfArea(input.area), { max: MAX_ELEMENTS, budgetMs: (input.budgetMs ?? PREVIEW_BUDGET_MS) / Math.max(1, input.layers.length) });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      const timeout = /timeout|timed out|abort|did not answer|429|503|504|502|fetch failed|ECONNRESET|ENOTFOUND/i.test(msg);
+      const timeout = isOverpassBusyError(msg) || /ENOTFOUND/i.test(msg);
+      // Keep the raw reason (status / remark) on real errors so the cause is diagnosable (Brief C-5).
       const message = /429/.test(msg) ? 'OpenStreetMap is rate-limiting this server — wait a minute'
-        : timeout ? 'OpenStreetMap did not answer in time' : 'OpenStreetMap returned an error';
+        : /502|503|504|at capacity|busy/i.test(msg) ? 'OpenStreetMap is busy (servers at capacity)'
+        : timeout ? 'OpenStreetMap did not answer in time' : `OpenStreetMap returned an error (${msg.replace(/\s+/g, ' ').slice(0, 80)})`;
       results.push({ layer, status: 'failed', found: 0, newCount: 0, inBsa: 0, message: `${message} — logged in the retry queue` });
       await recordGap(user, input, layer, timeout ? 'timeout' : 'error', message);
       continue;

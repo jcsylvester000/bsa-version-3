@@ -267,6 +267,11 @@ export function resolveCorridorForSite(
 
 /** A comp older than this (months) counts as stale; the set is flagged when its NEWEST comp is. */
 export const LEASE_STALE_MONTHS = 18;
+/** Brief C-7: the rent update cycle is monthly (until 10+ comps per city), so a set whose newest comp is
+ *  older than this is "ageing" — shown to the broker, the score is unchanged. */
+export const LEASE_AGEING_MONTHS = 6;
+/** Comps per corridor the brief's update cycle aims for before going quarterly. */
+export const LEASE_TARGET_COMPS = 10;
 const MS_PER_MONTH = 1000 * 60 * 60 * 24 * 30.44;
 
 export interface LeaseFreshness {
@@ -278,6 +283,10 @@ export interface LeaseFreshness {
   staleCompCount: number;
   /** True when even the newest comp is older than LEASE_STALE_MONTHS — the whole set is ageing. */
   isStale: boolean;
+  /** True when the newest comp is older than LEASE_AGEING_MONTHS (but not yet stale). */
+  isAgeing?: boolean;
+  /** How many comps the set holds. */
+  compCount?: number;
 }
 
 /** Freshness of a comp set from its observed dates. Pure; deterministic given `now`. */
@@ -288,7 +297,7 @@ export function leaseFreshness(
   const dates = observedDates
     .map((d) => (d ? new Date(d) : null))
     .filter((d): d is Date => d != null && !Number.isNaN(d.getTime()));
-  if (dates.length === 0) return { dataAsOf: null, monthsSinceNewest: null, staleCompCount: 0, isStale: false };
+  if (dates.length === 0) return { dataAsOf: null, monthsSinceNewest: null, staleCompCount: 0, isStale: false, isAgeing: false, compCount: observedDates.length };
   const monthsSince = (t: number) => (now.getTime() - t) / MS_PER_MONTH;
   const newestMs = Math.max(...dates.map((d) => d.getTime()));
   const monthsSinceNewest = Math.round(monthsSince(newestMs));
@@ -297,6 +306,8 @@ export function leaseFreshness(
     monthsSinceNewest,
     staleCompCount: dates.filter((d) => monthsSince(d.getTime()) > LEASE_STALE_MONTHS).length,
     isStale: monthsSinceNewest > LEASE_STALE_MONTHS,
+    isAgeing: monthsSinceNewest > LEASE_AGEING_MONTHS && monthsSinceNewest <= LEASE_STALE_MONTHS,
+    compCount: observedDates.length,
   };
 }
 

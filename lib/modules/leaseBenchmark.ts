@@ -231,6 +231,7 @@ export async function runLeaseBenchmark(input: LeaseBenchmarkInput): Promise<Lea
   if (zonal?.usedAsFallback) flags.push('zonal_fallback_anchor');
   if (zonal?.crossCheck?.position === 'rich') flags.push('rent_rich_vs_zonal');
   if (freshness.isStale) flags.push('lease_comps_stale');
+  else if (freshness.isAgeing) flags.push('lease_comps_ageing');
 
   return {
     ...output,

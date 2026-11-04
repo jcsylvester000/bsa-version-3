@@ -8,6 +8,8 @@
  *   npm run db:ingest:osm -- --quick               # fast single-bbox smoke (may truncate)
  *   npm run db:ingest:osm -- --competitors|--brands# one phase only
  *   npm run db:ingest:osm -- --region=cavite --force# ignore the resumable checkpoint, re-sweep
+ *   npm run db:ingest:osm -- --region=ncr --stale  # 90-day refresh (Brief C-4): re-sweep only tiles
+ *                                                  # last swept more than 90 days ago
  *
  * Sources real establishments from OpenStreetMap via the public Overpass API — no key, no billing.
  * Writes into `poi` through loadPoi (idempotent upsert on (osm_type, osm_id)); coordinates Verified, region
@@ -25,6 +27,7 @@ import { getRegion, type RegionKey, REGION_KEYS } from '../lib/geo/regions';
 import { prisma } from '@/lib/db/prisma';
 import { scriptDb, disconnectScriptDb } from './scriptDb';
 import { bboxKey, bboxCentre, type BBox } from '@/lib/geo/tiling';
+import { FRESH_DAYS } from '@/lib/capture/capturePolicy';
 import {
   establishmentsInBbox,
   establishmentsInTiles,
@@ -84,16 +87,17 @@ const BRAND_PULL = [
   'Go Hotels', 'Red Planet', 'RedDoorz', 'Kumon',
 ];
 
-interface Args { quick: boolean; competitors: boolean; brands: boolean; transport: boolean; region: RegionKey; force: boolean; }
+interface Args { quick: boolean; competitors: boolean; brands: boolean; transport: boolean; region: RegionKey; force: boolean; stale: boolean; }
 
 function parseArgs(argv: string[]): Args {
-  const a: Args = { quick: false, competitors: false, brands: false, transport: false, region: 'ncr', force: false };
+  const a: Args = { quick: false, competitors: false, brands: false, transport: false, region: 'ncr', force: false, stale: false };
   for (const x of argv) {
     if (x === '--quick') a.quick = true;
     else if (x === '--competitors') a.competitors = true;
     else if (x === '--brands') a.brands = true;
     else if (x === '--transport') a.transport = true;
     else if (x === '--force') a.force = true;
+    else if (x === '--stale') a.stale = true;
     else if (x.startsWith('--region=')) {
       const r = x.slice('--region='.length) as RegionKey;
       if (REGION_KEYS.includes(r)) a.region = r;
@@ -104,6 +108,13 @@ function parseArgs(argv: string[]): Args {
   // or included when nothing else is specified).
   if (!a.competitors && !a.brands && !a.transport) { a.competitors = true; a.brands = true; a.transport = true; }
   return a;
+}
+
+/** A bulk tile counts as covered when it was swept — and, for a `--stale` refresh, swept within the
+ *  90-day freshness window (Brief C-4). */
+function bulkTileCovered(cov: { source: string; fetchedAt: Date } | null, staleOnly: boolean): boolean {
+  if (!cov || cov.source !== 'bulk') return false;
+  return !staleOnly || Date.now() - cov.fetchedAt.getTime() <= FRESH_DAYS * 86_400_000;
 }
 
 /** OsmPlace → RawPoi (loadPoi input). Category from the OSM tag; source stays 'osm'. */
@@ -163,9 +174,9 @@ async function main() {
               if (args.force) return true;
               const cov = await prisma.poiCoverage.findUnique({
                 where: { coverage_cell_vertical: { cellKey: `bulk:${bboxKey(tile as BBox)}`, vertical: v } },
-                select: { source: true },
+                select: { source: true, fetchedAt: true },
               });
-              return !(cov && cov.source === 'bulk'); // skip start-tiles already bulk-covered
+              return !bulkTileCovered(cov, args.stale); // skip start-tiles already bulk-covered (and fresh, with --stale)
             },
             onStartTileDone: async (tile, places, info) => {
               // Always load what we captured; only checkpoint the tile as done when it fully
@@ -230,9 +241,9 @@ async function main() {
             if (args.force) return true;
             const cov = await prisma.poiCoverage.findUnique({
               where: { coverage_cell_vertical: { cellKey: `bulk:${bboxKey(tile as BBox)}`, vertical: '__transport__' } },
-              select: { source: true },
+              select: { source: true, fetchedAt: true },
             });
-            return !(cov && cov.source === 'bulk');
+            return !bulkTileCovered(cov, args.stale);
           },
           onStartTileDone: async (tile, places, info) => {
             const rep = await loadPoi(places.map((p) => toRawPoi(p, args.region, 'transport')), { db, source: 'osm', provenance: 'osm:transport' });

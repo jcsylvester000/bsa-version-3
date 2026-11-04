@@ -5,6 +5,24 @@ running the loaders against the live database). The code side is done; this is t
 
 ---
 
+## Place data refresh — OpenStreetMap (Brief C-4 / C-5, Nov 2026)
+
+**Why back-fill "failed" on Netlify:** every public Overpass server was at capacity ("All query workers are
+busy") — not a Netlify bug. A Netlify function has 10–26 s; a busy Overpass needs longer. Since Batch 3:
+- Busy / unreachable OpenStreetMap → jobs **wait in the queue**; no attempt is used (up to 7 days).
+- Only real errors count toward the 3 attempts. The error text keeps the cause.
+- **90-day refresh:** each scheduled pass queues up to 2 areas whose place data is older than 90 days
+  (only when no user request is waiting). Bulk sweep tiles refresh with the sweep script below.
+
+```powershell
+# 1. Turn on the schedule (once): Netlify → Site settings → Environment → CRON_SECRET = 32+ random chars → redeploy
+# 2. Data-team runner (any computer, long timeouts — finishes what Netlify cannot while OSM is slow):
+npm run autofill:run -- --patient --passes=30
+# 3. Monthly, off-peak (05–12 PHT): re-sweep bulk tiles older than 90 days
+npm run db:ingest:osm -- --region=ncr --stale
+```
+Optional: `OVERPASS_CONTACT=<your ops e-mail or URL>` in .env / Netlify — sent in the User-Agent as Overpass asks.
+
 ## F-31 — Rotate the exposed credentials  (Security · **do this first**)
 
 A Google API key was once committed in `keys.docx`, and real account passwords were in an old DB dump.

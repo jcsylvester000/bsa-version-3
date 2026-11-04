@@ -5,6 +5,29 @@ The cross-thread state record. Read this (with the Master Instruction and the cu
 
 ---
 
+## 2026-11-04 (d) — Brief alignment Batch 3: coverage (C-2, C-4, C-5, C-7) — ⏳ awaiting push
+- C-5 diagnosis: not Netlify — every public Overpass instance was at capacity (502 "All query workers are busy");
+  a 3-café query timed out at 30 s even from the owner's PC. The old guard only paused when the status page said
+  "wait > 15 s", so busy/unreachable passes still ran, every layer failed and burned 1 of 3 attempts → jobs failed.
+  Now: `overpassStatus` probes all instances (ready > busy > unreachable, new `busy` flag, `readOverpassStatus`
+  pure); busy/unreachable → pass skipped, jobs wait, no attempt used; layers that only failed busy re-queue in
+  30 min without an attempt (give up after 7 days); real error text kept ("returned an error (…)");
+  User-Agent carries a real contact (`OVERPASS_CONTACT`). `npm run autofill:run -- --patient` = data-team runner
+  (2 min/pass, 50 s/layer, waits out busy spells).
+- C-4: `enqueueStaleRefresh` — each pass queues ≤ 2 coverage cells > 90 days old as reason 'refresh' jobs, only
+  when no job is due (user demand first), never re-queued within 7 days. Bulk sweep tiles (~8 km) are excluded —
+  `npm run db:ingest:osm -- --region=ncr --stale` re-sweeps tiles older than 90 days. Migration
+  `20261104020000_fill_job_refresh` widens the reason check (caught on the real-DB run).
+- C-2: `coverage { status, note }` on every region (NCR live; Davao/Cavite/Batangas partial; Laguna/Pampanga
+  planned); `coverageNoteFor` → "Partial coverage" line on Final Report + PDF (outside regions flagged too).
+- C-7: lease "ageing" at 6 months (stale stays 18), `lease_comps_ageing` flag; Lease summary shows
+  "6 (target 10 per corridor)" and "… · ageing (over 6 months — refresh due)".
+- Bug fixed: `make_interval(mins => ${n})` fails on native Postgres (bigint param) — cast `::int` (autofill,
+  purgeDemand); worked on Neon only because the HTTP driver sends text. Matters for the DigitalOcean move.
+- QA: tsc clean · vitest 636/636 (+10 `coverageBatch3.test.ts`) · next build OK · no schema drift. Real-DB run
+  (PG16 copy of 26 Oct snapshot, native Prisma): busy pass skipped with attempts unchanged; aged cells → 2 refresh
+  jobs, next passes 0 (due job first); migration applied twice. Runbook: `docs/OWNER_RUNBOOK.md` "Place data refresh".
+
 ## 2026-11-04 (c) — Brief alignment Batch 2: Truth Layer (T-1, T-3, T-4, T-5, T-6, T-7) — ⏳ awaiting push
 - T-1/T-4: `demographic_cell.population_truth / bands_truth / census_year / population_source` (migration
   `20261104010000_truth_fields`). Census population Verified, estimated bands Assumed; Site Fit reads the per-field

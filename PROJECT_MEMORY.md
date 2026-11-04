@@ -5,15 +5,16 @@ always-current snapshot. `WORKLOG.md` is the full history (newest first). This f
 rewritten at the end of every work batch — if it disagrees with older notes (e.g.
 `2 - Data Intake/Migration Guide/PROJECT_MEMORY_EXPORT.md`, 2026-08-10), **this file wins**.
 
-_Last updated: 2026-11-04 (c) — Brief alignment Batch 2 (Truth Layer) built, awaiting push._
+_Last updated: 2026-11-04 (d) — Brief alignment Batch 3 (coverage) built, awaiting push._
 
 ## ⏸ Resume here (updated 2026-11-04)
 
 **Brief alignment programme** (owner approved 2026-11-04, all recommended decisions = A): checklist
-`docs/BSA_Brief_Alignment_Checklist.xlsx`. Batch 1 (scoring) pushed `12add18`. **Batch 2 (Truth Layer) done,
-awaiting push** — WORKLOG 2026-11-04 (c). Owner data steps after deploy: fetch NCR/Davao boundaries, tag, load PSA
-barangay census with `--retire-legacy`, `db:rerun-historical`. Next: Batch 3 coverage (C-1 Davao, C-2 partial-region
-notice, C-4/C-5 refresh + Overpass, C-7 rent freshness), then brief fixes (B-*), verify (V-*). G-1 (remove Google
+`docs/BSA_Brief_Alignment_Checklist.xlsx`. Batch 1 pushed `12add18`, Batch 2 pushed `2d6a637`. **Batch 3 (coverage)
+done, awaiting push** — WORKLOG 2026-11-04 (d). Region coverage status lives in `lib/geo/regions.ts` (`coverage`) —
+flip a region to `live` when its loads are done. OpenStreetMap busy = jobs wait (no attempt used); data-team runner
+`npm run autofill:run -- --patient`; bulk refresh `db:ingest:osm -- --stale`. Previously: Owner data steps after deploy: fetch NCR/Davao boundaries, tag, load PSA
+barangay census with `--retire-legacy`, `db:rerun-historical`. Next: Batch 4 = brief fixes (B-1…B-4) as a corrected brief + V-1/V-2 verification (live re-test). G-1 (remove Google
 ingest/proxies) awaiting owner OK. Codes are 10-digit PSGC everywhere (`lib/geo/psgcCode.ts`).
 Rules: every scoring number lives in `lib/modules/scoringConfig.ts`; **no Google anything** (OpenStreetMap only);
 tests run in the cloud sandbox (device node_modules are Windows-native).

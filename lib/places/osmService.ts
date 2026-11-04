@@ -39,6 +39,9 @@ const OVERPASS_ENDPOINTS = [
   'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
 ];
 
+/** Overpass asks clients to identify themselves with a reachable contact. */
+export const OVERPASS_USER_AGENT = `GridBSA/1.0 (business site analysis; ${process.env.OVERPASS_CONTACT ?? 'https://www.grid.com.ph'})`;
+
 const QUERY_TIMEOUT_S = 90; // Overpass server-side timeout
 const FETCH_TIMEOUT_MS = 120_000; // client abort a bit above the server timeout
 const POLITE_DELAY_MS = 1500; // between successive calls — be a good citizen
@@ -115,7 +118,7 @@ async function runOverpass(ql: string, fast = false, overrides: { fetchTimeoutMs
     try {
       const res = await fetch(endpoint, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'GridBSA/1.0 (site-analysis; contact ops@grid.local)' },
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': OVERPASS_USER_AGENT },
         body: 'data=' + encodeURIComponent(ql),
         signal: controller.signal,
       });
@@ -397,35 +400,67 @@ const CAPTURE_CACHE_TTL_MS = 30 * 60_000;
 const CAPTURE_CACHE_MAX = 60;
 const captureCache = new Map<string, { at: number; elements: OverpassElement[] }>();
 
-export interface OverpassStatus { reachable: boolean; slotsNow: number | null; waitSeconds: number; checkedAt: string }
+export interface OverpassStatus {
+  /** An Overpass server answered at all (even "busy"). */
+  reachable: boolean;
+  /** It answered but cannot take work now: at capacity (502/503/504), rate-limited (429), or no slot
+   *  for > 15 s. Back-fill jobs wait instead of burning attempts (Brief C-5). */
+  busy: boolean;
+  slotsNow: number | null;
+  waitSeconds: number;
+  /** The instance that answered (or the last one tried). */
+  endpoint: string | null;
+  checkedAt: string;
+}
 let statusCache: { at: number; value: OverpassStatus } | null = null;
 
+/** One probe result → status. Pure (unit-tested). `httpStatus` null = no answer (timeout / network). */
+export function readOverpassStatus(httpStatus: number | null, text: string): Pick<OverpassStatus, 'reachable' | 'busy' | 'slotsNow' | 'waitSeconds'> {
+  if (httpStatus == null) return { reachable: false, busy: false, slotsNow: null, waitSeconds: 0 };
+  if (httpStatus === 429 || httpStatus === 502 || httpStatus === 503 || httpStatus === 504 || /at capacity|queue is full|too busy/i.test(text)) {
+    return { reachable: true, busy: true, slotsNow: 0, waitSeconds: 60 };
+  }
+  if (httpStatus < 200 || httpStatus >= 300) return { reachable: false, busy: false, slotsNow: null, waitSeconds: 0 };
+  const slots = /(\d+) slots? available now/i.exec(text);
+  const waits = [...text.matchAll(/in (\d+) seconds?/gi)].map((m) => Number(m[1])).filter(Number.isFinite);
+  const slotsNow = slots ? Number(slots[1]) : 0;
+  const waitSeconds = slotsNow > 0 ? 0 : waits.length ? Math.min(...waits) : 0;
+  return { reachable: true, busy: slotsNow === 0 && waitSeconds > 15, slotsNow, waitSeconds };
+}
+
+/** Is an Overpass failure message "busy / try later" (timeouts, 429/502/503/504, server remark) rather
+ *  than a real error? Pure (unit-tested). */
+export function isOverpassBusyError(message: string): boolean {
+  return /timeout|timed out|did not answer|abort|429|502|503|504|rate.?limit|at capacity|busy|fetch failed|ECONNRESET|ETIMEDOUT|EAI_AGAIN|out of memory/i.test(message);
+}
+
 /**
- * Is the public Overpass server ready for this server (its rate limit is per caller IP)? Reads
- * `/api/status` ("N slots available now" / "Slot available after …, in S seconds."). Cached 20 s;
- * never throws — unreachable just reports `reachable: false`.
+ * Is a public Overpass server ready for this server (its rate limit is per caller IP)? Probes each
+ * instance's `/api/status` in turn until one is ready ("N slots available now"). Cached 20 s; never
+ * throws. Busy ≠ unreachable: an instance at capacity answers 502 "at capacity" (Nov 2026: all public
+ * instances were saturated, which read as "unreachable" and let back-fill jobs fail — Brief C-5).
  */
 export async function overpassStatus(): Promise<OverpassStatus> {
   if (statusCache && Date.now() - statusCache.at < 20_000) return statusCache.value;
-  const url = OVERPASS_ENDPOINTS[0].replace(/\/interpreter$/, '/status');
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 6_000);
-  let value: OverpassStatus;
-  try {
-    const res = await fetch(url, { headers: { 'User-Agent': 'GridBSA/1.0 (site-analysis; admin capture)' }, signal: controller.signal });
-    const text = res.ok ? await res.text() : '';
-    const slots = /(\d+) slots? available now/i.exec(text);
-    const waits = [...text.matchAll(/in (\d+) seconds?/gi)].map((m) => Number(m[1])).filter(Number.isFinite);
-    value = {
-      reachable: res.ok,
-      slotsNow: slots ? Number(slots[1]) : res.ok ? 0 : null,
-      waitSeconds: slots && Number(slots[1]) > 0 ? 0 : waits.length ? Math.min(...waits) : 0,
-      checkedAt: new Date().toISOString(),
-    };
-  } catch {
-    value = { reachable: false, slotsNow: null, waitSeconds: 0, checkedAt: new Date().toISOString() };
-  } finally {
-    clearTimeout(timer);
+  let value: OverpassStatus = { reachable: false, busy: false, slotsNow: null, waitSeconds: 0, endpoint: null, checkedAt: new Date().toISOString() };
+  for (const ep of OVERPASS_ENDPOINTS) {
+    const url = ep.replace(/\/interpreter$/, '/status');
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 4_000);
+    let probe: ReturnType<typeof readOverpassStatus>;
+    try {
+      const res = await fetch(url, { headers: { 'User-Agent': OVERPASS_USER_AGENT }, signal: controller.signal });
+      probe = readOverpassStatus(res.status, await res.text().catch(() => ''));
+    } catch {
+      probe = readOverpassStatus(null, '');
+    } finally {
+      clearTimeout(timer);
+    }
+    // Keep the most useful answer: ready beats busy beats unreachable.
+    if (probe.reachable && (!value.reachable || (value.busy && !probe.busy))) {
+      value = { ...probe, endpoint: ep, checkedAt: new Date().toISOString() };
+    }
+    if (value.reachable && !value.busy) break;
   }
   statusCache = { at: Date.now(), value };
   return value;
@@ -470,7 +505,7 @@ export async function captureElementsInBbox(
     try {
       const res = await fetch(endpoint, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'GridBSA/1.0 (site-analysis; admin capture)' },
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': OVERPASS_USER_AGENT },
         body: 'data=' + encodeURIComponent(ql),
         signal: controller.signal,
       });

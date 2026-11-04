@@ -14,6 +14,8 @@
  */
 import { gateComposite, territoryGate, SITE_VISIT_REASON_LABEL } from './scorecard';
 import { NO_SITEFIT_CAP, SCORING_METHOD_VERSION } from './scoringConfig';
+import { coverageNoteFor } from '@/lib/geo/regions';
+import { LEASE_AGEING_MONTHS, LEASE_STALE_MONTHS, LEASE_TARGET_COMPS } from './leaseMath';
 import { territoryCall, territorySplitOf } from './territoryMath';
 import type { ModuleKind } from '@prisma/client';
 import { fmtInt, fmtPeso } from '@/lib/util/format';
@@ -57,7 +59,7 @@ export interface SiteModulePayloads {
     comps?: Array<{ baseRentPhpSqm: number | null }>;
     truth?: { comps?: string; fairRange?: string; zonalBand?: string };
     /** Comp-set recency (F-14): 'data as of' + whether the set is ageing. */
-    freshness?: { dataAsOf?: string | null; monthsSinceNewest?: number | null; isStale?: boolean };
+    freshness?: { dataAsOf?: string | null; monthsSinceNewest?: number | null; isStale?: boolean; isAgeing?: boolean };
     flags?: string[];
     format?: string;
   } | null;
@@ -115,6 +117,19 @@ export interface SiteModulePayloads {
   } | null;
 }
 
+/** Comparable-lease count with the brief's target (Brief C-7): "6 (target 10 per corridor)". Pure. */
+export function compCountLabel(n: number): string {
+  return n < LEASE_TARGET_COMPS ? `${n} (target ${LEASE_TARGET_COMPS} per corridor)` : `${n}`;
+}
+
+/** "2026-05-14 · ageing (6+ months, refresh due)" / "· stale (18+ months)". Pure (unit-tested). */
+export function compFreshnessLabel(f: { dataAsOf?: string | null; monthsSinceNewest?: number | null; isStale?: boolean; isAgeing?: boolean }): string {
+  const d = f.dataAsOf ?? '—';
+  if (f.isStale) return `${d} · stale (over ${LEASE_STALE_MONTHS} months old)`;
+  const ageing = f.isAgeing ?? (f.monthsSinceNewest != null && f.monthsSinceNewest > LEASE_AGEING_MONTHS);
+  return ageing ? `${d} · ageing (over ${LEASE_AGEING_MONTHS} months — refresh due)` : d;
+}
+
 /** Hero context (composite, rank, confidence, analysed time, truth mix) — see siteReportMeta(). */
 export interface SiteReportMeta {
   composite?: number | null;
@@ -134,6 +149,8 @@ export interface SiteReportMeta {
   visitNote?: string | null;
   /** True when `confidence` is this site's own (per-site, Brief S-3); false = legacy run-level value. */
   siteLevelConfidence?: boolean;
+  /** The site is in a region BSA has only partly loaded (Brief C-2) — the call is provisional. */
+  coverageNote?: string | null;
 }
 
 /** Provisional wording for a run's data-refresh state (automatic back-fill). Pure (unit-tested). */
@@ -358,9 +375,9 @@ export function buildSiteReportModel(args: {
     lead: l ? leaseTradeoffNote(l.baseRentPercentile, locationRead(t ? T_VERDICT[tVerdict].tone : null, dNoData ? null : dWindow)) ?? undefined : undefined,
     rows: l ? [
       { label: 'Corridor', value: l.corridor ?? '—' },
-      { label: 'Comparable leases', value: `${l.sampleSize ?? l.comps?.length ?? 0}`, truth: tk(tl(l.truth?.comps, 'Assumed')) },
+      { label: 'Comparable leases', value: compCountLabel(l.sampleSize ?? l.comps?.length ?? 0), truth: tk(tl(l.truth?.comps, 'Assumed')) },
       ...(l.freshness?.dataAsOf
-        ? [{ label: 'Comps data as of', value: l.freshness.isStale ? `${l.freshness.dataAsOf} · ageing` : l.freshness.dataAsOf }]
+        ? [{ label: 'Comps data as of', value: compFreshnessLabel(l.freshness) }]
         : []),
       { label: 'Base-rent percentile', value: l.baseRentPercentile != null ? ordinal(l.baseRentPercentile) : '—', truth: 'assumed' as TruthLayer },
       ...(l.negotiatingRoomPhpSqm != null
@@ -457,7 +474,7 @@ export function buildSiteReportModel(args: {
 export function siteReportMeta(data: {
   site: {
     id: string; compositeScore: { toString(): string } | null; analyzedAt: Date | null;
-    confidence?: 'high' | 'med' | 'low' | null; siteVisitReasons?: string[] | null;
+    confidence?: 'high' | 'med' | 'low' | null; siteVisitReasons?: string[] | null; region?: string | null;
   };
   run: { confidence: 'high' | 'med' | 'low' | null; dataRefreshState?: string | null };
   rows: Array<{ module: string; truthLayer: string; score?: unknown; payload?: unknown }>;
@@ -499,6 +516,7 @@ export function siteReportMeta(data: {
     capNote,
     capBand,
     visitNote,
+    coverageNote: coverageNoteFor(data.site.region),
     provisionalNote: provisionalNoteFor(data.run.dataRefreshState),
     analysedAt: data.site.analyzedAt ? manilaShortStampYear(data.site.analyzedAt) : null,
     truthPct: layers.length ? { verified: pct('verified'), assumed: pct('assumed'), projected: pct('projected') } : null,

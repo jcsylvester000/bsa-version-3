@@ -68,10 +68,15 @@ export interface RegionDef {
    *  NOT yet calibrated for this region → the zonal cross-check / indicative rent is withheld
    *  rather than borrowing another region's band (audit F-08). */
   zonalRentBand?: { low: number; central: number; high: number };
+  /** How much of this region's data is loaded (Brief C-2): 'live' = full BSA coverage; 'partial' /
+   *  'planned' = sites here carry a "partial coverage" notice on the Final Report and PDF. Update the
+   *  status when a region's loads are done. */
+  coverage: { status: 'live' | 'partial' | 'planned'; note: string };
 }
 
 const NCR: RegionDef = {
   key: 'ncr',
+  coverage: { status: 'live', note: 'Metro Manila: boundaries, places, BIR zonal values, lease comparables and traffic are loaded.' },
   name: 'Metro Manila (NCR)',
   psaRegion: 'NCR',
   // Calibrated 2026-08 across the 13 NCR corridors with both comps and CR zonal (~₱10/₱1,000/mo).
@@ -134,6 +139,7 @@ const NCR: RegionDef = {
 
 const DAVAO: RegionDef = {
   key: 'davao',
+  coverage: { status: 'partial', note: 'Davao is only partly loaded (a few population cells, zonal values and lease comparables; barangay boundaries and places are still being loaded) — read this call as provisional.' },
   name: 'Davao Region (XI)',
   psaRegion: 'XI',
   psgcRegionCode: '1100000000',
@@ -161,6 +167,7 @@ const DAVAO: RegionDef = {
 
 const CAVITE: RegionDef = {
   key: 'cavite',
+  coverage: { status: 'partial', note: 'Cavite is only partly loaded (barangay boundaries and some places; no census population or lease comparables yet) — read this call as provisional.' },
   name: 'Cavite',
   psaRegion: 'IV-A',
   provinces: ['Cavite'],
@@ -201,6 +208,7 @@ const CAVITE: RegionDef = {
 
 const BATANGAS: RegionDef = {
   key: 'batangas',
+  coverage: { status: 'partial', note: 'Batangas is only partly loaded (barangay boundaries and a few places; no census population or lease comparables yet) — read this call as provisional.' },
   name: 'Batangas',
   psaRegion: 'IV-A',
   provinces: ['Batangas'],
@@ -237,6 +245,7 @@ const BATANGAS: RegionDef = {
 // No lease corridors yet: sites here run with honest gaps until comps are loaded (R-06 CSV).
 const LAGUNA: RegionDef = {
   key: 'laguna',
+  coverage: { status: 'planned', note: 'Laguna is set up but its data is not loaded yet — this call rests on very little local data.' },
   name: 'Laguna',
   psaRegion: 'IV-A',
   provinces: ['Laguna'],
@@ -284,6 +293,7 @@ const LAGUNA: RegionDef = {
 
 const PAMPANGA: RegionDef = {
   key: 'pampanga',
+  coverage: { status: 'planned', note: 'Pampanga is set up but its data is not loaded yet — this call rests on very little local data.' },
   name: 'Pampanga',
   psaRegion: 'III',
   provinces: ['Pampanga'],
@@ -347,6 +357,18 @@ export const REGION_KEYS = Object.keys(REGISTRY) as RegionKey[];
 
 export function getRegion(key: string | null | undefined): RegionDef | null {
   return key && (key in REGISTRY) ? REGISTRY[key as RegionKey] : null;
+}
+
+/**
+ * The "partial coverage" notice for a site's region (Brief C-2), or null when the region is fully
+ * covered. A site outside every registered region (e.g. a capture-only area such as Baguio) says so.
+ * Pure (unit-tested).
+ */
+export function coverageNoteFor(regionKey: string | null | undefined): string | null {
+  if (!regionKey) return null;
+  const r = getRegion(regionKey);
+  if (!r) return 'This site is outside the regions BSA has mapped (Metro Manila is fully covered) — this call rests on very little local data.';
+  return r.coverage.status === 'live' ? null : r.coverage.note;
 }
 
 export function listRegions(): RegionDef[] {

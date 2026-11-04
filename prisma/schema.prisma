@@ -535,7 +535,7 @@ model PoiFillJob {
   layersDone    String[]      @default([]) @map("layers_done")
   layersFailed  String[]      @default([]) @map("layers_failed")
   status        FillJobStatus @default(queued)
-  /// 'intake' | 'search' | 'admin'
+  /// 'intake' | 'search' | 'admin' | 'refresh' (90-day refresh, Brief C-4)
   reason        String
   demandCount   Int           @default(1) @map("demand_count")
   runIds        String[]      @default([]) @map("run_ids") @db.Uuid

@@ -12,7 +12,7 @@ import { prisma } from '@/lib/db/prisma';
 async function main() {
   const arg = process.argv.find((a) => a.startsWith('--months='));
   const months = Math.max(1, Math.min(60, Number(arg?.slice(9) ?? 12) || 12));
-  const n = await prisma.$executeRaw`DELETE FROM location_demand WHERE created_at < now() - make_interval(months => ${months})`;
+  const n = await prisma.$executeRaw`DELETE FROM location_demand WHERE created_at < now() - make_interval(months => ${months}::int)`;
   console.log(`Deleted ${n} demand row(s) older than ${months} month(s).`);
 }
 

@@ -175,7 +175,7 @@ const uuidOrNull = (v: string | null | undefined) => (v && isUuid(v) ? v : null)
  * area absorbs the request: more demand, the extra layers, and the waiting run. Returns the job id.
  */
 export async function enqueueFill(input: {
-  lat: number; lon: number; layers: LayerKey[]; reason: 'intake' | 'search' | 'admin'; label: string;
+  lat: number; lon: number; layers: LayerKey[]; reason: 'intake' | 'search' | 'admin' | 'refresh'; label: string;
   runId?: string | null; userId?: string | null;
 }): Promise<string | null> {
   const area = fillAreaFor(input.lat, input.lon);

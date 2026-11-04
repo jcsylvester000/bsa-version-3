@@ -88,7 +88,7 @@ interface CapturePlan {
 }
 interface BoundaryLoad { cities: Array<{ psgc: string; name: string; barangays: number; status: 'loaded' | 'already' | 'failed' }>; barangaysLoaded: number; placesTagged: number }
 type BoundaryState = { status: 'idle' } | { status: 'loading'; key: string } | { status: 'done'; result: BoundaryLoad } | { status: 'failed'; key: string; message: string };
-interface OsmStatus { reachable: boolean; slotsNow: number | null; waitSeconds: number; checkedAt: string; window: OsmWindow }
+interface OsmStatus { reachable: boolean; busy?: boolean; slotsNow: number | null; waitSeconds: number; checkedAt: string; window: OsmWindow }
 interface GapEntry { id: string; layer: string; label: string; areaSpec: CaptureArea; context: SiteContext | null; reason: string; attempts: number }
 interface SavedBatch {
   batch: BatchSummary & { notes: string | null; areaSpec: (CaptureArea & { context?: SiteContext | null }) | null; layers: string[] };
@@ -1287,7 +1287,8 @@ function Preflight({ plan, loading, osm, verticals, radiusM, blockingArea, refre
           <Row tone={win.offPeak && (!osm || osm.waitSeconds === 0) ? 'ok' : 'warn'}>
             <strong className="text-ink-text">OpenStreetMap:</strong> {win.label}. {win.advice}
             {osm && !osm.reachable && <span className="block">Status check didn&apos;t answer — loads may be slow; automatic retries are on.</span>}
-            {osm?.reachable && osm.waitSeconds > 0 && <span className="block">Our next free slot is in {osm.waitSeconds} s — the capture waits for it automatically.</span>}
+            {osm?.busy && <span className="block">OpenStreetMap&apos;s public servers are at capacity right now — loads will likely fail; try again later.</span>}
+            {osm?.reachable && !osm.busy && osm.waitSeconds > 0 && <span className="block">Our next free slot is in {osm.waitSeconds} s — the capture waits for it automatically.</span>}
           </Row>
           <Row tone="ok"><strong className="text-ink-text">If a layer fails:</strong> save anyway — what loaded is kept and the missed layer goes to the retry list.</Row>
         </ul>
