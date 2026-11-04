@@ -13,6 +13,8 @@ export interface DashSite {
   city: string | null;
   composite: number | null;
   verdict: 'go' | 'caution' | 'nogo' | null;
+  /** This site's own confidence (Brief S-3); null for runs analysed before per-site confidence. */
+  confidence?: 'high' | 'med' | 'low' | null;
   /** Short highlights, e.g. "office-led · rent within benchmark · no territory conflict". */
   highlights: string[];
 }
@@ -44,7 +46,7 @@ export interface ModuleResultLite {
   truthLayer: TruthLayer;
   flags: string[];
   payload: Record<string, unknown>;
-  site: { id: string; label: string; city: string | null; composite: number | null; verdict: string | null; pipelineError?: string | null };
+  site: { id: string; label: string; city: string | null; composite: number | null; verdict: string | null; pipelineError?: string | null; confidence?: 'high' | 'med' | 'low' | null };
 }
 
 const MODULE_LABEL: Record<string, string> = {
@@ -176,6 +178,7 @@ export function buildDashboard(
       siteId: s.id, label: s.label, city: s.city,
       composite: gateComposite(rawComposite, gate.cap != null ? terrOverlap : null, split),
       verdict: gatedVerdict,
+      confidence: s.confidence ?? null,
       highlights: highlights.slice(0, 3),
     });
   }

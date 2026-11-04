@@ -6,6 +6,7 @@
  * Truth Layer per the architecture: zoning and frontage are Verified; vehicle-traffic
  * counts are Assumed unless a source count exists.
  */
+import { BAND_GO, BAND_CAUTION } from './scoringConfig';
 
 export interface LandInput {
   /** Estimated vehicle traffic band on the fronting corridor. */
@@ -57,8 +58,8 @@ export function scoreLandTraffic(input: LandInput): LandResult {
   if (input.lotAreaSqm != null && input.lotAreaSqm < input.minLotSqm) flags.push('lot_below_minimum');
 
   const verdict = input.zoningOk === false ? 'screen_fail'
-    : composite >= 65 ? 'screen_pass'
-    : composite >= 45 ? 'marginal' : 'screen_fail';
+    : composite >= BAND_GO ? 'screen_pass'
+    : composite >= BAND_CAUTION ? 'marginal' : 'screen_fail';
 
   return { trafficScore, frontageScore, lotScore, composite, zoningOk: input.zoningOk, verdict, flags };
 }

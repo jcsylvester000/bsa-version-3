@@ -4,6 +4,7 @@
  * Truth Layer is assigned by the server module per the architecture's per-module
  * classification (e.g. Daypart peak-hour mix is Projected; Mall tier is Verified).
  */
+import { areaScale, COMPETITION_REF_RADIUS_M, INFORMAL_HALF_COUNT } from './scoringConfig';
 
 // ---- Daypart & Seasonality (P3) --------------------------------------------
 export interface DaypartInput {
@@ -136,6 +137,17 @@ export function scoreInformal(input: InformalInput): InformalResult {
     // If informal is a large share, advise an on-ground check (honesty flag).
     onGroundCheckAdvised: estimatedInformal >= input.digitalCount,
   };
+}
+
+/**
+ * Informal-competition score 0–100 (scorecard "How much competition, including informal sellers?").
+ * Fewer competitors (mapped + estimated informal) = higher; 50 at 12 per 800 m-circle equivalent,
+ * scaled by area to the site's trade area (Brief S-4); floors at 5 so a saturated corridor still reads
+ * as "very competitive", not zero.
+ */
+export function informalCompetitionScore(totalEstimated: number, tradeAreaM: number = COMPETITION_REF_RADIUS_M): number {
+  const half = INFORMAL_HALF_COUNT * areaScale(tradeAreaM, COMPETITION_REF_RADIUS_M);
+  return Math.max(5, Math.round(100 / (1 + totalEstimated / half)));
 }
 
 // ---- Per-unit capacity read (QA v6) ----------------------------------------

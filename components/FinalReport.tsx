@@ -21,6 +21,8 @@ export function FinalReportHero({
   capNote,
   capBand,
   provisionalNote,
+  visitNote,
+  siteLevelConfidence,
 }: {
   summary: SiteSummary;
   composite?: number | null;
@@ -42,6 +44,10 @@ export function FinalReportHero({
   capNote?: string | null;
   capBand?: 'nogo' | 'caution' | null;
   provisionalNote?: string | null;
+  /** On-site visit advised for this site (lowers confidence a level). */
+  visitNote?: string | null;
+  /** Confidence shown is this site's own (true) or the legacy run-level value (false). */
+  siteLevelConfidence?: boolean;
 }) {
   const limited = limitedProp ?? summary.coverage < 2;
   const thinData = !limited && summary.coverage < 2;
@@ -83,6 +89,7 @@ export function FinalReportHero({
           ? <p className="text-label font-normal text-caution">▲ {capNote}</p>
           : <p className="text-label font-normal text-nogo">✕ {capNote}</p>)}
         {provisionalNote && <p className="text-label font-normal text-caution">◌ {provisionalNote}</p>}
+        {visitNote && <p className="text-label font-normal text-caution">⚑ {visitNote}</p>}
         {thinData && (
           <p className="text-label font-normal text-ink-muted">
             Limited module data — {summary.coverage} of 3 core modules rated. The call follows the site&apos;s composite score; confirm on the ground.
@@ -91,7 +98,7 @@ export function FinalReportHero({
         <dl className="flex flex-wrap gap-x-7 gap-y-3">
           {confLabel && (
             <div className="flex flex-col gap-1">
-              <dt className="overline">Confidence</dt>
+              <dt className="overline">{siteLevelConfidence === false ? 'Run confidence' : 'Site confidence'}</dt>
               <dd className="text-body-lg font-semibold">{confLabel} <span className="text-label font-normal text-ink-muted">· {confNote}</span></dd>
             </div>
           )}

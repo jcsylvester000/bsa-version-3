@@ -12,7 +12,7 @@ import { prisma } from '@/lib/db/prisma';
 import { Prisma, type ModuleKind } from '@prisma/client';
 import type { TruthLayer } from '@/lib/truth/truthLayer';
 import {
-  scoreDaypart, scoreInformal, scoreMall, scoreHealthcare,
+  scoreDaypart, scoreInformal, informalCompetitionScore, scoreMall, scoreHealthcare,
   scoreCapacity, type CapacityResult,
   daypartSeasonality,
   rankWhiteSpaceRecommendations, WHITESPACE_CANNIBALIZATION_MAX, type WhiteSpaceArea,
@@ -24,6 +24,7 @@ import { conceptFor, tierFor, weightedCompetitorCount, type TierCounts } from '@
 import { haversineMeters } from '@/lib/geo/geo';
 import { inferCorridor } from './leaseMath';
 import { canonicalCity, getRegion } from '@/lib/geo/regions';
+import { COMPETITION_REF_RADIUS_M } from './scoringConfig';
 
 async function persist(runId: string, candidateSiteId: string, module: ModuleKind, score: number | null, payload: unknown, truthLayer: TruthLayer, flags: string[]) {
   await prisma.moduleResult.upsert({
@@ -108,6 +109,8 @@ export async function runInformal(
    *  absent we fall back to ALL competitor POIs and flag it — that count mixes unrelated
    *  businesses (a laundromat next to a café) and overstates competition. */
   conceptCompetitorCount?: number,
+  /** Trade-area radius (m) the count was taken in (Brief S-4); defaults to the 800 m reference. */
+  tradeAreaM: number = COMPETITION_REF_RADIUS_M,
 ): Promise<void> {
   const site = await prisma.candidateSite.findUniqueOrThrow({ where: { id: siteId }, select: { lat: true, lon: true } });
   let digital: number;
@@ -118,7 +121,7 @@ export async function runInformal(
     const rows = await prisma.$queryRaw<Array<{ c: number | null }>>`
       SELECT COUNT(*)::int AS c FROM poi
       WHERE category='competitor'
-        AND ST_DWithin(geom, ST_SetSRID(ST_MakePoint(${site.lon}, ${site.lat}),4326)::geography, 800)`;
+        AND ST_DWithin(geom, ST_SetSRID(ST_MakePoint(${site.lon}, ${site.lat}),4326)::geography, ${tradeAreaM})`;
     digital = rows[0]?.c ?? 0;
     flags.push('informal_untyped_count');
   }
@@ -156,10 +159,10 @@ export async function runInformal(
   // Fewer competitors nearby = higher score; it decays as the count rises and floors at
   // 5 so a saturated corridor still reads as "very competitive," not zero. The raw counts
   // remain in the payload for the detailed read.
-  const competitionScore = Math.max(5, Math.round(100 / (1 + r.totalEstimated / 12)));
+  const competitionScore = informalCompetitionScore(r.totalEstimated, tradeAreaM);
   // Digital Verified, informal estimate Assumed → row Assumed; but a coverage gap makes the
   // "no competitors" read unreliable → Projected.
-  await persist(runId, siteId, 'informal', competitionScore, { ...r, capacity, competitionScore, lowCoverage }, lowCoverage ? 'projected' : 'assumed', flags);
+  await persist(runId, siteId, 'informal', competitionScore, { ...r, capacity, competitionScore, lowCoverage, tradeAreaM }, lowCoverage ? 'projected' : 'assumed', flags);
 }
 
 export async function runHealthcare(runId: string, siteId: string): Promise<void> {

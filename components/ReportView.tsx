@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { TruthChip, StatusText } from '@/components/ui/Chips';
 import { ScoreBar, TruthMixBar } from '@/components/ui/Panel';
+import { bandForScore } from '@/lib/modules/scoringConfig';
 import { fmtInt } from '@/lib/util/format';
 import { ReportDownloadModal } from '@/components/ReportDownloadModal';
 import { LEASE_POSITION_LABEL } from '@/lib/truth/guardrailCopy';
@@ -69,7 +70,7 @@ function verdictStatus(v: string | undefined): { tone: Tone; label: string } | n
 /** Band a 0–100 score, respecting whether higher is better. */
 function bandFor(score: number, higherIsBetter: boolean): 'go' | 'caution' | 'nogo' {
   const s = higherIsBetter ? score : 100 - score;
-  return s >= 70 ? 'go' : s >= 45 ? 'caution' : 'nogo';
+  return bandForScore(s);
 }
 
 function mixPct(mix: Record<TruthLayer, number>) {

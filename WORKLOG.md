@@ -5,6 +5,35 @@ The cross-thread state record. Read this (with the Master Instruction and the cu
 
 ---
 
+## 2026-11-04 (b) — Brief alignment Batch 1: scoring (P0-2, S-1…S-7) — ⏳ awaiting push
+- `lib/modules/scoringConfig.ts` (new): every scoring number in one place (weights 30/25/20/10/10/5, bands 65/45,
+  own overlap 40/15, crowding 40, caps 44/64, trade areas 600/900/1200/1000, confidence 1/0.7/0.35 · 0.75/0.5,
+  site-visit flags) + `SCORING_METHOD_VERSION` printed in the report/PDF footnote. scorecard, territoryMath,
+  siteFitMath, landTrafficMath, reportHtml, ReportView read from it.
+- S-1: daypart + informal + land now run for EVERY business type (`CORE_MODULES`).
+- S-2: on-site visit flag only from real signals (`on_ground_check_advised`, `low_poi_coverage`,
+  `secondary_terms_over_market`, failed check) — was "any informal row" (dropped every QSR run a level).
+- S-3: per-site confidence — `candidate_site.confidence/evidence/site_visit_reasons` (migration
+  `20261104000000_site_confidence`); shown on dashboard rows, Final Report hero ("Site confidence") and PDF, with the
+  visit reason. Legacy runs show "Run confidence" until re-run.
+- S-4: Site Fit + Informal use the format trade area (was fixed 1,200 m / 800 m); thresholds scale with circle area
+  (density-fair); concept competitor count taken in the trade area (max 60). Pillar labels name the radius.
+- S-5: run-report figure colours use 65/45 (was 70). S-6: third override note ("no population data → capped at
+  Caution") on Final Report + PDF.
+- S-7: `tests/unit/briefAlignment.test.ts` (14 tests). Checks: tsc clean · vitest 615/615 · next build OK
+  (lint: ESLint not configured in repo). No Google anything (owner, 2026-11-04) — OpenStreetMap only.
+- Owner after push: migration auto-applies on deploy; then `npm run db:rerun-historical` (S-8) and re-check the
+  investor demo run — numbers may move (all six checks now count; trade areas by format).
+
+## 2026-11-04 — Investor Brief alignment review (plan only, no code change)
+- Reviewed code + 26 Oct snapshot against "BSA Investor Brief — Scoring & Data Verification" (3 Nov 2026).
+- Scoring matches (weights, 65/45 bands, 40 % own-overlap No-Go, crowding cap, radii, confidence maths).
+- Gaps: only 3 of 6 checks always run; on-site flag fires on any informal result; confidence is run-level not per
+  site; Site Fit ignores format radii; run report colours Proceed at 70; population/outlets labelled Verified in the
+  brief but all Assumed in data (296 synthetic cells, 136 of 142 outlets are test entries); City of Manila has 0
+  barangay boundaries; Davao has no boundaries/places; no 90-day automatic refresh; 0 Google places.
+- Gameplan + checklist (37 items, 10 decisions): `docs/BSA_Brief_Alignment_Checklist.xlsx`. Awaiting owner approval.
+
 ## 2026-10-26 — Database image for the dev team (DigitalOcean handoff)
 - New `scripts/exportNeonSnapshot.mjs` (read-only; Neon HTTPS driver, no pg_dump): every public table as
   parent-first INSERTs + sequence values → `bsa-data.sql.gz`, `counts.tsv`, `manifest.json`. `db-snapshot/` git-ignored.
@@ -13,6 +42,9 @@ The cross-thread state record. Read this (with the Master Instruction and the cu
   README. Snapshot 2026-10-26: 27 tables / 34,314 rows (25,237 POI, 2,927 boundaries, 2,197 zonal).
 - Verified locally: counts, columns/types and migration checksums identical to Neon; geometries valid, SRID 4326.
   `docker build` itself not run here (Docker Hub blocked in the sandbox).
+- Ready-built image `bsa-db_2026-10.tar.gz` (75 MB, sha256 a7634c90…) placed in the package: Ubuntu 24.04 PG16.15 +
+  PostGIS 3.4.2 + pgvector 0.6.0 on a scratch base (Docker Hub blocked), own entrypoint; tested in Docker: first
+  start + row-count check, scram login, PostGIS lookups (Ayala pin → Makati, Katipunan → Quezon City), restart.
 - Neon is Postgres 18 / PostGIS 3.6. `doc_chunk` embeddings are empty on Neon too.
 - Security: the Neon connection string was shared in chat — rotate the Neon password. The snapshot holds user
   accounts (hashes) — share privately, never commit or push to a public registry.

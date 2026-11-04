@@ -908,6 +908,8 @@ function AnalysisTab({
         capNote={m.meta.capNote ?? null}
         capBand={m.meta.capBand ?? null}
         provisionalNote={m.meta.provisionalNote ?? null}
+        visitNote={m.meta.visitNote ?? null}
+        siteLevelConfidence={m.meta.siteLevelConfidence ?? false}
       />
       {m.summary.findings.length > 0 && (
         <FindingsList findings={m.summary.findings} keywords={m.summary.keywords} figures={m.figures} onOpenTab={onOpenTab} />

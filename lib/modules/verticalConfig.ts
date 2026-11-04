@@ -18,7 +18,10 @@ import type { ModuleKind, Vertical } from '@prisma/client';
  * via isPrimaryModule() so a weak-context read never masquerades as a strong one. This
  * keeps the Truth Layer discipline while guaranteeing all four tabs are always populated.
  */
-export const CORE_MODULES: ModuleKind[] = ['site_fit', 'territory', 'lease', 'daypart', 'whitespace'];
+// Brief alignment S-1 (2026-11-04): every site is checked on the brief's six scored questions —
+// Site Fit, Territory, Lease, Daypart, Informal competition, Land & traffic — for EVERY business
+// type. A check with no data drops out and the weights rescale (scoringConfig.SCORE_WEIGHTS).
+export const CORE_MODULES: ModuleKind[] = ['site_fit', 'territory', 'lease', 'daypart', 'informal', 'land', 'whitespace'];
 
 /**
  * The verticals for which each "always-on but format-sensitive" module is a PRIMARY

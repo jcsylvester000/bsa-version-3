@@ -9,6 +9,10 @@
  */
 import type { TruthLayer } from '@/lib/truth/truthLayer';
 import { territoryCall, type TerritoryCallInput } from './territoryMath';
+import {
+  SCORE_WEIGHTS, BAND_GO, BAND_CAUTION, NO_SITEFIT_CAP, OWN_OVERLAP_NOGO_PCT, OWN_OVERLAP_CAUTION_PCT,
+  NOGO_CAP, CAUTION_CAP, TRUTH_VALUE, CONTEXT_CHECK_WEIGHT, CONFIDENCE_HIGH, CONFIDENCE_MEDIUM, SITE_VISIT_FLAGS,
+} from './scoringConfig';
 
 export interface ScorecardCriterion {
   key: string;
@@ -38,8 +42,8 @@ export function scorecardComposite(criteria: ScorecardCriterion[]): number | nul
 
 export function scorecardBand(composite: number | null): Scorecard['band'] {
   if (composite == null) return 'insufficient';
-  if (composite >= 65) return 'go';
-  if (composite >= 45) return 'caution';
+  if (composite >= BAND_GO) return 'go';
+  if (composite >= BAND_CAUTION) return 'caution';
   return 'nogo';
 }
 
@@ -54,12 +58,12 @@ export function scorecardTruth(criteria: ScorecardCriterion[]): TruthLayer {
 
 /** The criteria template — which modules map to which scorecard line, and their weight. */
 export const SCORECARD_TEMPLATE: Array<{ key: string; label: string; module: string; weight: number }> = [
-  { key: 'site_fit', label: 'Site fit (catchment & competition)', module: 'site_fit', weight: 0.3 },
-  { key: 'territory', label: 'Territory (adds vs redistributes)', module: 'territory', weight: 0.25 },
-  { key: 'lease', label: 'Lease value vs corridor', module: 'lease', weight: 0.2 },
-  { key: 'demand', label: 'Demand timing (daypart)', module: 'daypart', weight: 0.1 },
-  { key: 'competition', label: 'Competition (incl. informal)', module: 'informal', weight: 0.1 },
-  { key: 'land', label: 'Land & traffic screen', module: 'land', weight: 0.05 },
+  { key: 'site_fit', label: 'Site fit (catchment & competition)', module: 'site_fit', weight: SCORE_WEIGHTS.site_fit },
+  { key: 'territory', label: 'Territory (adds vs redistributes)', module: 'territory', weight: SCORE_WEIGHTS.territory },
+  { key: 'lease', label: 'Lease value vs corridor', module: 'lease', weight: SCORE_WEIGHTS.lease },
+  { key: 'demand', label: 'Demand timing (daypart)', module: 'daypart', weight: SCORE_WEIGHTS.daypart },
+  { key: 'competition', label: 'Competition (incl. informal)', module: 'informal', weight: SCORE_WEIGHTS.informal },
+  { key: 'land', label: 'Land & traffic screen', module: 'land', weight: SCORE_WEIGHTS.land },
 ];
 
 export interface ModuleScore {
@@ -103,7 +107,7 @@ export function scorecardCriteria(moduleScores: ModuleScore[]): ScorecardCriteri
  * "we can't confirm a GO without demand data." Applied to BOTH the dashboard headline and
  * the scorecard so they always agree.
  */
-const NO_SITEFIT_GO_CAP = 64; // scorecardBand: >=65 GO, >=45 CAUTION → 64 tops out at CAUTION
+const NO_SITEFIT_GO_CAP = NO_SITEFIT_CAP; // scorecardBand: >=65 GO, >=45 CAUTION → 64 tops out at CAUTION
 
 /**
  * Territory deal-breaker (2026-10-07, owner + Skill 07). A weighted average let strong demand / lease /
@@ -114,10 +118,10 @@ const NO_SITEFIT_GO_CAP = 64; // scorecardBand: >=65 GO, >=45 CAUTION → 64 top
  * Same thresholds as territoryMath.verdictFromOverlap, so the score can never disagree with the
  * Territory Guard call. The overlap is the module's headline (max of own-branch and competitive).
  */
-export const TERRITORY_NOGO_OVERLAP_PCT = 40;
-export const TERRITORY_CAUTION_OVERLAP_PCT = 15;
-const TERRITORY_NOGO_CAP = 44;
-const TERRITORY_CAUTION_CAP = 64;
+export const TERRITORY_NOGO_OVERLAP_PCT = OWN_OVERLAP_NOGO_PCT;
+export const TERRITORY_CAUTION_OVERLAP_PCT = OWN_OVERLAP_CAUTION_PCT;
+const TERRITORY_NOGO_CAP = NOGO_CAP;
+const TERRITORY_CAUTION_CAP = CAUTION_CAP;
 
 export interface TerritoryGate { cap: number | null; maxBand: 'nogo' | 'caution' | null; reason: string | null }
 
@@ -224,11 +228,11 @@ export function buildScorecard(siteLabel: string, moduleScores: ModuleScore[]): 
 // unscorable) or failed modules → Low; High needs mostly Verified inputs on the heavy criteria.
 // ---------------------------------------------------------------------------------------
 
-export const TRUTH_EVIDENCE_VALUE: Record<TruthLayer, number> = { verified: 1, assumed: 0.7, projected: 0.35 };
+export const TRUTH_EVIDENCE_VALUE: Record<TruthLayer, number> = { ...TRUTH_VALUE };
 /** Weight for modules that inform but don't score the composite (mall, healthcare, whitespace…). */
-export const CONTEXT_MODULE_WEIGHT = 0.05;
-export const EVIDENCE_HIGH = 0.75;
-export const EVIDENCE_MED = 0.5;
+export const CONTEXT_MODULE_WEIGHT = CONTEXT_CHECK_WEIGHT;
+export const EVIDENCE_HIGH = CONFIDENCE_HIGH;
+export const EVIDENCE_MED = CONFIDENCE_MEDIUM;
 
 export type EvidenceConfidence = 'high' | 'med' | 'low';
 
@@ -264,6 +268,45 @@ export function evidenceBand(evidence: number, opts: { onGroundCheckFlagged?: bo
   let band: EvidenceConfidence = evidence >= EVIDENCE_HIGH ? 'high' : evidence >= EVIDENCE_MED ? 'med' : 'low';
   if (opts.onGroundCheckFlagged) band = band === 'high' ? 'med' : 'low';
   return band;
+}
+
+/**
+ * Why an on-site visit is advised for ONE site (Brief alignment S-2). Only real signals count:
+ * the informal check found informal sellers at least as many as mapped ones, the area has no
+ * mapped places at all, lease terms run over market, or a check failed for the site.
+ * (Before: ANY informal result dropped the whole run a level, whatever it found.)
+ */
+export function siteVisitReasons(
+  rows: Array<{ module: string; flags?: string[] | null }>,
+  pipelineError?: string | null,
+): string[] {
+  const reasons = new Set<string>();
+  for (const r of rows) {
+    for (const f of r.flags ?? []) {
+      if ((SITE_VISIT_FLAGS as readonly string[]).includes(f)) reasons.add(f);
+    }
+  }
+  if (pipelineError) reasons.add('check_failed');
+  return Array.from(reasons);
+}
+
+/** Plain words for a site-visit reason key (UI, report, PDF). */
+export const SITE_VISIT_REASON_LABEL: Record<string, string> = {
+  on_ground_check_advised: 'informal sellers likely outnumber mapped ones',
+  low_poi_coverage: 'no mapped places nearby yet',
+  secondary_terms_over_market: 'lease terms above market',
+  check_failed: 'a check could not finish for this site',
+};
+
+/** One site's confidence from its own evidence, one level lower when a visit is advised. */
+export function siteConfidence(
+  rows: Array<{ module: string; score: number | null; truthLayer: TruthLayer; flags?: string[] | null }>,
+  expectedModules: string[],
+  pipelineError?: string | null,
+): { confidence: EvidenceConfidence; evidence: number; visitReasons: string[] } {
+  const evidence = siteEvidenceScore(rows, expectedModules);
+  const visitReasons = siteVisitReasons(rows, pipelineError);
+  return { confidence: evidenceBand(evidence, { onGroundCheckFlagged: visitReasons.length > 0 }), evidence, visitReasons };
 }
 
 /** Run confidence = the band of the MEAN site evidence (every site weighs the same). */

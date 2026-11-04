@@ -167,6 +167,9 @@ export function RunDashboard({
                       <span className="flex min-w-0 flex-col gap-0.5">
                         <span className="text-body font-semibold">{s.label}</span>
                         <span className="text-label font-normal text-ink-muted">{[s.city, ...s.highlights].filter(Boolean).join(' · ') || '—'}</span>
+                        {s.confidence && (
+                          <span className="text-label font-normal text-ink-muted">Confidence: <span className="font-semibold text-ink-text">{s.confidence === 'high' ? 'High' : s.confidence === 'med' ? 'Medium' : 'Low'}</span></span>
+                        )}
                       </span>
                       <span className="justify-self-start"><VerdictPill verdict={s.verdict} /></span>
                       <span className="flex items-center gap-2.5">

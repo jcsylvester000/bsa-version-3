@@ -7,6 +7,10 @@
  * result's Truth Layer honestly rather than being guessed.
  */
 import type { TruthLayer } from '@/lib/truth/truthLayer';
+import {
+  bandForScore, areaScale, DEMAND_REF_RADIUS_M, DEMAND_MIN_PEOPLE, DEMAND_FULL_PEOPLE,
+  COMPETITION_REF_RADIUS_M, COMPETITION_FULL_COUNT,
+} from './scoringConfig';
 
 export interface Pillar {
   key: string;
@@ -22,6 +26,27 @@ export interface SiteFitResult {
   pillars: Pillar[];
   truthLayer: TruthLayer;
   flags: string[];
+  /** Trade-area radius (m) used for demand + competition — set by store format (Brief S-4). */
+  tradeAreaM?: number;
+}
+
+function clampScore(n: number): number {
+  return Math.round(Math.max(0, Math.min(100, n)) * 10) / 10;
+}
+
+/** Demand pillar 0–100 from people inside the trade area. Thresholds scale with the circle's area
+ *  (2,000 → 0 and 40,000 → 100 at the 1,200 m reference), so the read is density-fair across formats. */
+export function demandPillarScore(population: number, radiusM: number): number {
+  const k = areaScale(radiusM, DEMAND_REF_RADIUS_M);
+  const lo = DEMAND_MIN_PEOPLE * k, hi = DEMAND_FULL_PEOPLE * k;
+  return clampScore(((population - lo) / (hi - lo)) * 100);
+}
+
+/** Competition-headroom pillar 0–100: 100 with no same-concept competitor, 0 at 12 per 800 m-circle
+ *  equivalent (scaled by area to the trade area). */
+export function competitionPillarScore(count: number, radiusM: number): number {
+  const full = COMPETITION_FULL_COUNT * areaScale(radiusM, COMPETITION_REF_RADIUS_M);
+  return clampScore(100 - (count / full) * 100);
 }
 
 /**
@@ -69,9 +94,7 @@ export function compositeScore(pillars: Pillar[]): number | null {
 
 export function verdictFromComposite(composite: number | null): SiteFitResult['verdict'] {
   if (composite == null) return 'insufficient';
-  if (composite >= 65) return 'go';
-  if (composite >= 45) return 'caution';
-  return 'nogo';
+  return bandForScore(composite);
 }
 
 /**

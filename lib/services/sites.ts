@@ -19,7 +19,7 @@ function loadRun(runId: string) {
 function loadSite(siteId: string) {
   return prisma.candidateSite.findUnique({
     where: { id: siteId },
-    select: { id: true, label: true, city: true, siteType: true, lat: true, lon: true, pipelineRunId: true, verdict: true, compositeScore: true, analyzedAt: true, region: true },
+    select: { id: true, label: true, city: true, siteType: true, lat: true, lon: true, pipelineRunId: true, verdict: true, compositeScore: true, analyzedAt: true, region: true, confidence: true, siteVisitReasons: true },
   });
 }
 

@@ -3,14 +3,10 @@
  * reusable on both server and (if ever needed) client. The server module
  * (territoryGuard.ts) re-exports these alongside its DB-touching functions.
  */
+import { TRADE_AREA_M, CROWDED_SATURATION_PCT, OWN_OVERLAP_NOGO_PCT, OWN_OVERLAP_CAUTION_PCT } from './scoringConfig';
 
 /** Catchment radius assumption by outlet format, metres. Assumed, documented. */
-export const FORMAT_CATCHMENT_M: Record<string, number> = {
-  inline: 900,
-  mall: 1200,
-  kiosk: 600,
-  default: 1000,
-};
+export const FORMAT_CATCHMENT_M: Record<string, number> = TRADE_AREA_M;
 
 export function catchmentRadius(format: string | null | undefined): number {
   if (!format) return FORMAT_CATCHMENT_M.default;
@@ -51,7 +47,7 @@ export function territorySplitOf(payload: unknown): TerritoryCallInput | null {
 }
 
 /** Competitive saturation at or above this makes a corridor "contested" (caps the site at Caution). */
-export const CONTESTED_SATURATION_PCT = 40;
+export const CONTESTED_SATURATION_PCT = CROWDED_SATURATION_PCT;
 
 /**
  * The Territory call (owner decision 2026-10-16). Cannibalization means taking sales from the brand's
@@ -77,16 +73,16 @@ export function territoryCall(p: TerritoryCallInput | null | undefined): { verdi
     return { verdict: v, contested: false, ownPct: null, competitivePct: null };
   }
   const o = own ?? 0, c = comp ?? 0;
-  if (o >= 40) return { verdict: 'redistributes', contested: false, ownPct: own, competitivePct: comp };
-  if (o >= 15) return { verdict: 'mixed', contested: c >= CONTESTED_SATURATION_PCT, ownPct: own, competitivePct: comp };
+  if (o >= OWN_OVERLAP_NOGO_PCT) return { verdict: 'redistributes', contested: false, ownPct: own, competitivePct: comp };
+  if (o >= OWN_OVERLAP_CAUTION_PCT) return { verdict: 'mixed', contested: c >= CONTESTED_SATURATION_PCT, ownPct: own, competitivePct: comp };
   if (c >= CONTESTED_SATURATION_PCT) return { verdict: 'mixed', contested: true, ownPct: own, competitivePct: comp };
   return { verdict: 'adds', contested: false, ownPct: own, competitivePct: comp };
 }
 
 /** Verdict from the Verified overlap measurement (not the Projected PHP). */
 export function verdictFromOverlap(maxOverlapPct: number): TerritoryVerdict {
-  if (maxOverlapPct >= 40) return 'redistributes';
-  if (maxOverlapPct >= 15) return 'mixed';
+  if (maxOverlapPct >= OWN_OVERLAP_NOGO_PCT) return 'redistributes';
+  if (maxOverlapPct >= OWN_OVERLAP_CAUTION_PCT) return 'mixed';
   return 'adds';
 }
 

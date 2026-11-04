@@ -12,7 +12,8 @@
  * with its Truth Layer kept in place. The call comes from summariseSite() driven by the site's composite
  * band (audit F-07), so the screen, the dashboard and the PDF can never disagree.
  */
-import { gateComposite, territoryGate } from './scorecard';
+import { gateComposite, territoryGate, SITE_VISIT_REASON_LABEL } from './scorecard';
+import { NO_SITEFIT_CAP, SCORING_METHOD_VERSION } from './scoringConfig';
 import { territoryCall, territorySplitOf } from './territoryMath';
 import type { ModuleKind } from '@prisma/client';
 import { fmtInt, fmtPeso } from '@/lib/util/format';
@@ -129,6 +130,10 @@ export interface SiteReportMeta {
   capBand?: 'nogo' | 'caution' | null;
   /** Set while place data around the site is still being gathered (or could not be) — the call is provisional. */
   provisionalNote?: string | null;
+  /** Why an on-site visit is advised for this site (plain words) — confidence was lowered a level. */
+  visitNote?: string | null;
+  /** True when `confidence` is this site's own (per-site, Brief S-3); false = legacy run-level value. */
+  siteLevelConfidence?: boolean;
 }
 
 /** Provisional wording for a run's data-refresh state (automatic back-fill). Pure (unit-tested). */
@@ -440,7 +445,7 @@ export function buildSiteReportModel(args: {
     figures,
     findingModule: FINDING_MODULE,
     modules: [territory, lease, daypart, whitespace],
-    footnote: `The module summaries are a straight consolidation of the four tabs; the recommendation above is rolled up from only these figures. ${ZONAL_FLOOR_NOTE}`,
+    footnote: `The module summaries are a straight consolidation of the four tabs; the recommendation above is rolled up from only these figures. ${ZONAL_FLOOR_NOTE} ${SCORING_METHOD_VERSION}.`,
   };
 }
 
@@ -450,7 +455,10 @@ export function buildSiteReportModel(args: {
  * Truth Layers — the same method the dashboard uses for the run (the 'analysis' row is excluded).
  */
 export function siteReportMeta(data: {
-  site: { id: string; compositeScore: { toString(): string } | null; analyzedAt: Date | null };
+  site: {
+    id: string; compositeScore: { toString(): string } | null; analyzedAt: Date | null;
+    confidence?: 'high' | 'med' | 'low' | null; siteVisitReasons?: string[] | null;
+  };
   run: { confidence: 'high' | 'med' | 'low' | null; dataRefreshState?: string | null };
   rows: Array<{ module: string; truthLayer: string; score?: unknown; payload?: unknown }>;
   runSites: Array<{ id: string; compositeScore: { toString(): string } | null }>;
@@ -464,9 +472,18 @@ export function siteReportMeta(data: {
   const split = terr?.payload ? territorySplitOf(terr.payload) : null;
   const composite = gateComposite(stored, overlap, split);
   const gate = territoryGate(overlap, split);
-  const capNote = gate.reason && stored != null && composite != null && composite < stored
+  const territoryCapNote = gate.reason && stored != null && composite != null && composite < stored
     ? `${gate.reason} Composite capped at ${Math.round(composite)} (the weighted average alone would be ${Math.round(stored)}).`
     : gate.reason && composite != null && gate.cap != null && composite <= gate.cap ? gate.reason : null;
+  // Third override (Brief S-6): no population data → Site Fit unscored → the score tops out at Caution.
+  const fit = data.rows.find((r) => r.module === 'site_fit');
+  const siteFitCapNote = !territoryCapNote && fit && (fit.score == null || fit.score === '') && composite != null && composite <= NO_SITEFIT_CAP
+    ? 'No population data for this trade area yet — the score is capped at Caution until census data is loaded.'
+    : null;
+  const capNote = territoryCapNote ?? siteFitCapNote;
+  const capBand = territoryCapNote ? gate.maxBand : siteFitCapNote ? 'caution' as const : null;
+  const reasons = (data.site.siteVisitReasons ?? []).map((k) => SITE_VISIT_REASON_LABEL[k] ?? k);
+  const visitNote = reasons.length ? `On-site visit advised (${reasons.join('; ')}) — confidence lowered one level.` : null;
   const ranked = data.runSites
     .map((s) => ({ id: s.id, composite: num(s.compositeScore) }))
     .sort((a, b) => (b.composite ?? -1) - (a.composite ?? -1));
@@ -477,9 +494,11 @@ export function siteReportMeta(data: {
     composite,
     rank: composite != null && rankIdx >= 0 ? rankIdx + 1 : null,
     total: composite != null ? ranked.length : null,
-    confidence: data.run.confidence ?? null,
+    confidence: data.site.confidence ?? data.run.confidence ?? null,
+    siteLevelConfidence: data.site.confidence != null,
     capNote,
-    capBand: capNote ? gate.maxBand : null,
+    capBand,
+    visitNote,
     provisionalNote: provisionalNoteFor(data.run.dataRefreshState),
     analysedAt: data.site.analyzedAt ? manilaShortStampYear(data.site.analyzedAt) : null,
     truthPct: layers.length ? { verified: pct('verified'), assumed: pct('assumed'), projected: pct('projected') } : null,

@@ -6,12 +6,12 @@
  */
 import 'server-only';
 import { prisma } from '@/lib/db/prisma';
-import { scoreSiteFit, scoreAccessibility, type Pillar, type SiteFitResult } from './siteFitMath';
+import { scoreSiteFit, scoreAccessibility, demandPillarScore, competitionPillarScore, type Pillar, type SiteFitResult } from './siteFitMath';
+import { tradeAreaRadius } from './scoringConfig';
 import type { TruthLayer } from '@/lib/truth/truthLayer';
 
 export type { SiteFitResult } from './siteFitMath';
 
-const DEMAND_RADIUS_M = 1200;
 /** Transport nodes within a short walk count toward the accessibility density (F-15). */
 const ACCESS_WALK_M = 500;
 /** If NO transport node exists within this window, the layer isn't loaded here (or the site is
@@ -23,12 +23,11 @@ const ACCESS_COVERAGE_M = 5000;
  * fix is a denser demographic_cell layer (see docs/QA_JOURNEY_FINDINGS.md F3).
  */
 const DEMAND_FALLBACK_RADIUS_M = 6000;
-const COMPETITOR_RADIUS_M = 800;
 
 interface CountRow { c: number | null }
 
 /**
- * @param conceptCompetitorCount When provided (from the concept-aware Google pull),
+ * @param conceptCompetitorCount When provided (concept-aware count from the OpenStreetMap place table),
  *   the competition pillar counts only GENUINE same-concept competitors near the site
  *   instead of every untyped "competitor" POI — so a milk-tea site isn't penalised for
  *   nearby coffee shops. Falls back to the POI table count when not provided.
@@ -39,8 +38,11 @@ export async function runSiteFit(
 ): Promise<SiteFitResult> {
   const site = await prisma.candidateSite.findUniqueOrThrow({
     where: { id: candidateSiteId },
-    select: { lat: true, lon: true },
+    select: { lat: true, lon: true, siteType: true },
   });
+  // Trade area by store format (Brief S-4): 600 m kiosk · 900 m inline · 1.2 km mall · 1 km other.
+  // Used for both demand and competition (was a fixed 1,200 m / 800 m for every format).
+  const tradeAreaM = tradeAreaRadius(site.siteType);
 
   // Demand pillar: population within the catchment (from demographic_cell polygons
   // that contain / are near the site). Verified from PSA when present.
@@ -51,7 +53,7 @@ export async function runSiteFit(
     WHERE ST_DWithin(
       geom,
       ST_SetSRID(ST_MakePoint(${site.lon}, ${site.lat}), 4326)::geography,
-      ${DEMAND_RADIUS_M}
+      ${tradeAreaM}
     )
   `;
   let population = demoRows[0]?.pop ?? 0;
@@ -87,7 +89,7 @@ export async function runSiteFit(
   const hasDemo = population > 0;
 
   // Competition pillar: prefer the concept-aware count (genuine same-concept
-  // competitors from the live Google pull) when the orchestrator supplies it; else
+  // competitors, counted by the orchestrator inside the same trade area) when supplied; else
   // fall back to the untyped competitor-POI density in the DB.
   let competitorCount: number;
   let hasPoi: boolean;
@@ -102,7 +104,7 @@ export async function runSiteFit(
         AND ST_DWithin(
           geom,
           ST_SetSRID(ST_MakePoint(${site.lon}, ${site.lat}), 4326)::geography,
-          ${COMPETITOR_RADIUS_M}
+          ${tradeAreaM}
         )
     `;
     competitorCount = compRows[0]?.c ?? 0;
@@ -120,10 +122,10 @@ export async function runSiteFit(
   }
 
   // Map raw signals to 0–100 pillar scores (documented, simple, deterministic).
-  // Demand: 0 at <2k people in catchment, 100 at >=40k (linear, capped).
-  const demandScore = hasDemo ? clamp(((population - 2000) / (40000 - 2000)) * 100) : null;
-  // Competition headroom: fewer competitors = more headroom. 100 at 0, 0 at >=12.
-  const competitionScore = hasPoi ? clamp(100 - (competitorCount / 12) * 100) : null;
+  // Demand: 0 at <2k people, 100 at >=40k per 1,200 m-circle equivalent (scaled to the trade area).
+  const demandScore = hasDemo ? demandPillarScore(population, tradeAreaM) : null;
+  // Competition headroom: fewer competitors = more headroom. 100 at 0, 0 at >=12 per 800 m-circle equivalent.
+  const competitionScore = hasPoi ? competitionPillarScore(competitorCount, tradeAreaM) : null;
   // Accessibility pillar (F-15): distance to and density of transport nodes near the site.
   // Reads the transport POI layer (category='transport'), which the OSM ingest loads per region
   // (`db:ingest:osm:transport`). When that layer isn't loaded for this area no node is found
@@ -146,12 +148,12 @@ export async function runSiteFit(
   });
 
   const pillars: Pillar[] = [
-    { key: 'demand', label: 'Catchment demand', score: demandScore, weight: 0.5, truthLayer: demandTruth },
-    { key: 'competition', label: 'Competition headroom', score: competitionScore, weight: 0.35, truthLayer: 'verified' as TruthLayer },
+    { key: 'demand', label: `Catchment demand (${tradeAreaM.toLocaleString('en-US')} m trade area)`, score: demandScore, weight: 0.5, truthLayer: demandTruth },
+    { key: 'competition', label: `Competition headroom (${tradeAreaM.toLocaleString('en-US')} m)`, score: competitionScore, weight: 0.35, truthLayer: 'verified' as TruthLayer },
     { key: 'accessibility', label: 'Accessibility', score: accessScore, weight: 0.15, truthLayer: 'verified' as TruthLayer },
   ];
 
-  return scoreSiteFit(pillars);
+  return { ...scoreSiteFit(pillars), tradeAreaM };
 }
 
 export async function persistSiteFit(runId: string, candidateSiteId: string, result: SiteFitResult): Promise<void> {
@@ -170,6 +172,3 @@ export async function persistSiteFit(runId: string, candidateSiteId: string, res
   });
 }
 
-function clamp(n: number): number {
-  return Math.round(Math.max(0, Math.min(100, n)) * 10) / 10;
-}

@@ -22,7 +22,7 @@ export async function getRunDashboard(session: SessionUser | null, runId: string
 
   const rows = await prisma.moduleResult.findMany({
     where: { pipelineRunId: runId, module: { not: 'analysis' } },
-    include: { site: { select: { id: true, label: true, city: true, compositeScore: true, verdict: true, pipelineError: true } } },
+    include: { site: { select: { id: true, label: true, city: true, compositeScore: true, verdict: true, pipelineError: true, confidence: true } } },
   });
   const lite: ModuleResultLite[] = rows.map((r) => ({
     module: r.module,
@@ -35,6 +35,7 @@ export async function getRunDashboard(session: SessionUser | null, runId: string
       composite: r.site.compositeScore != null ? Number(r.site.compositeScore) : null,
       verdict: r.site.verdict,
       pipelineError: r.site.pipelineError,
+      confidence: r.site.confidence,
     },
   }));
   const data = buildDashboard(lite, { runConfidence: run.confidence ?? null });

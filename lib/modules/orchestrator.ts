@@ -31,7 +31,8 @@ import { inferCorridor } from './leaseMath';
 import { regionForSite, corridorsForRegion } from '@/lib/geo/regions';
 import { runDaypart, runInformal, runHealthcare, runMall, runWhiteSpace, runLand } from './p2p3Modules';
 import { competitorsNear } from '@/lib/places/poiCache';
-import { siteEvidenceScore, runEvidenceConfidence } from './scorecard';
+import { siteConfidence, runEvidenceConfidence } from './scorecard';
+import { tradeAreaRadius } from './scoringConfig';
 import { recomputeSiteComposite } from './scorecardServer';
 import type { ModuleKind } from '@prisma/client';
 
@@ -180,11 +181,11 @@ async function runPipelineSlice(runId: string, opts: { refresh?: boolean }): Pro
       }
     };
 
-    // Concept-aware competitor count within the site-fit competition radius (800 m).
+    // Concept-aware competitor count inside the site's trade area (by format — Brief S-4).
     // Cache-through: warms this area from OSM on a miss, then counts from the DB.
     let conceptCompetitorCount: number | undefined;
     try {
-      const comps = await competitorsNear(site.lat, site.lon, run.vertical, conceptText, { radiusM: 800, max: 40 });
+      const comps = await competitorsNear(site.lat, site.lon, run.vertical, conceptText, { radiusM: tradeAreaRadius(site.siteType), max: 60 });
       conceptCompetitorCount = comps.length;
     } catch { conceptCompetitorCount = undefined; }
 
@@ -245,7 +246,7 @@ async function runPipelineSlice(runId: string, opts: { refresh?: boolean }): Pro
       });
     }
     if (modules.includes('daypart')) await attempt('daypart', () => runDaypart(runId, site.id, run.vertical));
-    if (expectedModules.includes('informal')) await attempt('informal', () => runInformal(runId, site.id, run.vertical, units, conceptCompetitorCount));
+    if (expectedModules.includes('informal')) await attempt('informal', () => runInformal(runId, site.id, run.vertical, units, conceptCompetitorCount, tradeAreaRadius(site.siteType)));
     if (modules.includes('healthcare')) await attempt('healthcare', () => runHealthcare(runId, site.id));
     if (modules.includes('mall')) await attempt('mall', () => runMall(runId, site.id, targetMallTier));
     if (modules.includes('whitespace')) {
@@ -290,16 +291,26 @@ async function runPipelineSlice(runId: string, opts: { refresh?: boolean }): Pro
       select: { candidateSiteId: true, module: true, score: true, truthLayer: true, flags: true },
     }),
   ]);
-  const siteEvidence = siteRows.map((s) =>
-    siteEvidenceScore(
+  // Per-site confidence (Brief alignment S-3) — each site from its own evidence, one level lower
+  // only when a real on-site-visit signal exists for THAT site (S-2). Stored on the site row.
+  const perSiteConf = siteRows.map((s) => ({
+    id: s.id,
+    ...siteConfidence(
       rows.filter((r) => r.candidateSiteId === s.id)
-        .map((r) => ({ module: r.module, score: r.score != null ? Number(r.score) : null, truthLayer: r.truthLayer as TruthLayer })),
+        .map((r) => ({ module: r.module, score: r.score != null ? Number(r.score) : null, truthLayer: r.truthLayer as TruthLayer, flags: r.flags })),
       expectedModules,
+      s.pipelineError,
     ),
-  );
-  const onGround =
-    rows.some((r) => r.module === 'informal' || (r.flags ?? []).includes('secondary_terms_over_market')) ||
-    siteRows.some((s) => s.pipelineError != null);
+  }));
+  for (const c of perSiteConf) {
+    // One statement per site (Neon HTTP: no transactions / updateMany).
+    await prisma.candidateSite.update({
+      where: { id: c.id },
+      data: { confidence: c.confidence, evidence: c.evidence, siteVisitReasons: c.visitReasons },
+    });
+  }
+  const siteEvidence = perSiteConf.map((c) => c.evidence);
+  const onGround = perSiteConf.some((c) => c.visitReasons.length > 0);
   const { confidence } = runEvidenceConfidence(siteEvidence, { onGroundCheckFlagged: onGround });
 
   // A run where EVERY site failed outright (no module produced anything) is failed, not ready.

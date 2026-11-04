@@ -25,6 +25,7 @@ import type { Scorecard } from './scorecard';
 import type { Confidence } from '@/lib/truth/truthLayer';
 import { BROKER_DISCLAIMER_LONG, LEASE_POSITION_LABEL } from '@/lib/truth/guardrailCopy';
 import { GRID_LOGO_DATA_URI } from '@/lib/pdf/gridLogo';
+import { bandForScore } from './scoringConfig';
 
 /** Client / preparation details collected from the modal — all optional, all escaped. */
 export interface ReportClientDetails {
@@ -76,7 +77,7 @@ function esc(v: unknown): string {
 
 function band(score: number, higherIsBetter: boolean): 'go' | 'caution' | 'nogo' {
   const s = higherIsBetter ? score : 100 - score;
-  return s >= 70 ? 'go' : s >= 45 ? 'caution' : 'nogo';
+  return bandForScore(s);
 }
 
 /** Status: icon + word, coloured text (never a colour-only pill). */

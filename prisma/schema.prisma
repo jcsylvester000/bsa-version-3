@@ -320,6 +320,13 @@ model CandidateSite {
   claimedAt      DateTime?       @map("claimed_at") @db.Timestamptz(6)
   /// Modules that failed for this site on the last pass (e.g. "whitespace: timeout"). NULL = clean.
   pipelineError  String?         @map("pipeline_error")
+  /// Per-site confidence (Brief alignment S-3): High / Medium / Low from this site's own evidence,
+  /// one level lower when an on-site visit is advised for it. NULL until the site is analysed.
+  confidence     Confidence?
+  /// Weighted evidence value 0–1 behind `confidence` (Verified 1 · Assumed 0.7 · Projected 0.35).
+  evidence       Decimal?        @db.Decimal(4, 3)
+  /// Why an on-site visit is advised for this site (flag keys), empty when none.
+  siteVisitReasons String[]      @default([]) @map("site_visit_reasons")
   createdAt      DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
 
   run            PipelineRun     @relation(fields: [pipelineRunId], references: [id], onDelete: Cascade)

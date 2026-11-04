@@ -238,6 +238,7 @@ export function AnalysisPdf(p: AnalysisPdfProps): React.ReactElement {
             <Text style={s.rationale}>{sum.headline}</Text>
             {m.meta.capNote ? <Text style={{ fontSize: 8.5, color: m.meta.capBand === 'caution' ? C.caution : C.nogo, marginTop: 4 }}>{m.meta.capNote}</Text> : null}
             {m.meta.provisionalNote ? <Text style={{ fontSize: 8.5, color: C.caution, marginTop: 4 }}>{m.meta.provisionalNote}</Text> : null}
+            {m.meta.visitNote ? <Text style={{ fontSize: 8.5, color: C.caution, marginTop: 4 }}>{m.meta.visitNote}</Text> : null}
             {!m.limited && sum.coverage < 2 ? (
               <Text style={{ fontSize: 7.5, color: C.muted, marginTop: 4 }}>
                 Limited module data — {sum.coverage} of 3 core modules rated. The call follows the site’s composite score; confirm on the ground.
@@ -246,7 +247,7 @@ export function AnalysisPdf(p: AnalysisPdfProps): React.ReactElement {
             <View style={s.metaRow}>
               {confLabel ? (
                 <View style={s.metaCell}>
-                  <Text style={s.overline}>Confidence</Text>
+                  <Text style={s.overline}>{m.meta.siteLevelConfidence === false ? 'Run confidence' : 'Site confidence'}</Text>
                   <Text style={s.metaValue}>{confLabel} <Text style={{ fontSize: 7.5, fontWeight: 400, color: C.muted }}>· {confNote}</Text></Text>
                 </View>
               ) : null}
