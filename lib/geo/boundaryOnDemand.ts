@@ -19,8 +19,10 @@ import { regionForPoint } from '@/lib/geo/regions';
 import { boundaryFeatureToRow } from '@/lib/geo/boundaryFeature';
 import { bboxOfArea, type CaptureArea } from '@/lib/capture/area';
 import index from '@/lib/geo/psgcIndex.json';
+import { psgc10, psgcFileCode } from '@/lib/geo/psgcCode';
 
-const BASE = 'https://raw.githubusercontent.com/faeldon/philippines-json-maps/master/2023/geojson';
+// `latest/` = PSGC 3Q-2026 (the old `2023/` folder moved to a release in Oct 2026 and 404s — Brief T-3).
+const BASE = 'https://raw.githubusercontent.com/faeldon/philippines-json-maps/master/latest/geojson';
 /** Most cities/municipalities one request loads (a 1–1.5 km ring touches 1–3; NCR corners up to 4). */
 export const MAX_CITIES_PER_LOAD = 4;
 const FETCH_TIMEOUT_MS = 9_000;
@@ -52,7 +54,9 @@ export function citiesTouching(bbox: [number, number, number, number], limit = M
     })
     .sort((a, b) => a.score - b.score)
     .slice(0, limit)
-    .map(({ m }) => ({ psgc: String(m[0]), name: m[1] ?? String(m[0]), provincePsgc: m[2] == null ? null : String(m[2]), regionPsgc: String(m[3]), bbox: [m[4], m[5], m[6], m[7]] }));
+    // Codes as stored in BSA: 10-digit PSGC (the index keeps the maps' integer form; region code stays
+    // integer — it only keys PH_REGION_BY_PSGC). File names use psgcFileCode().
+    .map(({ m }) => ({ psgc: psgc10(m[0])!, name: m[1] ?? String(m[0]), provincePsgc: m[2] == null ? null : psgc10(m[2]), regionPsgc: String(m[3]), bbox: [m[4], m[5], m[6], m[7]] }));
 }
 
 /** BSA region key for a city: the registered region when it covers the city, else `ph-<code>` (e.g. ph-car). */
@@ -110,7 +114,7 @@ export async function loadBoundariesForArea(area: CaptureArea): Promise<Boundary
 
   for (const city of cities) {
     if (have.get(city.psgc)) { result.cities.push({ psgc: city.psgc, name: city.name, barangays: have.get(city.psgc)!, status: 'already' }); continue; }
-    const fc = await getJson(`${BASE}/municities/medres/bgysubmuns-municity-${city.psgc}.0.01.json`);
+    const fc = await getJson(`${BASE}/municities/medres/bgysubmuns-municity-${psgcFileCode(city.psgc)}.0.01.json`);
     const region = regionKeyFor(city);
     const rows = (fc?.features ?? [])
       .map((f) => ({ row: boundaryFeatureToRow(f.properties ?? {}, 'barangay'), geom: f.geometry }))
@@ -141,11 +145,11 @@ export async function loadBoundariesForArea(area: CaptureArea): Promise<Boundary
   // Province rows (name only — tagging reads barangay polygons) so tags read "Brgy X, City Y, Province Z".
   for (const key of provincesNeeded) {
     const [prov, reg, region] = key.split('|');
-    const name = PROVINCES.find((p) => String(p[0]) === prov)?.[1];
+    const name = PROVINCES.find((p) => psgc10(p[0]) === prov)?.[1];
     if (!name) continue;
     await prisma.$executeRaw`
       INSERT INTO admin_boundary (psgc_code, level, name, parent_psgc, region)
-      VALUES (${prov}, 'province', ${name}, ${reg}, ${region})
+      VALUES (${prov}, 'province', ${name}, ${psgc10(reg)}, ${region})
       ON CONFLICT (psgc_code) DO NOTHING`;
   }
 

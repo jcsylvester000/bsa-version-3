@@ -62,7 +62,7 @@ export default async function SiteReportPage({ searchParams }: { searchParams: {
       <DataGatheringNote data={dataStateOf(run)} />
       <SiteIntelligenceTabs
         site={{ id: site.id, label: site.label, lat: site.lat, lon: site.lon, siteType: site.siteType }}
-        outlets={outlets.map((o) => ({ id: o.id, name: o.outletName, lat: o.lat, lon: o.lon, format: o.format }))}
+        outlets={outlets.map((o) => ({ id: o.id, name: o.outletName, lat: o.lat, lon: o.lon, format: o.format, fromIntake: o.intakeSubmissionId != null }))}
         payloads={payloads}
         vertical={run.vertical}
         verdict={site.verdict ?? null}

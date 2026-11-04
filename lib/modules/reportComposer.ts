@@ -106,7 +106,7 @@ function factsForModule(row: ModuleRow): string[] {
       if (row.score == null) {
         return [`[${row.siteLabel}] Site fit: not scored — the demographic/population layer for this catchment is not loaded, so the demand pillar (the primary driver) can't be measured. Competition headroom is shown in the site detail; load a demographic layer to publish a full Site-Fit score.`];
       }
-      return [`[${row.siteLabel}] Site fit: composite ${row.score}/100, verdict "${p.verdict ?? '?'}" (${row.truthLayer}).`];
+      return [`[${row.siteLabel}] Site fit: composite ${row.score}/100, verdict "${p.verdict ?? '?'}" (${row.truthLayer})${p.tradeAreaM ? ` within a ${Number(p.tradeAreaM).toLocaleString('en-US')} m trade area` : ''}${p.populationSource ? `; population: ${p.populationSource}` : ''}.`];
     case 'daypart':
       if (p.noCatchmentData) {
         return [`[${row.siteLabel}] Daypart: daytime/residential split not derived — the demographic (daytime-population) layer isn't loaded for this catchment, so no daypart curve is published (seasonality is modelled from corridor data and still shown).`];
@@ -139,7 +139,8 @@ function metricsForModule(row: ModuleRow): ReportMetric[] {
   const base = { siteLabel: row.siteLabel, truthLayer: row.truthLayer };
   switch (row.module) {
     case 'site_fit':
-      return [{ ...base, label: 'Site fit composite', score: row.score ?? null, verdict: String(p.verdict ?? ''), higherIsBetter: true }];
+      return [{ ...base, label: 'Site fit composite', score: row.score ?? null, verdict: String(p.verdict ?? ''), higherIsBetter: true,
+        ...(p.populationSource ? { note: `Population: ${String(p.populationSource)}` } : {}) }];
     case 'territory': {
       const overlap = num(p.maxOverlapPct) ?? 0;
       const cannib = num(p.totalCannibalizedPhp) ?? 0;

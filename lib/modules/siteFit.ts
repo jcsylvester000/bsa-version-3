@@ -8,6 +8,7 @@ import 'server-only';
 import { prisma } from '@/lib/db/prisma';
 import { scoreSiteFit, scoreAccessibility, demandPillarScore, competitionPillarScore, type Pillar, type SiteFitResult } from './siteFitMath';
 import { tradeAreaRadius } from './scoringConfig';
+import { censusSourceLabel, populationTruthOf } from '@/lib/geo/censusMeta';
 import type { TruthLayer } from '@/lib/truth/truthLayer';
 
 export type { SiteFitResult } from './siteFitMath';
@@ -46,9 +47,11 @@ export async function runSiteFit(
 
   // Demand pillar: population within the catchment (from demographic_cell polygons
   // that contain / are near the site). Verified from PSA when present.
-  const demoRows = await prisma.$queryRaw<Array<{ pop: number | null; layers: string[] | null }>>`
+  const demoRows = await prisma.$queryRaw<Array<{ pop: number | null; layers: string[] | null; census_year: number | null; has_legacy: boolean | null }>>`
     SELECT COALESCE(SUM(population), 0)::int AS pop,
-           array_agg(DISTINCT truth_layer::text) AS layers
+           array_agg(DISTINCT COALESCE(population_truth, truth_layer)::text) AS layers,
+           MAX(census_year)::int AS census_year,
+           bool_or(population_truth IS NULL) AS has_legacy
     FROM demographic_cell
     WHERE ST_DWithin(
       geom,
@@ -60,7 +63,11 @@ export async function runSiteFit(
   // The demand pillar is only as strong as the weakest demographic row it summed —
   // read from the rows, never assumed Verified.
   const layers = (demoRows[0]?.layers ?? []).filter(Boolean);
-  let demandTruth: TruthLayer = layers.includes('projected') ? 'projected' : layers.includes('assumed') || layers.length === 0 ? 'assumed' : 'verified';
+  // Per-field (Brief T-1): census population is Verified even where the same cell's income/daytime
+  // bands are estimates; legacy sample cells (no per-field label) keep their row label.
+  let demandTruth: TruthLayer = populationTruthOf(layers) ?? 'assumed';
+  let populationSource: string | null = demoRows[0]?.has_legacy === false ? censusSourceLabel(demoRows[0]?.census_year ?? null)
+    : layers.length ? 'Sample barangay estimates (census loading)' : null;
 
   // Fallback (Phase 3 QA fix F3): where the demographic layer is thin and no cell is
   // in range, use the NEAREST cell within a wider radius as an Assumed proxy — so a
@@ -84,6 +91,7 @@ export async function runSiteFit(
     if (nearRows[0]?.pop != null && nearRows[0].pop > 0) {
       population = nearRows[0].pop;
       demandTruth = 'assumed';
+      populationSource = 'Nearest barangay (proxy)';
     }
   }
   const hasDemo = population > 0;
@@ -153,7 +161,7 @@ export async function runSiteFit(
     { key: 'accessibility', label: 'Accessibility', score: accessScore, weight: 0.15, truthLayer: 'verified' as TruthLayer },
   ];
 
-  return { ...scoreSiteFit(pillars), tradeAreaM };
+  return { ...scoreSiteFit(pillars), tradeAreaM, populationSource };
 }
 
 export async function persistSiteFit(runId: string, candidateSiteId: string, result: SiteFitResult): Promise<void> {

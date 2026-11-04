@@ -4,7 +4,7 @@ import { useEffect, useRef } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { defaultBasemapUrl, basemapPaint, OSM_ATTRIBUTION, OSM_MAX_ZOOM } from '@/lib/ui/theme';
-import { geoCircle, VERDICT_COLOR } from '@/lib/geo/mapGeometry';
+import { geoCircle, VERDICT_COLOR, outletLegend } from '@/lib/geo/mapGeometry';
 import { markerElement, MapLegend, SrMarkerList, type MarkerKind } from '@/components/MapMarkers';
 
 export interface MapOutlet {
@@ -13,6 +13,8 @@ export interface MapOutlet {
   lat: number;
   lon: number;
   catchmentM: number;
+  /** true = typed into this run's intake; false = the brand's network on file (Brief T-6). */
+  fromIntake?: boolean;
 }
 export interface MapCandidate {
   id: string;
@@ -226,14 +228,14 @@ export function TerritoryMap({ outlets, candidate, competitors = [] }: { outlets
   );
   const legend: Array<{ kind: MarkerKind; text: string }> = [
     { kind: 'site', text: 'This site' },
-    ...(outlets.length ? [{ kind: 'outlet' as const, text: `Your outlets (${outlets.length})` }] : []),
+    ...(outlets.length ? [{ kind: 'outlet' as const, text: outletLegend(outlets) }] : []),
     ...(counts.direct ? [{ kind: 'direct' as const, text: `Direct competitor (${counts.direct})` }] : []),
     ...(counts.adjacent ? [{ kind: 'adjacent' as const, text: `Adjacent format (${counts.adjacent})` }] : []),
     ...(counts.unrelated ? [{ kind: 'other' as const, text: `Other business — context (${counts.unrelated})` }] : []),
   ];
   const srItems = [
     `This site: ${candidate.label}, catchment ${Math.round(candidate.catchmentM)} m`,
-    ...outlets.map((o) => `Your outlet: ${o.name}`),
+    ...outlets.map((o) => `${o.fromIntake === false ? 'Brand outlet on file' : 'Your outlet'}: ${o.name}`),
     ...competitors.filter((c) => (c.tier ?? 'direct') !== 'unrelated').map((c) => `${TIER_STYLE[c.tier ?? 'direct'].label}: ${c.name}`),
     ...(counts.unrelated ? [`Plus ${counts.unrelated} other nearby businesses shown for context only`] : []),
   ];

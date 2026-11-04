@@ -5,6 +5,33 @@ The cross-thread state record. Read this (with the Master Instruction and the cu
 
 ---
 
+## 2026-11-04 (c) — Brief alignment Batch 2: Truth Layer (T-1, T-3, T-4, T-5, T-6, T-7) — ⏳ awaiting push
+- T-1/T-4: `demographic_cell.population_truth / bands_truth / census_year / population_source` (migration
+  `20261104010000_truth_fields`). Census population Verified, estimated bands Assumed; Site Fit reads the per-field
+  label (`lib/geo/censusMeta.ts`) and names the source in the report ("PSA 2020 Census (CPH)" / sample estimates /
+  nearest-barangay proxy). `db:load-demographics` gains `--year=` and `--retire-legacy` (dry run without it): hands
+  each sample cell's bands to the census barangay of the same name, then deletes the sample cell (no double count).
+  Re-loads never blank bands.
+- T-3: the boundary source moved — faeldon/philippines-json-maps `2023/` became a release; every URL 404'd. Loader +
+  on-demand loader now use `latest/` (PSGC 3Q-2026); file names use integer codes. Codes stored as 10-digit PSGC
+  (`lib/geo/psgcCode.ts`); migration pads the 1,935 stored 9-digit codes (+2,016 POI tags) — Cavite/Batangas now join
+  census files by code. Verified the City of Manila file returns 897 barangays.
+- T-5: `outlet.source` (brand_list / user_entry / reference) + `location_truth` / `sales_truth`; existing rows →
+  6 reference, 136 user_entry (labels unchanged, Assumed). New `npm run db:load-outlets` (brand's own list → location
+  Verified; sales only with `--sales-consent`, Assumed). Territory Guard overlap truth = location truth.
+- T-6: map legend "Brand outlets (11): 5 you entered · 6 on file". T-7: `npm run db:counts` (read-only, Markdown,
+  excludes test/demo accounts) — on the 26 Oct data every account is test/demo → 0 client analyses.
+- QA: tsc clean · vitest 626/626 (+11 tests `truthFieldsBatch2.test.ts`) · next build OK. Migrations applied to a
+  PG16+PostGIS copy of the 26 Oct snapshot, twice (idempotent): 2,927/2,927 boundary codes 10-digit, 0 orphan
+  parents, 0 orphan POI tags; changed SQL (Site Fit, Territory outlets, retire-legacy, counts) run against it.
+  Fixed during QA: counts script dropped owner-less rows (NULL compare); outlet loader read a missing lat as 0.
+- End-to-end on a local PG16 copy (native Prisma): `db:fetch-boundaries --region=ncr` → 1,718 NCR barangays incl. City
+  of Manila 899 (was 0), 0 invalid shapes; `db:tag-boundaries` → NCR places tagged 77 % → 91 %; census loader with a
+  throwaway test file → 1,040 Verified (2020), out-of-region row skipped, 86 sample cells retired / 67 got bands;
+  `db:load-outlets` (planned + no-coordinate rows skipped; sales only with consent); `db:counts` table OK.
+  Loader now takes only barangays whose boundary is loaded for --region (a nationwide PSA file is safe).
+- Open: G-1 proposal — remove the Google Places ingest + proxies (owner rule: nothing Google), awaiting OK.
+
 ## 2026-11-04 (b) — Brief alignment Batch 1: scoring (P0-2, S-1…S-7) — ⏳ awaiting push
 - `lib/modules/scoringConfig.ts` (new): every scoring number in one place (weights 30/25/20/10/10/5, bands 65/45,
   own overlap 40/15, crowding 40, caps 44/64, trade areas 600/900/1200/1000, confidence 1/0.7/0.35 · 0.75/0.5,

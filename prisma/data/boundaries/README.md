@@ -6,11 +6,15 @@ point-in-polygon against `admin_boundary`.
 ## Easiest: auto-download (no GDAL, no shapefiles) — recommended
 
 Pulls ready-made GeoJSON (province → cities → barangays) from
-[faeldon/philippines-json-maps](https://github.com/faeldon/philippines-json-maps) (MIT, PSGC
-Q4-2023) and loads it straight into Neon. Needs only network + Node 18+.
+[faeldon/philippines-json-maps](https://github.com/faeldon/philippines-json-maps) `latest/` (MIT,
+PSGC 3Q-2026) and loads it straight into Neon. Needs only network + Node 18+. Codes are stored as
+10-digit PSGC (`0402101006`), so census CSVs join by code. (Nov 2026: the old `2023/` folder moved to
+a release and every download 404'd — fixed; NCR now also loads the City of Manila's 897 barangays.)
 
 ```powershell
 npx prisma migrate deploy        # if not already applied
+npm run db:fetch-boundaries -- --region=ncr
+npm run db:fetch-boundaries -- --region=davao
 npm run db:fetch-boundaries -- --region=cavite
 npm run db:fetch-boundaries -- --region=batangas
 npm run db:tag-boundaries        # backfill existing POIs/sites (new sites tag at intake)

@@ -26,7 +26,7 @@ function loadSite(siteId: string) {
 export interface SiteReport {
   run: RunRow;
   site: SiteRow;
-  outlets: Array<{ id: string; outletName: string; lat: number; lon: number; format: string | null }>;
+  outlets: Array<{ id: string; outletName: string; lat: number; lon: number; format: string | null; intakeSubmissionId: string | null; source: string }>;
   rows: Array<{ module: string; score: unknown; truthLayer: string; flags: string[]; payload: unknown }>;
   runSites: Array<{ id: string; compositeScore: { toString(): string } | null }>;
   leaseCorridors: string[];
@@ -47,7 +47,7 @@ export async function getSiteReport(session: SessionUser | null, runId?: string,
   const [outlets, rows, runSites] = await Promise.all([
     prisma.outlet.findMany({
       where: { franchisorId: run.franchisorId, status: 'open', OR: [{ intakeSubmissionId: null }, { intakeSubmissionId: run.intakeSubmissionId }] },
-      select: { id: true, outletName: true, lat: true, lon: true, format: true },
+      select: { id: true, outletName: true, lat: true, lon: true, format: true, intakeSubmissionId: true, source: true },
     }),
     prisma.moduleResult.findMany({
       where: { candidateSiteId: siteId },

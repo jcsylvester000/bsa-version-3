@@ -24,7 +24,7 @@ describe('parseCsv', () => {
 describe('demographicsRowFrom', () => {
   it('maps HDX COD-PS columns (ADM4_PCODE / T_TL)', () => {
     const r = demographicsRowFrom({ ADM4_PCODE: 'PH042101001', ADM4_EN: 'Amuyong', ADM3_EN: 'Alfonso', T_TL: '3,210' });
-    expect(r).toEqual({ psgcCode: '042101001', barangay: 'Amuyong', city: 'Alfonso', population: 3210, incomeBand: null, daytimePop: null });
+    expect(r).toEqual({ psgcCode: '042101001', barangay: 'Amuyong', city: 'Alfonso', population: 3210, incomeBand: null, daytimePop: null, censusYear: null });
   });
   it('maps PSA-style columns (adm4_psgc / population)', () => {
     const r = demographicsRowFrom({ adm4_psgc: '0421010010', barangay: 'Poblacion', population: '12000', income_band: 'CD', daytime_pop: '15000' });

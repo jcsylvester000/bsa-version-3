@@ -28,6 +28,8 @@ export interface SiteFitResult {
   flags: string[];
   /** Trade-area radius (m) used for demand + competition — set by store format (Brief S-4). */
   tradeAreaM?: number;
+  /** Where the population figure came from ("PSA 2020 Census (CPH)", sample estimates, proxy). */
+  populationSource?: string | null;
 }
 
 function clampScore(n: number): number {

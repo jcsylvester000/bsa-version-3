@@ -118,7 +118,7 @@ export function SiteIntelligenceTabs({
   leaseCorridors,
 }: {
   site: { id: string; label: string; lat: number; lon: number; siteType: string | null };
-  outlets: Array<{ id: string; name: string; lat: number; lon: number; format: string | null }>;
+  outlets: Array<{ id: string; name: string; lat: number; lon: number; format: string | null; fromIntake?: boolean }>;
   payloads: SiteModulePayloads;
   vertical?: Vertical | null;
   /** The site's weighted-composite band (candidate_site.verdict) — drives the Final Report call. */
@@ -134,7 +134,7 @@ export function SiteIntelligenceTabs({
 }) {
   const [tab, setTab] = useState<TabKey>(initialTab ?? 'analysis');
 
-  const mapOutlets: MapOutlet[] = outlets.map((o) => ({ id: o.id, name: o.name, lat: o.lat, lon: o.lon, catchmentM: catchmentRadius(o.format) }));
+  const mapOutlets: MapOutlet[] = outlets.map((o) => ({ id: o.id, name: o.name, lat: o.lat, lon: o.lon, catchmentM: catchmentRadius(o.format), fromIntake: o.fromIntake }));
 
   // Is each module a primary (decision-grade) read for this format? Drives the "contextual"
   // badge. When vertical is unknown, treat everything as primary (no badge).

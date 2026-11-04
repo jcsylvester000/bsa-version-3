@@ -34,6 +34,12 @@ datasource db {
 // ============================================================================
 
 /// Truth Layer classification — assigned at ingestion, preserved through every read.
+enum OutletSource {
+  brand_list
+  user_entry
+  reference
+}
+
 enum TruthLayer {
   verified
   assumed
@@ -272,6 +278,13 @@ model Outlet {
   performanceTag PerformanceTag? @map("performance_tag")
   openingDate    DateTime?       @map("opening_date") @db.Date
   truthLayer     TruthLayer      @default(assumed) @map("truth_layer")
+  /// Where the outlet came from (Brief T-5): brand_list = the brand's own branch list (location
+  /// Verified); user_entry = typed at intake (Assumed); reference = legacy seeded network (Assumed).
+  source         OutletSource    @default(user_entry)
+  /// Truth of the outlet's LOCATION (drives the overlap figure) and of its SALES (peso impact).
+  /// NULL = legacy row → read `truth_layer`.
+  locationTruth  TruthLayer?     @map("location_truth")
+  salesTruth     TruthLayer?     @map("sales_truth")
   /// The intake that supplied this outlet (a user typing their branch list). NULL = the brand's
   /// reference network (seeded/ingested). A run only ever sees the reference network PLUS the
   /// outlets from its OWN intake — one user's typed branches never leak into another user's
@@ -670,6 +683,14 @@ model DemographicCell {
   ageProfile   Json?      @map("age_profile")
   renterSharePct Decimal? @map("renter_share_pct") @db.Decimal(5, 2)
   daytimePop   Int?       @map("daytime_pop")
+  /// Per-field Truth Layer (Brief T-1). Census population is Verified; the estimated income /
+  /// age / daytime bands are Assumed or Projected. NULL = legacy row → read `truth_layer`.
+  populationTruth TruthLayer? @map("population_truth")
+  bandsTruth   TruthLayer? @map("bands_truth")
+  /// Census year of `population` (2020 = PSA CPH 2020, 2024 = PSA POPCEN 2024). NULL = legacy/unknown.
+  censusYear   Int?       @map("census_year")
+  /// Where `population` came from, in plain words (e.g. "PSA 2020 Census (CPH)").
+  populationSource String? @map("population_source")
   /// PSA region (e.g. 'NCR', 'IV-A') — enables region-scoped catchment/white-space reads (F-12).
   region       String?
   /// MultiPolygon (R-04): the barangay boundary from admin_boundary, or the legacy 600 m circle

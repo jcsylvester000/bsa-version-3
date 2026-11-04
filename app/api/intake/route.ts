@@ -173,6 +173,10 @@ export async function POST(req: NextRequest) {
           monthlySalesPhp: o.monthlySalesPhp != null ? new Prisma.Decimal(o.monthlySalesPhp) : null,
           performanceTag: o.performanceTag,
           truthLayer: 'assumed' as const,
+          // Typed by the user (Brief T-5): location and sales are as entered → Assumed.
+          source: 'user_entry' as const,
+          locationTruth: 'assumed' as const,
+          salesTruth: o.monthlySalesPhp != null ? ('assumed' as const) : null,
           // Owned by this intake: only this run's Territory Guard sees these outlets.
           intakeSubmissionId: intake.id,
         },

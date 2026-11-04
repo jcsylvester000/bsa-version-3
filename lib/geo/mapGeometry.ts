@@ -34,3 +34,15 @@ export const VERDICT_COLOR: Record<string, string> = {
   mixed: '#B5852B',
   redistributes: '#B23A48',
 };
+
+/**
+ * Legend text for the brand's outlets (Brief T-6). Before, every outlet read "Your outlets (11)" even
+ * when only 5 were typed into this intake and 6 were the brand's network on file. Pure (unit-tested).
+ */
+export function outletLegend(outlets: Array<{ fromIntake?: boolean }>): string {
+  const typed = outlets.filter((o) => o.fromIntake !== false).length;
+  const onFile = outlets.length - typed;
+  if (onFile && typed) return `Brand outlets (${outlets.length}): ${typed} you entered · ${onFile} on file`;
+  if (onFile) return `Brand outlets on file (${onFile})`;
+  return `Your outlets (${typed})`;
+}

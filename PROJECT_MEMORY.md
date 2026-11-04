@@ -5,14 +5,16 @@ always-current snapshot. `WORKLOG.md` is the full history (newest first). This f
 rewritten at the end of every work batch — if it disagrees with older notes (e.g.
 `2 - Data Intake/Migration Guide/PROJECT_MEMORY_EXPORT.md`, 2026-08-10), **this file wins**.
 
-_Last updated: 2026-11-04 — Brief alignment Batch 1 (scoring) built, awaiting push._
+_Last updated: 2026-11-04 (c) — Brief alignment Batch 2 (Truth Layer) built, awaiting push._
 
 ## ⏸ Resume here (updated 2026-11-04)
 
 **Brief alignment programme** (owner approved 2026-11-04, all recommended decisions = A): checklist
-`docs/BSA_Brief_Alignment_Checklist.xlsx`. **Batch 1 (scoring) done, awaiting push** — see WORKLOG 2026-11-04 (b).
-Next: Batch 2 = Truth Layer (T-1 per-field demographic labels, T-3 Manila boundaries, T-5 outlet source labels,
-T-2/T-4 census load, T-6/T-7). Then Batch 3 coverage (C-*), brief fixes (B-*), verify (V-*).
+`docs/BSA_Brief_Alignment_Checklist.xlsx`. Batch 1 (scoring) pushed `12add18`. **Batch 2 (Truth Layer) done,
+awaiting push** — WORKLOG 2026-11-04 (c). Owner data steps after deploy: fetch NCR/Davao boundaries, tag, load PSA
+barangay census with `--retire-legacy`, `db:rerun-historical`. Next: Batch 3 coverage (C-1 Davao, C-2 partial-region
+notice, C-4/C-5 refresh + Overpass, C-7 rent freshness), then brief fixes (B-*), verify (V-*). G-1 (remove Google
+ingest/proxies) awaiting owner OK. Codes are 10-digit PSGC everywhere (`lib/geo/psgcCode.ts`).
 Rules: every scoring number lives in `lib/modules/scoringConfig.ts`; **no Google anything** (OpenStreetMap only);
 tests run in the cloud sandbox (device node_modules are Windows-native).
 

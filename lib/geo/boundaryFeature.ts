@@ -6,6 +6,7 @@
  * across the common exports, and the owner can extend the lists if their file differs.
  * No I/O — unit-tested in tests/unit/boundaryFeature.test.ts.
  */
+import { psgc10 } from './psgcCode';
 
 export type BoundaryLevel = 'region' | 'province' | 'city' | 'barangay';
 
@@ -51,11 +52,10 @@ function pick(props: Props, candidates: string[]): string | null {
   return null;
 }
 
-/** Normalise a PSGC code: keep digits, preserve leading zeros as text; drop stray separators. */
-export function normalizePsgc(raw: string | null | undefined): string | null {
-  if (raw == null) return null;
-  const digits = `${raw}`.replace(/[^0-9]/g, '');
-  return digits.length ? digits : null;
+/** Normalise a PSGC code: keep digits, preserve leading zeros as text; drop stray separators; restore a
+ *  lost leading zero (JSON-number codes from the boundary maps — see psgcCode.ts, Brief T-3). */
+export function normalizePsgc(raw: string | number | null | undefined): string | null {
+  return psgc10(raw);
 }
 
 /**

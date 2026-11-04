@@ -7,8 +7,10 @@
  *   npm run db:fetch-boundaries -- --region=laguna
  *   npm run db:fetch-boundaries -- --region=pampanga   (includes Angeles City)
  *
- * Pulls ready-made GeoJSON from faeldon/philippines-json-maps (MIT; PSGC Q4-2023, sourced from
- * the same PSA shapefiles) at medium resolution, for the province → its cities → their barangays,
+ * Pulls ready-made GeoJSON from faeldon/philippines-json-maps `latest/` (MIT; PSGC 3Q-2026, sourced
+ * from the PSA shapefiles) at medium resolution. (The old `2023/` folder moved to a release in Oct
+ * 2026 and every URL 404'd — Brief T-3.) Codes are stored as 10-digit PSGC (lib/geo/psgcCode.ts);
+ * file names use the integer form. Loads for the province → its cities → their barangays,
  * and loads each into admin_boundary (Verified). Idempotent (upsert on psgc_code). Run
  * `npm run db:tag-boundaries` afterwards to backfill existing POIs/sites.
  *
@@ -18,8 +20,9 @@ import 'dotenv/config';
 import { prisma } from '@/lib/db/prisma';
 import { getRegion, REGION_KEYS, type RegionKey } from '@/lib/geo/regions';
 import { upsertBoundaryFeature, type BoundaryFeature } from '@/lib/geo/boundaryUpsert';
+import { psgc10, psgcFileCode } from '@/lib/geo/psgcCode';
 
-const BASE = 'https://raw.githubusercontent.com/faeldon/philippines-json-maps/master/2023/geojson';
+const BASE = 'https://raw.githubusercontent.com/faeldon/philippines-json-maps/master/latest/geojson';
 const RES = '0.01'; // medium resolution
 
 interface FeatureCollection { features?: BoundaryFeature[] }
@@ -46,8 +49,7 @@ async function getJson(url: string): Promise<FeatureCollection | null> {
 function cityCode(f: BoundaryFeature): string | null {
   const p = f.properties ?? {};
   const v = p['adm3_psgc'] ?? p['ADM3_PCODE'] ?? p['psgc'];
-  const s = v == null ? '' : `${v}`.replace(/[^0-9]/g, '');
-  return s || null;
+  return v == null ? null : psgc10(v as string | number);
 }
 
 async function main() {
@@ -63,10 +65,11 @@ async function main() {
   let provinces = 0, cities = 0, barangays = 0;
 
   // 1) Provinces of the region — load only the target province(s), tagged with this region key.
-  const regFc = await getJson(`${BASE}/regions/medres/provdists-region-${region.psgcRegionCode}.${RES}.json`);
+  const regFc = await getJson(`${BASE}/regions/medres/provdists-region-${psgcFileCode(region.psgcRegionCode)}.${RES}.json`);
+  const wanted = new Set(region.psgcProvinces.map((c) => psgc10(c)));
   for (const f of regFc?.features ?? []) {
     const code = cityCodeLike(f, 'adm2_psgc');
-    if (code && region.psgcProvinces.includes(code)) {
+    if (code && wanted.has(code)) {
       if (await upsertBoundaryFeature(f, 'province', regionKey)) provinces++;
     }
   }
@@ -74,7 +77,7 @@ async function main() {
   // 2) Each province → its cities/municipalities, then 3) each city → its barangays.
   for (const provCode of region.psgcProvinces) {
     await sleep(300);
-    const muniFc = await getJson(`${BASE}/provdists/medres/municities-provdist-${provCode}.${RES}.json`);
+    const muniFc = await getJson(`${BASE}/provdists/medres/municities-provdist-${psgcFileCode(provCode)}.${RES}.json`);
     const cityCodes: string[] = [];
     for (const f of muniFc?.features ?? []) {
       if (await upsertBoundaryFeature(f, 'city', regionKey)) cities++;
@@ -85,7 +88,7 @@ async function main() {
 
     for (const cc of cityCodes) {
       await sleep(300);
-      const bgyFc = await getJson(`${BASE}/municities/medres/bgysubmuns-municity-${cc}.${RES}.json`);
+      const bgyFc = await getJson(`${BASE}/municities/medres/bgysubmuns-municity-${psgcFileCode(cc)}.${RES}.json`);
       let n = 0;
       for (const f of bgyFc?.features ?? []) {
         if (await upsertBoundaryFeature(f, 'barangay', regionKey)) { barangays++; n++; }
@@ -99,22 +102,23 @@ async function main() {
   //    (name from the registry, polygon = union of its own barangays — nothing invented).
   for (const extra of region.psgcExtraCities ?? []) {
     await sleep(300);
-    const bgyFc = await getJson(`${BASE}/municities/medres/bgysubmuns-municity-${extra.code}.${RES}.json`);
+    const bgyFc = await getJson(`${BASE}/municities/medres/bgysubmuns-municity-${psgcFileCode(extra.code)}.${RES}.json`);
+    const extraCode = psgc10(extra.code)!;
     let n = 0;
     for (const f of bgyFc?.features ?? []) {
       if (await upsertBoundaryFeature(f, 'barangay', regionKey)) { barangays++; n++; }
     }
     if (n > 0) {
       await prisma.adminBoundary.upsert({
-        where: { psgcCode: extra.code },
+        where: { psgcCode: extraCode },
         update: { level: 'city', name: extra.name, region: regionKey },
-        create: { psgcCode: extra.code, level: 'city', name: extra.name, parentPsgc: null, region: regionKey },
+        create: { psgcCode: extraCode, level: 'city', name: extra.name, parentPsgc: null, region: regionKey },
       });
       await prisma.$executeRaw`
         UPDATE admin_boundary SET geom = (
           SELECT ST_Multi(ST_Union(b.geom::geometry))::geography FROM admin_boundary b
-          WHERE b.level = 'barangay' AND b.parent_psgc = ${extra.code} AND b.geom IS NOT NULL)
-        WHERE psgc_code = ${extra.code}`;
+          WHERE b.level = 'barangay' AND b.parent_psgc = ${extraCode} AND b.geom IS NOT NULL)
+        WHERE psgc_code = ${extraCode}`;
       cities++;
     }
     console.log(`     ${extra.name} (${extra.code}, independent city): ${n} barangays`);
@@ -127,8 +131,7 @@ async function main() {
 /** Generic numeric PSGC off a feature for a named key (used for the province filter). */
 function cityCodeLike(f: BoundaryFeature, key: string): string | null {
   const v = (f.properties ?? {})[key];
-  const s = v == null ? '' : `${v}`.replace(/[^0-9]/g, '');
-  return s || null;
+  return v == null ? null : psgc10(v as string | number);
 }
 
 main()

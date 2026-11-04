@@ -273,6 +273,9 @@ export async function pullBrand(brand: BrandDef, opts: { cities?: string[]; perC
         lon: p.lon,
         // Sales/performance are NOT public → left null / Assumed. We do not invent figures.
         truthLayer: 'assumed',
+        // Legacy seeded network (Brief T-5) — not a brand-supplied list, so location stays Assumed.
+        source: 'reference',
+        locationTruth: 'assumed',
       },
     });
     loaded++;

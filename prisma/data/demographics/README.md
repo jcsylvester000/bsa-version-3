@@ -42,7 +42,17 @@ Minimum columns the loader needs (others are ignored):
 npm run db:load-demographics -- --region=cavite --file=prisma/data/demographics/cavite.csv
 # or straight from a URL:
 npm run db:load-demographics -- --region=cavite --url=https://…/phl_admpop_adm4_2020.csv
+# census year (else read from the column name pop_2020 / pop_2024):
+npm run db:load-demographics -- --region=ncr --year=2020 --file=prisma/data/demographics/ncr.csv
+# replace the 296 early sample cells in cities that now have census barangays (dry run without the flag):
+npm run db:load-demographics -- --region=ncr --year=2020 --file=prisma/data/demographics/ncr.csv --retire-legacy
 ```
+
+**Labels per field (Brief T-1/T-4):** census population → `population_truth = verified`, with
+`census_year` and `population_source` ("PSA 2020 Census (CPH)"); income / daytime bands from the file →
+`bands_truth = assumed`. Re-loading never blanks bands the file doesn't carry. `--retire-legacy` hands
+each sample cell's estimated bands to the census barangay of the same name, then deletes the sample cell
+so people are not counted twice. Load boundaries first (`db:fetch-boundaries`).
 
 The loader upserts on PSGC and copies each barangay's boundary geometry from `admin_boundary`.
 It reports rows with no population column or no matching boundary. Re-runnable.

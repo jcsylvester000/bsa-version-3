@@ -105,7 +105,9 @@ interface OutletRow {
   lat: number;
   lon: number;
   monthly_sales_php: number | null;
+  /** Location truth (falls back to the row's legacy truth_layer). */
   truth_layer: TruthLayer;
+  source: string | null;
   dist_m: number;
 }
 
@@ -250,7 +252,8 @@ export async function runTerritoryGuard(
   const rows = await prisma.$queryRaw<OutletRow[]>`
     SELECT o.id, o.outlet_name, o.format, o.lat, o.lon,
            o.monthly_sales_php::float8 AS monthly_sales_php,
-           o.truth_layer::text AS truth_layer,
+           COALESCE(o.location_truth, o.truth_layer)::text AS truth_layer,
+           o.source::text AS source,
            ST_Distance(
              o.geom,
              ST_SetSRID(ST_MakePoint(${site.lon}, ${site.lat}), 4326)::geography

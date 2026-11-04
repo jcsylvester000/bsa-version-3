@@ -172,6 +172,9 @@ async function main() {
         performanceTag: o.tag,
         // sales/perf are Assumed until the franchisor confirms them.
         truthLayer: 'assumed',
+        source: 'reference',
+        locationTruth: 'assumed',
+        salesTruth: 'assumed',
       },
     });
   }
